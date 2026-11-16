@@ -30,7 +30,7 @@ vi.mock('@/lib/server-functions', () => ({
 vi.mock('@/routes/api/columns', () => ({ createColumnsFn: vi.fn() }))
 
 // eslint-disable-next-line import/first
-import { computeAutoLayout } from '@/lib/server-functions'
+import { computeAutoLayout, createTable } from '@/lib/server-functions'
 // eslint-disable-next-line import/first, import/order
 import { useSqlImport } from './use-sql-import'
 
@@ -70,5 +70,87 @@ describe('useSqlImport', () => {
     const { result } = renderHook(() => useSqlImport('wb'))
     await result.current.importDiagram({} as any, { onLayoutApplied })
     expect(onLayoutApplied).not.toHaveBeenCalled()
+  })
+
+  it('sends one batch id, kind sql-import, with every create of an import', async () => {
+    vi.doMock('@/lib/parser/diagram-parser', () => ({
+      astToEntities: () => ({
+        tables: [
+          {
+            table: { name: 'users', whiteboardId: 'wb' },
+            columns: [{ name: 'id', dataType: 'int' }],
+          },
+          {
+            table: { name: 'orders', whiteboardId: 'wb' },
+            columns: [{ name: 'user_id', dataType: 'int' }],
+          },
+        ],
+        relationships: [
+          {
+            sourceTable: 'orders',
+            sourceColumn: 'user_id',
+            targetTable: 'users',
+            targetColumn: 'id',
+            cardinality: 'MANY_TO_ONE',
+            label: null,
+          },
+        ],
+      }),
+    }))
+    vi.resetModules()
+    const { useSqlImport: freshHook } = await import('./use-sql-import')
+    const serverFns = await import('@/lib/server-functions')
+    const columnFns = await import('@/routes/api/columns')
+    vi.mocked(serverFns.createTable).mockClear()
+    vi.mocked(columnFns.createColumnsFn).mockClear()
+    vi.mocked(serverFns.createRelationshipFn).mockClear()
+    vi.mocked(serverFns.createTable).mockImplementation(((arg: any) =>
+      Promise.resolve({ id: `id-${arg.data.name}` })) as any)
+    vi.mocked(columnFns.createColumnsFn).mockImplementation(((arg: any) =>
+      Promise.resolve(
+        arg.data.columns.map((c: any) => ({ id: `c-${c.name}`, name: c.name })),
+      )) as any)
+    vi.mocked(serverFns.createRelationshipFn).mockResolvedValue({
+      id: 'r1',
+    } as any)
+    vi.mocked(serverFns.computeAutoLayout).mockResolvedValue({
+      positions: [],
+      areas: [],
+    } as any)
+
+    const { result } = renderHook(() => freshHook('wb'))
+    await result.current.importDiagram({} as any)
+
+    const tableCalls = vi.mocked(serverFns.createTable).mock.calls
+    const columnCalls = vi.mocked(columnFns.createColumnsFn).mock.calls
+    const relCalls = vi.mocked(serverFns.createRelationshipFn).mock.calls
+    const batchIds = [
+      ...tableCalls.map((c: any) => c[0].data.batchId),
+      ...columnCalls.map((c: any) => c[0].data.batchId),
+      ...relCalls.map((c: any) => c[0].data.batchId),
+    ]
+    expect(batchIds).toHaveLength(5)
+    expect(new Set(batchIds).size).toBe(1)
+    expect(typeof batchIds[0]).toBe('string')
+    expect(batchIds[0].length).toBeGreaterThan(0)
+    expect(batchIds[0].length).toBeLessThanOrEqual(64)
+    const kinds = [
+      ...tableCalls.map((c: any) => c[0].data.batchKind),
+      ...columnCalls.map((c: any) => c[0].data.batchKind),
+      ...relCalls.map((c: any) => c[0].data.batchKind),
+    ]
+    expect(new Set(kinds)).toEqual(new Set(['sql-import']))
+  })
+
+  it('mints a different batch id for each import', async () => {
+    const { result } = renderHook(() => useSqlImport('wb'))
+    vi.mocked(createTable).mockClear()
+    await result.current.importDiagram({} as any)
+    await result.current.importDiagram({} as any)
+    const ids = vi
+      .mocked(createTable)
+      .mock.calls.map((c: any) => c[0].data.batchId)
+    expect(ids).toHaveLength(2)
+    expect(ids[0]).not.toBe(ids[1])
   })
 })

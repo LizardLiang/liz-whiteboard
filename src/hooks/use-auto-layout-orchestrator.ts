@@ -52,6 +52,8 @@ import { DOCK_FIT_PADDING } from '@/lib/react-flow/fit-view-padding'
 
 type BulkPayload = {
   whiteboardId: string
+  /** Tells the change log this move is an auto-layout */
+  batchKind: 'auto-layout'
   positions: Array<{ id: string; positionX: number; positionY: number }>
   /** New bounds for every area; omitted when the board has no areas */
   areas?: Array<AreaLayoutOutputArea>
@@ -417,6 +419,7 @@ export function useAutoLayoutOrchestrator({
 
       const payload: BulkPayload = {
         whiteboardId,
+        batchKind: 'auto-layout',
         positions: positions.map((p) => ({
           id: p.id,
           positionX: p.x,

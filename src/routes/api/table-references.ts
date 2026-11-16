@@ -222,7 +222,8 @@ export async function handleTableReferenceRequest(
     resolveTableReferences,
     updateTableReference,
   } = await import('@/data/table-reference')
-  const { PHASE2_PLACEHOLDER_CTX } = await import('@/lib/schema-changelog')
+  const { userContext } = await import('@/lib/schema-changelog')
+  const { getTableWhiteboardId } = await import('@/data/resolve-project')
 
   try {
     if (body.op === 'create') {
@@ -236,11 +237,15 @@ export async function handleTableReferenceRequest(
           positionX: body.positionX,
           positionY: body.positionY,
         },
-        PHASE2_PLACEHOLDER_CTX,
+        userContext(body.whiteboardId, userId),
       )
       return jsonOk({ reference })
     }
     if (body.op === 'update') {
+      const whiteboardId = await getTableWhiteboardId(body.tableId)
+      if (!whiteboardId) {
+        return jsonError('NOT_FOUND', 'Table reference not found.', 404)
+      }
       const result = await updateTableReference(
         body.tableId,
         {
@@ -254,7 +259,7 @@ export async function handleTableReferenceRequest(
             ? { sourceColumnIds: body.sourceColumnIds }
             : {}),
         },
-        PHASE2_PLACEHOLDER_CTX,
+        userContext(whiteboardId, userId),
       )
       return jsonOk({
         reference: result.reference,
@@ -262,9 +267,13 @@ export async function handleTableReferenceRequest(
       })
     }
     if (body.op === 'delete') {
+      const whiteboardId = await getTableWhiteboardId(body.tableId)
+      if (!whiteboardId) {
+        return jsonError('NOT_FOUND', 'Table reference not found.', 404)
+      }
       const reference = await deleteTableReference(
         body.tableId,
-        PHASE2_PLACEHOLDER_CTX,
+        userContext(whiteboardId, userId),
       )
       return jsonOk({ reference })
     }

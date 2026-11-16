@@ -3,7 +3,7 @@
 
 import { createAreaSchema, updateAreaSchema } from './schema'
 import { claimClientId, refuseTakenIdAfterInsertError } from './already-exists'
-import type { CreateArea, UpdateArea } from './schema'
+import type { AreaBounds, CreateArea, UpdateArea } from './schema'
 import type { Area } from './models'
 import type { ChangeContext } from '@/lib/schema-changelog'
 import { db, insert, mapArea, nowMs, toDbJson, transaction, update } from '@/db'
@@ -244,6 +244,79 @@ export async function moveAreaAndMembers(
       `Failed to move area and members: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )
   }
+}
+
+/**
+ * Write table positions and area bounds in one transaction (all-or-nothing),
+ * logging every change that moved something under one batch of `batchKind`
+ * (`auto-layout` or `bulk-move`, as the caller says). Bounds only for areas:
+ * membership (memberTableIds) is never rewritten.
+ *
+ * Pure write — IDOR/authorization is the caller's job.
+ */
+export async function applyLayoutPositions(
+  positions: Array<{ id: string; positionX: number; positionY: number }>,
+  areas: Array<AreaBounds>,
+  ctx: ChangeContext,
+  batchKind: 'auto-layout' | 'bulk-move',
+): Promise<void> {
+  transaction(() => {
+    const batchCtx = ensureBatch(ctx, batchKind)
+    const ts = nowMs()
+    for (const p of positions) {
+      const before = db
+        .prepare(
+          'SELECT "name", "positionX", "positionY" FROM "DiagramTable" WHERE "id" = ?',
+        )
+        .get(p.id) as
+        | { name: string; positionX: number | null; positionY: number | null }
+        | undefined
+      update('DiagramTable', p.id, {
+        positionX: p.positionX,
+        positionY: p.positionY,
+        updatedAt: ts,
+      })
+      if (before) {
+        recordUpdate(
+          batchCtx,
+          {
+            entityType: 'table',
+            entityId: p.id,
+            entityName: before.name,
+            tableId: p.id,
+            tableName: before.name,
+          },
+          before,
+          { positionX: p.positionX, positionY: p.positionY },
+          ['positionX', 'positionY'],
+        )
+      }
+    }
+    for (const a of areas) {
+      const before = readArea(a.id)
+      update('Area', a.id, {
+        positionX: a.positionX,
+        positionY: a.positionY,
+        width: a.width,
+        height: a.height,
+        updatedAt: ts,
+      })
+      if (before) {
+        recordUpdate(
+          batchCtx,
+          areaEventBase(before),
+          before,
+          {
+            positionX: a.positionX,
+            positionY: a.positionY,
+            width: a.width,
+            height: a.height,
+          },
+          ['positionX', 'positionY', 'width', 'height'],
+        )
+      }
+    }
+  })
 }
 
 /**

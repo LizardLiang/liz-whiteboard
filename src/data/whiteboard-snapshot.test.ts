@@ -299,7 +299,7 @@ describe('restoreWhiteboardFromSnapshot', () => {
     // Mutate live state after capture.
     await createDiagramTable({ whiteboardId, name: 'extra_table' }, SYSTEM)
 
-    await restoreWhiteboardFromSnapshot(whiteboardId, payload)
+    await restoreWhiteboardFromSnapshot(whiteboardId, payload, SYSTEM)
 
     const tables = await findDiagramTablesByWhiteboardId(whiteboardId)
     expect(tables.map((t) => t.id).sort()).toEqual([t1.id, t2.id].sort())
@@ -369,7 +369,7 @@ describe('restoreWhiteboardFromSnapshot', () => {
       updatedAt: ts,
     })
 
-    await restoreWhiteboardFromSnapshot(whiteboardId, payload)
+    await restoreWhiteboardFromSnapshot(whiteboardId, payload, SYSTEM)
 
     const tables = await findDiagramTablesByWhiteboardId(whiteboardId)
     expect(tables).toHaveLength(2)
@@ -426,7 +426,7 @@ describe('restoreWhiteboardFromSnapshot', () => {
     payload.whiteboard.name = 'Renamed Board'
     payload.whiteboard.textSource = 'erDiagram\n  users'
 
-    await restoreWhiteboardFromSnapshot(whiteboardId, payload)
+    await restoreWhiteboardFromSnapshot(whiteboardId, payload, SYSTEM)
 
     const row = db
       .prepare('SELECT * FROM "Whiteboard" WHERE "id" = ?')
@@ -443,7 +443,7 @@ describe('restoreWhiteboardFromSnapshot', () => {
     ;(globalThis as any).__FORCE_INSERT_FAIL_TABLE__ = 'Relationship'
 
     await expect(
-      restoreWhiteboardFromSnapshot(whiteboardId, payload),
+      restoreWhiteboardFromSnapshot(whiteboardId, payload, SYSTEM),
     ).rejects.toThrow('Simulated write failure')
 
     delete (globalThis as any).__FORCE_INSERT_FAIL_TABLE__
@@ -514,7 +514,7 @@ describe('UNIT-06: restore round-trip — the only test that catches a missing w
       SYSTEM,
     )
 
-    await restoreWhiteboardFromSnapshot(whiteboardId, S1)
+    await restoreWhiteboardFromSnapshot(whiteboardId, S1, SYSTEM)
 
     const S2 = await captureWhiteboardState(whiteboardId)
 
@@ -542,7 +542,7 @@ describe('UNIT-07: legacy (pre-feature) snapshot payload restore (FR-035a — ma
     expect(await findConnectorsByWhiteboard(whiteboardId)).not.toHaveLength(0)
 
     await expect(
-      restoreWhiteboardFromSnapshot(whiteboardId, legacyPayload),
+      restoreWhiteboardFromSnapshot(whiteboardId, legacyPayload, SYSTEM),
     ).resolves.not.toThrow()
 
     // Missing key reads as an empty collection: shapes/connectors are wiped,
@@ -646,7 +646,7 @@ describe('restore of a cross-file table reference', () => {
     expect(captured.sourceTableId).toBe(orders.id)
     expect(captured.columns.map((c) => c.sourceColumnId)).toContain(ordersId.id)
 
-    await restoreWhiteboardFromSnapshot(local.id, payload)
+    await restoreWhiteboardFromSnapshot(local.id, payload, SYSTEM)
 
     const tables = await findDiagramTablesByWhiteboardId(local.id)
     const restoredRef = tables.find((t) => t.name === ref.table.name)!
@@ -703,7 +703,7 @@ describe('restore of a cross-file table reference', () => {
       })
     }
 
-    await restoreWhiteboardFromSnapshot(local.id, payload)
+    await restoreWhiteboardFromSnapshot(local.id, payload, SYSTEM)
 
     const restoredRef = (await findDiagramTablesByWhiteboardId(local.id)).find(
       (t) => t.name === ref.table.name,
@@ -742,7 +742,7 @@ describe('restore of a cross-file table reference', () => {
       }
     }
 
-    await restoreWhiteboardFromSnapshot(local.id, payload)
+    await restoreWhiteboardFromSnapshot(local.id, payload, SYSTEM)
 
     const restored = (await findDiagramTablesByWhiteboardId(local.id)).find(
       (t) => t.id === ref.table.id,

@@ -154,6 +154,7 @@ describe('useAutoLayoutOrchestrator', () => {
     expect(updateTablePositionsBulk).toHaveBeenCalledWith({
       data: {
         whiteboardId: WB_ID,
+        batchKind: 'auto-layout',
         positions: expect.arrayContaining([
           {
             id: POSITIONS[0].id,
@@ -729,6 +730,7 @@ describe('useAutoLayoutOrchestrator', () => {
     expect(updateTablePositionsBulk).toHaveBeenCalledWith({
       data: {
         whiteboardId: WB_ID,
+        batchKind: 'auto-layout',
         positions: [{ id: 'table-1', positionX: 10, positionY: 20 }],
       },
     })

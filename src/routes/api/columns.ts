@@ -19,14 +19,31 @@ import { createColumnSchema, updateColumnSchema } from '@/data/schema'
 import { requireAuth } from '@/lib/auth/middleware'
 import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
-import { getColumnProjectId, getTableProjectId } from '@/data/resolve-project'
+import {
+  getColumnProjectId,
+  getColumnWhiteboardId,
+  getTableProjectId,
+  getTableWhiteboardId,
+} from '@/data/resolve-project'
 import {
   BatchDeniedError,
   ForbiddenError,
   requireServerFnRole,
 } from '@/lib/auth/require-role'
 import { logSampledError } from '@/lib/auth/log-sample'
-import { PHASE2_PLACEHOLDER_CTX } from '@/lib/schema-changelog'
+import { clientBatchSchema } from '@/lib/schema-changelog/client-batch'
+import { userContext, withClientBatch } from '@/lib/schema-changelog'
+import type { ChangeContext } from '@/lib/schema-changelog'
+
+/** The context for a write on a column's whiteboard. The caller passed a role check on it first. */
+async function columnContext(
+  userId: string,
+  columnId: string,
+): Promise<ChangeContext> {
+  const whiteboardId = await getColumnWhiteboardId(columnId)
+  if (!whiteboardId) throw new Error('Column not found')
+  return userContext(whiteboardId, userId)
+}
 
 /**
  * Get all columns in a table
@@ -188,7 +205,12 @@ export const createColumnFn = createServerFn({ method: 'POST' })
       const projectId = await getTableProjectId(data.tableId)
       await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
-        const column = await createColumn(data, PHASE2_PLACEHOLDER_CTX)
+        const whiteboardId = await getTableWhiteboardId(data.tableId)
+        if (!whiteboardId) throw new Error('Table not found')
+        const column = await createColumn(
+          data,
+          userContext(whiteboardId, user.id),
+        )
         return column
       } catch (error) {
         throw new Error(
@@ -211,11 +233,14 @@ export const createColumnFn = createServerFn({ method: 'POST' })
  */
 export const createColumnsFn = createServerFn({ method: 'POST' })
   .validator((data: unknown) => {
-    const schema = z.array(createColumnSchema).max(500)
+    const schema = clientBatchSchema.extend({
+      columns: z.array(createColumnSchema).max(500),
+    })
     return schema.parse(data)
   })
   .handler(
-    requireAuth(async ({ user }, data) => {
+    requireAuth(async ({ user }, input) => {
+      const data = input.columns
       if (data.length === 0) return []
 
       // Step 1: PRE-VALIDATE — RBAC for every unique tableId before any write.
@@ -245,8 +270,28 @@ export const createColumnsFn = createServerFn({ method: 'POST' })
       }
 
       // Step 2: WRITE — only reached when every item passed RBAC.
+      // A batch is written once per whiteboard its tables sit on, so each
+      // event carries its own board. The SQL import sends a single board.
       try {
-        const columns = await createColumns(data, PHASE2_PLACEHOLDER_CTX)
+        const groups = new Map<string, Array<number>>()
+        for (const [index, column] of data.entries()) {
+          const whiteboardId = await getTableWhiteboardId(column.tableId)
+          if (!whiteboardId) throw new Error('Table not found')
+          groups.set(whiteboardId, [...(groups.get(whiteboardId) ?? []), index])
+        }
+        const columns: Array<Awaited<ReturnType<typeof createColumns>>[number]> =
+          []
+        for (const [whiteboardId, indexes] of groups) {
+          const { ctx } = withClientBatch(
+            userContext(whiteboardId, user.id),
+            input,
+          )
+          const created = await createColumns(
+            indexes.map((i) => data[i]),
+            ctx,
+          )
+          for (const [n, index] of indexes.entries()) columns[index] = created[n]
+        }
         return columns
       } catch (error) {
         throw new Error(
@@ -278,7 +323,7 @@ export const updateColumnFn = createServerFn({ method: 'POST' })
         const column = await updateColumn(
           params.id,
           params.data,
-          PHASE2_PLACEHOLDER_CTX,
+          await columnContext(user.id, params.id),
         )
         return column
       } catch (error) {
@@ -311,7 +356,7 @@ export const updateColumnOrderFn = createServerFn({ method: 'POST' })
         const column = await updateColumnOrder(
           params.id,
           params.order,
-          PHASE2_PLACEHOLDER_CTX,
+          await columnContext(user.id, params.id),
         )
         return column
       } catch (error) {
@@ -339,7 +384,10 @@ export const deleteColumnFn = createServerFn({ method: 'POST' })
       const projectId = await getColumnProjectId(columnId)
       await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
-        const column = await deleteColumn(columnId, PHASE2_PLACEHOLDER_CTX)
+        const column = await deleteColumn(
+          columnId,
+          await columnContext(user.id, columnId),
+        )
         return column
       } catch (error) {
         throw new Error(

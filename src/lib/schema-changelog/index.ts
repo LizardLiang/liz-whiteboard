@@ -5,11 +5,13 @@
 // so the row and its event commit together or not at all.
 
 import { z } from 'zod'
+import { clientBatchSchema } from './client-batch'
+import type { ClientBatch } from './client-batch'
 import { db, genId, nowMs, toDbBool, toDbJson } from '@/db'
 
 export type ChangeCategory = 'schema' | 'layout'
 export type ChangeEntityType =
-  'table' | 'column' | 'relationship' | 'reference' | 'area'
+  'table' | 'column' | 'relationship' | 'reference' | 'area' | 'board'
 export type ChangeAction =
   'create' | 'update' | 'delete' | 'reorder' | 'move' | 'resize'
 export type ChangeBatchKind =
@@ -35,13 +37,6 @@ export interface ActorContext {
 /** Marks a write the server makes on its own. recordChange ignores it. */
 export const SYSTEM = { system: true } as const
 
-/**
- * Temporary context for callers outside the socket handlers. It writes no
- * event. Phase 2 of the schema change log replaces every use with a real
- * context or batch; the name is what `rg PHASE2_PLACEHOLDER_CTX` finds.
- */
-export const PHASE2_PLACEHOLDER_CTX = SYSTEM
-
 export type ChangeContext = ActorContext | typeof SYSTEM
 
 export interface ChangeEventInput {
@@ -56,12 +51,17 @@ export interface ChangeEventInput {
   after?: unknown
 }
 
-/** Fields of a row that describe where it sits or how big it is. */
+/**
+ * Fields of a row that describe where it sits, how big it is or which path an
+ * edge takes. Dragging an edge path is the same visual placement as dragging a
+ * table, so `routingPoints` is layout.
+ */
 export const LAYOUT_FIELDS: ReadonlyArray<string> = [
   'positionX',
   'positionY',
   'width',
   'height',
+  'routingPoints',
 ]
 
 export function isSystemContext(ctx: ChangeContext): ctx is typeof SYSTEM {
@@ -204,7 +204,10 @@ export function recordUpdate(
     })
   }
   if (layout) {
-    const moved = 'positionX' in layout.after || 'positionY' in layout.after
+    const moved =
+      'positionX' in layout.after ||
+      'positionY' in layout.after ||
+      'routingPoints' in layout.after
     recordChange(ctx, {
       ...base,
       category: 'layout',
@@ -289,4 +292,23 @@ export function acceptBatchId(
     )
     .get(batchId, ctx.whiteboardId, ctx.actorUserId)
   return foreign === undefined ? withBatch(ctx, batchId, batchKind) : ctx
+}
+
+/**
+ * Split the batch fields a client sent off a payload and validate them.
+ * Returns the payload without them, and `ctx` placed in the client's batch
+ * when the client sent one (see acceptBatchId for the ownership rule).
+ */
+export function withClientBatch<T extends ClientBatch>(
+  ctx: ChangeContext,
+  data: T,
+): { rest: Omit<T, 'batchId' | 'batchKind'>; ctx: ChangeContext } {
+  const { batchId, batchKind, ...rest } = data
+  const batch = clientBatchSchema.parse({ batchId, batchKind })
+  return {
+    rest,
+    ctx: batch.batchId
+      ? acceptBatchId(ctx, batch.batchId, batch.batchKind ?? 'sql-import')
+      : ctx,
+  }
 }

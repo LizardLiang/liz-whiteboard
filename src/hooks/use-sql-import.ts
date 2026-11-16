@@ -26,6 +26,7 @@ import {
 } from '@/lib/server-functions'
 import { createColumnsFn } from '@/routes/api/columns'
 import { isUnauthorizedError } from '@/lib/auth/errors'
+import { mintClientBatchId } from '@/lib/schema-changelog/client-batch'
 
 export interface SqlImportSummary {
   tableCount: number
@@ -67,13 +68,20 @@ export function useSqlImport(whiteboardId: string) {
     ): Promise<SqlImportSummary> => {
       const { tables, relationships } = astToEntities(ast, whiteboardId)
 
+      // One id for the whole import: the change log shows its tables, columns
+      // and relationships as a single expandable entry.
+      const batch = {
+        batchId: mintClientBatchId(),
+        batchKind: 'sql-import' as const,
+      }
+
       const tableIdByName = new Map<string, string>()
       const columnIdByKey = new Map<string, string>() // `${tableName}.${columnName}`
       let columnCount = 0
 
       for (const entry of tables) {
         const createdTable = await createTable({
-          data: { ...entry.table, whiteboardId },
+          data: { ...entry.table, whiteboardId, ...batch },
         })
         if (isUnauthorizedError(createdTable)) {
           throw new SqlImportSessionExpiredError()
@@ -82,10 +90,13 @@ export function useSqlImport(whiteboardId: string) {
 
         if (entry.columns.length > 0) {
           const createdColumns = await createColumnsFn({
-            data: entry.columns.map((c) => ({
-              ...c,
-              tableId: createdTable.id,
-            })),
+            data: {
+              columns: entry.columns.map((c) => ({
+                ...c,
+                tableId: createdTable.id,
+              })),
+              ...batch,
+            },
           })
           if (isUnauthorizedError(createdColumns)) {
             throw new SqlImportSessionExpiredError()
@@ -131,6 +142,7 @@ export function useSqlImport(whiteboardId: string) {
             targetColumnId,
             cardinality: rel.cardinality,
             label: rel.label,
+            ...batch,
           },
         })
         if (isUnauthorizedError(createdRelationship)) {

@@ -12,11 +12,13 @@ import {
   splitCategory,
   userContext,
   withBatch,
+  withClientBatch,
 } from './index'
 import type { ActorContext } from './index'
 import {
   createArea,
   deleteArea,
+  applyLayoutPositions,
   moveAreaAndMembers,
   removeTableFromAreas,
   updateArea,
@@ -47,6 +49,10 @@ import {
   deleteTableReference,
   updateTableReference,
 } from '@/data/table-reference'
+import {
+  captureWhiteboardState,
+  restoreWhiteboardFromSnapshot,
+} from '@/data/whiteboard-snapshot'
 import { db } from '@/db'
 import {
   makeColumn,
@@ -137,6 +143,15 @@ describe('helpers', () => {
     expect(Object.keys(split.layout!.after)).toEqual(['positionX', 'height'])
   })
 
+  it('splitCategory puts relationship routing points in layout', () => {
+    const split = splitCategory({
+      before: { label: 'a', routingPoints: null },
+      after: { label: 'b', routingPoints: [{ x: 1, y: 2 }] },
+    })
+    expect(Object.keys(split.schema!.after)).toEqual(['label'])
+    expect(Object.keys(split.layout!.after)).toEqual(['routingPoints'])
+  })
+
   it('userContext stores a null actor id for a user that does not exist', () => {
     const ctx = userContext('wb', 'no-such-user')
     expect(ctx.actorUserId).toBeNull()
@@ -153,6 +168,32 @@ describe('helpers', () => {
     expect(acceptBatchId(b.ctx, 'batch-1', 'agent-batch')).toBe(b.ctx)
     const same = acceptBatchId(a.ctx, 'batch-1', 'agent-batch') as ActorContext
     expect(same.batchId).toBe('batch-1')
+  })
+})
+
+describe('withClientBatch', () => {
+  it('puts the context in the client batch and strips the batch fields', () => {
+    const { ctx } = setup()
+    const input = {
+      name: 't',
+      batchId: 'b-1',
+      batchKind: 'sql-import' as const,
+    }
+    const out = withClientBatch(ctx, input)
+    expect(out.rest).toEqual({ name: 't' })
+    expect(out.ctx).toMatchObject({ batchId: 'b-1', batchKind: 'sql-import' })
+  })
+
+  it('refuses a batch kind the server alone may choose', () => {
+    const { ctx } = setup()
+    const input = { batchId: 'b-1', batchKind: 'restore' as never }
+    expect(() => withClientBatch(ctx, input)).toThrow()
+  })
+
+  it('leaves the context alone when the client sent no batch', () => {
+    const { ctx } = setup()
+    const input = { name: 't', batchId: undefined as string | undefined }
+    expect(withClientBatch(ctx, input).ctx).toBe(ctx)
   })
 })
 
@@ -385,6 +426,29 @@ describe('relationships', () => {
     expect(rows[0].entityName).toBe('Orders.user_id -> Users.id')
     expect(json(rows[1].after)).toEqual({ cardinality: 'ONE_TO_ONE' })
   })
+
+  it('logs an edge path drag as a layout move', async () => {
+    const { ctx, whiteboardId } = setup()
+    const a = makeTable({ whiteboardId, name: 'Orders' })
+    const b = makeTable({ whiteboardId, name: 'Users' })
+    const ac = makeColumn({ tableId: a.id, name: 'user_id' })
+    const bc = makeColumn({ tableId: b.id, name: 'id' })
+    const rel = await createRelationship(
+      {
+        whiteboardId,
+        sourceTableId: a.id,
+        targetTableId: b.id,
+        sourceColumnId: ac.id,
+        targetColumnId: bc.id,
+        cardinality: 'MANY_TO_ONE',
+      },
+      ctx,
+    )
+    await updateRelationship(rel.id, { routingPoints: [{ x: 5, y: 6 }] }, ctx)
+    const last = events(whiteboardId).at(-1)!
+    expect(`${last.category}:${last.action}`).toBe('layout:move')
+    expect(json(last.after)).toEqual({ routingPoints: [{ x: 5, y: 6 }] })
+  })
 })
 
 describe('areas', () => {
@@ -484,5 +548,125 @@ describe('table references', () => {
       'reference:delete',
     ])
     expect(json(rows[0].after)).toMatchObject({ columns: ['id'] })
+  })
+})
+
+describe('applyLayoutPositions', () => {
+  it('logs table and area moves under one batch of the kind the caller names', async () => {
+    const { ctx, whiteboardId } = setup()
+    const t1 = makeTable({ whiteboardId, name: 'A' })
+    const t2 = makeTable({ whiteboardId, name: 'B' })
+    const area = await createArea(
+      {
+        whiteboardId,
+        name: 'Billing',
+        color: 'blue',
+        positionX: 0,
+        positionY: 0,
+        width: 400,
+        height: 300,
+      },
+      ctx,
+    )
+    const before = events(whiteboardId).length
+    await applyLayoutPositions(
+      [
+        { id: t1.id, positionX: 10, positionY: 20 },
+        { id: t2.id, positionX: 30, positionY: 40 },
+      ],
+      [{ id: area.id, positionX: 1, positionY: 2, width: 500, height: 350 }],
+      ctx,
+      'auto-layout',
+    )
+    const rows = events(whiteboardId).slice(before)
+    expect(rows).toHaveLength(3)
+    expect(rows.every((e) => e.category === 'layout')).toBe(true)
+    expect(rows.every((e) => e.batchKind === 'auto-layout')).toBe(true)
+    expect(new Set(rows.map((e) => e.batchId)).size).toBe(1)
+    expect(rows.map((e) => e.entityType).sort()).toEqual([
+      'area',
+      'table',
+      'table',
+    ])
+  })
+
+  it('uses the bulk-move kind and writes no event under SYSTEM', async () => {
+    const { ctx, whiteboardId } = setup()
+    const t = makeTable({ whiteboardId, name: 'A' })
+    await applyLayoutPositions(
+      [{ id: t.id, positionX: 3, positionY: 4 }],
+      [],
+      ctx,
+      'bulk-move',
+    )
+    expect(events(whiteboardId).at(-1)!.batchKind).toBe('bulk-move')
+    const count = events().length
+    await applyLayoutPositions(
+      [{ id: t.id, positionX: 7, positionY: 8 }],
+      [],
+      SYSTEM,
+      'bulk-move',
+    )
+    expect(events()).toHaveLength(count)
+  })
+})
+
+describe('restoreWhiteboardFromSnapshot', () => {
+  it('logs every wiped and re-inserted entity under one restore batch', async () => {
+    const { ctx, whiteboardId } = setup()
+    const t = makeTable({ whiteboardId, name: 'Users' })
+    makeColumn({ tableId: t.id, name: 'id', order: 0 })
+    const payload = await captureWhiteboardState(whiteboardId)
+    const extra = makeTable({ whiteboardId, name: 'Extra' })
+    const before = events(whiteboardId).length
+
+    await restoreWhiteboardFromSnapshot(whiteboardId, payload, ctx, {
+      snapshotId: 'snap-1',
+      label: 'Before launch',
+      createdAt: new Date('2026-01-02T03:04:05Z'),
+    })
+
+    const rows = events(whiteboardId).slice(before)
+    expect(new Set(rows.map((e) => e.batchId)).size).toBe(1)
+    expect(rows.every((e) => e.batchKind === 'restore')).toBe(true)
+    const kinds = rows.map((e) => `${e.entityType}:${e.action}`).sort()
+    expect(kinds).toEqual(
+      [
+        'board:update',
+        'column:create',
+        'column:delete',
+        'table:create',
+        'table:delete',
+        'table:delete',
+      ].sort(),
+    )
+    expect(
+      rows.find((e) => e.entityId === extra.id && e.action === 'delete'),
+    ).toBeTruthy()
+    const marker = rows.find((e) => e.entityType === 'board')!
+    expect(marker.entityName).toBe('Before launch')
+    expect(json(marker.after)).toMatchObject({
+      restoredVersion: { snapshotId: 'snap-1', label: 'Before launch' },
+    })
+  })
+
+  it('names the version by its date when it has no label', async () => {
+    const { ctx, whiteboardId } = setup()
+    const payload = await captureWhiteboardState(whiteboardId)
+    await restoreWhiteboardFromSnapshot(whiteboardId, payload, ctx, {
+      snapshotId: 'snap-2',
+      label: null,
+      createdAt: new Date('2026-01-02T03:04:05Z'),
+    })
+    const marker = events(whiteboardId).find((e) => e.entityType === 'board')!
+    expect(marker.entityName).toBe('2026-01-02T03:04:05.000Z')
+  })
+
+  it('writes no event under SYSTEM', async () => {
+    const { whiteboardId } = setup()
+    makeTable({ whiteboardId, name: 'Users' })
+    const payload = await captureWhiteboardState(whiteboardId)
+    await restoreWhiteboardFromSnapshot(whiteboardId, payload, SYSTEM)
+    expect(events(whiteboardId)).toHaveLength(0)
   })
 })

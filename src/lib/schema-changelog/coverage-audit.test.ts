@@ -32,10 +32,10 @@ const DATA_FILES = [
 ]
 
 /** Writers that do not take a context yet. Phase 2 of the change log removes each entry. */
-const PENDING_PHASE_2_WRITERS = new Set(['restoreWhiteboardFromSnapshot'])
+const PENDING_PHASE_2_WRITERS = new Set<string>()
 
 /** Files outside src/data/ that still write to a logged table. Phase 2 removes each entry. */
-const PENDING_PHASE_2_RAW_WRITERS = new Set(['lib/server-functions.ts'])
+const PENDING_PHASE_2_RAW_WRITERS = new Set<string>()
 
 const WRITE_PATTERN =
   /\b(insert|update|transaction)\(|INSERT INTO|\bUPDATE "|DELETE FROM|\b(updateArea|createArea|deleteArea)\(/

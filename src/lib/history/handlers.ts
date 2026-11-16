@@ -40,6 +40,7 @@ import {
   restoreWhiteboardFromSnapshot,
 } from '@/data/whiteboard-snapshot'
 import { emitToWhiteboard } from '@/routes/api/collaboration'
+import { userContext } from '@/lib/schema-changelog'
 
 /**
  * Reshape a flat, self-contained (DB-reloaded) SnapshotPayload into the
@@ -209,7 +210,16 @@ export async function restoreSnapshotHandler(
 
   // AC8: single transaction — any failure mid-restore leaves the live
   // diagram completely unchanged (see restoreWhiteboardFromSnapshot).
-  await restoreWhiteboardFromSnapshot(snapshot.whiteboardId, snapshot.payload)
+  await restoreWhiteboardFromSnapshot(
+    snapshot.whiteboardId,
+    snapshot.payload,
+    userContext(snapshot.whiteboardId, user.id),
+    {
+      snapshotId: snapshot.id,
+      label: snapshot.label,
+      createdAt: snapshot.createdAt,
+    },
+  )
 
   // AC5: notify every client connected to this whiteboard's namespace
   // (including the acting client's own socket — emitToWhiteboard broadcasts

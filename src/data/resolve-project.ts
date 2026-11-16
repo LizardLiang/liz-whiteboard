@@ -121,3 +121,34 @@ export async function getCanvasBoardProjectId(
     .get(boardId)
   return (row?.projectId as string | undefined) ?? null
 }
+
+/**
+ * Resolve the whiteboard a table belongs to.
+ * Returns null if the table does not exist.
+ */
+export async function getTableWhiteboardId(
+  tableId: string,
+): Promise<string | null> {
+  const row = db
+    .prepare('SELECT "whiteboardId" FROM "DiagramTable" WHERE "id" = ?')
+    .get(tableId)
+  return (row?.whiteboardId as string | undefined) ?? null
+}
+
+/**
+ * Resolve the whiteboard a column belongs to (via its table).
+ * Returns null if the column does not exist.
+ */
+export async function getColumnWhiteboardId(
+  columnId: string,
+): Promise<string | null> {
+  const row = db
+    .prepare(
+      `SELECT t."whiteboardId" AS "whiteboardId"
+       FROM "Column" c
+       INNER JOIN "DiagramTable" t ON t."id" = c."tableId"
+       WHERE c."id" = ?`,
+    )
+    .get(columnId)
+  return (row?.whiteboardId as string | undefined) ?? null
+}

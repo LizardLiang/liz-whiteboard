@@ -18,6 +18,7 @@ import { findAreasByWhiteboard } from './area'
 import { findShapesByWhiteboard } from './shape'
 import { findConnectorsByWhiteboard } from './connector'
 import { findWhiteboardById } from './whiteboard'
+import type { ChangeContext } from '@/lib/schema-changelog'
 import type {
   PersistedSnapshotPayload,
   SnapshotPayload,
@@ -27,6 +28,10 @@ import {
   db,
   genId,
   insert,
+  mapArea,
+  mapColumn,
+  mapDiagramTable,
+  mapRelationship,
   mapWhiteboardSnapshot,
   nowMs,
   toDbBool,
@@ -34,6 +39,12 @@ import {
   transaction,
   update,
 } from '@/db'
+import {
+  eventRow,
+  recordChange,
+  relationshipDisplayName,
+  withBatch,
+} from '@/lib/schema-changelog'
 
 /**
  * Coerce a captured `createdAt` back to the unix-ms storage form expected by
@@ -188,6 +199,182 @@ export async function findSnapshotById(
   )
 }
 
+/** The saved version a restore brings back. */
+export interface RestoredVersion {
+  snapshotId: string
+  label: string | null
+  createdAt: Date
+}
+
+function tableNameOfRow(
+  tables: Array<{ id: string; name: string }>,
+  id: string,
+): string | null {
+  return tables.find((t) => t.id === id)?.name ?? null
+}
+
+/**
+ * Log a delete for every table, column, relationship and area the restore is
+ * about to wipe. Runs before the wipe, while the rows can still be read.
+ */
+function logWipedEntities(whiteboardId: string, ctx: ChangeContext): void {
+  const tables = db
+    .prepare('SELECT * FROM "DiagramTable" WHERE "whiteboardId" = ?')
+    .all(whiteboardId)
+    .map((r) => mapDiagramTable(r)!)
+  for (const table of tables) {
+    for (const row of db
+      .prepare('SELECT * FROM "Column" WHERE "tableId" = ?')
+      .all(table.id)) {
+      const column = mapColumn(row)!
+      recordChange(ctx, {
+        category: 'schema',
+        entityType: 'column',
+        action: 'delete',
+        entityId: column.id,
+        entityName: column.name,
+        tableId: table.id,
+        tableName: table.name,
+        before: eventRow(column),
+      })
+    }
+  }
+  for (const row of db
+    .prepare('SELECT * FROM "Relationship" WHERE "whiteboardId" = ?')
+    .all(whiteboardId)) {
+    const relationship = mapRelationship(row)!
+    recordChange(ctx, {
+      category: 'schema',
+      entityType: 'relationship',
+      action: 'delete',
+      entityId: relationship.id,
+      entityName: relationshipDisplayName(relationship),
+      tableId: relationship.sourceTableId,
+      tableName: tableNameOfRow(tables, relationship.sourceTableId),
+      before: eventRow(relationship),
+    })
+  }
+  for (const table of tables) {
+    recordChange(ctx, {
+      category: 'schema',
+      entityType: table.sourceTableId ? 'reference' : 'table',
+      action: 'delete',
+      entityId: table.id,
+      entityName: table.name,
+      tableId: table.id,
+      tableName: table.name,
+      before: eventRow(table),
+    })
+  }
+  for (const row of db
+    .prepare('SELECT * FROM "Area" WHERE "whiteboardId" = ?')
+    .all(whiteboardId)) {
+    const area = mapArea(row)!
+    recordChange(ctx, {
+      category: 'schema',
+      entityType: 'area',
+      action: 'delete',
+      entityId: area.id,
+      entityName: area.name,
+      before: eventRow(area),
+    })
+  }
+}
+
+/**
+ * Log a create for every row the restore inserted, read back from the
+ * database so the event carries the id each row ended up with.
+ */
+function logRestoredEntities(whiteboardId: string, ctx: ChangeContext): void {
+  const tables = db
+    .prepare('SELECT * FROM "DiagramTable" WHERE "whiteboardId" = ?')
+    .all(whiteboardId)
+    .map((r) => mapDiagramTable(r)!)
+  for (const table of tables) {
+    recordChange(ctx, {
+      category: 'schema',
+      entityType: table.sourceTableId ? 'reference' : 'table',
+      action: 'create',
+      entityId: table.id,
+      entityName: table.name,
+      tableId: table.id,
+      tableName: table.name,
+      after: eventRow(table),
+    })
+    for (const row of db
+      .prepare('SELECT * FROM "Column" WHERE "tableId" = ?')
+      .all(table.id)) {
+      const column = mapColumn(row)!
+      recordChange(ctx, {
+        category: 'schema',
+        entityType: 'column',
+        action: 'create',
+        entityId: column.id,
+        entityName: column.name,
+        tableId: table.id,
+        tableName: table.name,
+        after: eventRow(column),
+      })
+    }
+  }
+  for (const row of db
+    .prepare('SELECT * FROM "Relationship" WHERE "whiteboardId" = ?')
+    .all(whiteboardId)) {
+    const relationship = mapRelationship(row)!
+    recordChange(ctx, {
+      category: 'schema',
+      entityType: 'relationship',
+      action: 'create',
+      entityId: relationship.id,
+      entityName: relationshipDisplayName(relationship),
+      tableId: relationship.sourceTableId,
+      tableName: tableNameOfRow(tables, relationship.sourceTableId),
+      after: eventRow(relationship),
+    })
+  }
+  for (const row of db
+    .prepare('SELECT * FROM "Area" WHERE "whiteboardId" = ?')
+    .all(whiteboardId)) {
+    const area = mapArea(row)!
+    recordChange(ctx, {
+      category: 'schema',
+      entityType: 'area',
+      action: 'create',
+      entityId: area.id,
+      entityName: area.name,
+      after: eventRow(area),
+    })
+  }
+}
+
+/**
+ * One marker event names the version a restore brought back. `entityName` is
+ * the version label, or its date (ISO 8601) when it has none; `after` holds
+ * `{ restoredVersion: { snapshotId, label, createdAt } }`. The Changes tab
+ * reads the summary "restored version <label or date>" from it.
+ */
+function logRestoreMarker(
+  whiteboardId: string,
+  ctx: ChangeContext,
+  version: RestoredVersion,
+): void {
+  const createdAt = version.createdAt.toISOString()
+  recordChange(ctx, {
+    category: 'schema',
+    entityType: 'board',
+    action: 'update',
+    entityId: whiteboardId,
+    entityName: version.label ?? createdAt,
+    after: {
+      restoredVersion: {
+        snapshotId: version.snapshotId,
+        label: version.label,
+        createdAt,
+      },
+    },
+  })
+}
+
 /**
  * Atomically replace a whiteboard's live diagram with a snapshot's payload.
  *
@@ -215,8 +402,13 @@ export async function findSnapshotById(
 export async function restoreWhiteboardFromSnapshot(
   whiteboardId: string,
   payload: SnapshotPayload | PersistedSnapshotPayload,
+  ctx: ChangeContext,
+  version?: RestoredVersion,
 ): Promise<void> {
   transaction(() => {
+    const batchCtx = withBatch(ctx, genId(), 'restore')
+    logWipedEntities(whiteboardId, batchCtx)
+
     // FR-035/FR-035a: the snapshot system enumerates entities in three
     // places (capture above, this wipe, and the re-insert below). A table
     // missing from any one of them means every restore silently deletes
@@ -369,5 +561,8 @@ export async function restoreWhiteboardFromSnapshot(
       textSource: payload.whiteboard.textSource,
       updatedAt: ts,
     })
+
+    logRestoredEntities(whiteboardId, batchCtx)
+    if (version) logRestoreMarker(whiteboardId, batchCtx, version)
   })
 }

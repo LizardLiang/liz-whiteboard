@@ -4177,6 +4177,7 @@ function ReactFlowWhiteboardInner({
             const result = await updateTablePositionsBulk({
               data: {
                 whiteboardId,
+                batchKind: 'bulk-move',
                 positions: dragged.map((d) => ({
                   id: d.id,
                   positionX: d.position.x,

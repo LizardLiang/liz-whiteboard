@@ -13,7 +13,8 @@ import { createRelationship } from '@/data/relationship'
 import { getWhiteboardProjectId } from '@/data/resolve-project'
 import { requireServerFnRole } from '@/lib/auth/require-role'
 import { emitToWhiteboard } from '@/routes/api/collaboration'
-import { userContext } from '@/lib/schema-changelog'
+import type { ClientBatch } from '@/lib/schema-changelog/client-batch'
+import { userContext, withClientBatch } from '@/lib/schema-changelog'
 
 /**
  * Create a relationship, then broadcast `relationship:created` to every client
@@ -30,14 +31,15 @@ import { userContext } from '@/lib/schema-changelog'
  */
 export async function createRelationshipHandler(
   { user }: AuthContext,
-  data: CreateRelationship,
+  input: CreateRelationship & ClientBatch,
 ) {
+  const { rest: data, ctx } = withClientBatch(
+    userContext(input.whiteboardId, user.id),
+    input,
+  )
   const projectId = await getWhiteboardProjectId(data.whiteboardId)
   await requireServerFnRole(user.id, projectId, 'EDITOR')
-  const relationship = await createRelationship(
-    data,
-    userContext(data.whiteboardId, user.id),
-  )
+  const relationship = await createRelationship(data, ctx)
   // The row is already persisted: a broadcast failure must not turn into a
   // create failure, or the client would report an error for a saved line.
   try {

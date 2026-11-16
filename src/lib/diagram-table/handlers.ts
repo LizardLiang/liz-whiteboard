@@ -19,7 +19,8 @@ import { createDiagramTable } from '@/data/diagram-table'
 import { getWhiteboardProjectId } from '@/data/resolve-project'
 import { requireServerFnRole } from '@/lib/auth/require-role'
 import { emitToWhiteboard } from '@/routes/api/collaboration'
-import { userContext } from '@/lib/schema-changelog'
+import type { ClientBatch } from '@/lib/schema-changelog/client-batch'
+import { userContext, withClientBatch } from '@/lib/schema-changelog'
 
 /**
  * Create a new table, then broadcast `table:created` to every client
@@ -46,15 +47,16 @@ import { userContext } from '@/lib/schema-changelog'
  */
 export async function createTableHandler(
   { user }: AuthContext,
-  data: CreateTable,
+  input: CreateTable & ClientBatch,
 ) {
+  const { rest: data, ctx } = withClientBatch(
+    userContext(input.whiteboardId, user.id),
+    input,
+  )
   const projectId = await getWhiteboardProjectId(data.whiteboardId)
   await requireServerFnRole(user.id, projectId, 'EDITOR')
   try {
-    const table = await createDiagramTable(
-      data,
-      userContext(data.whiteboardId, user.id),
-    )
+    const table = await createDiagramTable(data, ctx)
     // Best-effort live broadcast: the table is already persisted, so a
     // broadcast failure must never surface as a create failure (which would
     // roll back the client's optimistic insert and then collide with the

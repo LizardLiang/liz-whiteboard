@@ -783,6 +783,9 @@ export const bulkUpdatePositionsSchema = z.object({
   // Written in the same transaction as the table positions; membership
   // (memberTableIds) is never part of this payload.
   areas: z.array(areaBoundsSchema).max(1000).optional(),
+  // What the caller is doing, so the change log groups the move under the
+  // right kind of batch. A missing value means a drag of several tables.
+  batchKind: z.enum(['auto-layout', 'bulk-move']).optional(),
 })
 
 export type BulkUpdatePositions = z.infer<typeof bulkUpdatePositionsSchema>

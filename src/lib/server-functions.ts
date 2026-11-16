@@ -4,7 +4,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import type {
-  AreaBounds,
   BulkUpdatePositions,
   CreateRelationship,
   CreateTable,
@@ -35,17 +34,17 @@ import {
   updateDiagramTablePosition,
 } from '@/data/diagram-table'
 import { findRelationshipsByWhiteboardIdWithDetails } from '@/data/relationship'
-import { findAreasByWhiteboard } from '@/data/area'
+import { applyLayoutPositions, findAreasByWhiteboard } from '@/data/area'
 import { findShapesByWhiteboard } from '@/data/shape'
 import { findConnectorsByWhiteboard } from '@/data/connector'
 import { findCommentsByWhiteboardId } from '@/data/comment'
 import { computeAreaAwareLayout } from '@/lib/auto-layout/area-aware-layout'
 import { buildServerLayoutInput } from '@/lib/auto-layout/server-layout-input'
-import { nowMs, transaction, update } from '@/db'
 import { requireAuth } from '@/lib/auth/middleware'
 import { getOAuthConfig } from '@/lib/oauth/config'
 import {
   getTableProjectId,
+  getTableWhiteboardId,
   getWhiteboardProjectId,
 } from '@/data/resolve-project'
 import { requireServerFnRole } from '@/lib/auth/require-role'
@@ -59,7 +58,8 @@ import {
   resolveTableReferences,
   updateTableReference,
 } from '@/data/table-reference'
-import { PHASE2_PLACEHOLDER_CTX } from '@/lib/schema-changelog'
+import type { ClientBatch } from '@/lib/schema-changelog/client-batch'
+import { userContext } from '@/lib/schema-changelog'
 
 /**
  * WhiteboardWithDiagram plus the requesting user's effective role on the
@@ -235,8 +235,15 @@ export const getWhiteboardComments = createServerFn({
 export const createTable = createServerFn({
   method: 'POST',
 })
-  .validator((data: CreateTable) => data)
+  .validator((data: CreateTable & ClientBatch) => data)
   .handler(requireAuth(createTableHandler))
+
+/** The whiteboard a table sits on. The caller has already passed a role check on it. */
+async function requireTableWhiteboardId(tableId: string): Promise<string> {
+  const whiteboardId = await getTableWhiteboardId(tableId)
+  if (!whiteboardId) throw new Error('Table not found')
+  return whiteboardId
+}
 
 /**
  * GH #131: this is the live single-table position-update endpoint since
@@ -267,7 +274,7 @@ export const updateTablePosition = createServerFn({
           data.id,
           data.positionX,
           data.positionY,
-          PHASE2_PLACEHOLDER_CTX,
+          userContext(await requireTableWhiteboardId(data.id), user.id),
         )
         return table
       } catch (error) {
@@ -276,35 +283,6 @@ export const updateTablePosition = createServerFn({
       }
     }),
   )
-
-/**
- * Write table positions and area bounds in one transaction (all-or-nothing).
- * Bounds only for areas: membership (memberTableIds) is never rewritten.
- */
-function persistLayout(
-  positions: Array<{ id: string; positionX: number; positionY: number }>,
-  areas: Array<AreaBounds>,
-): void {
-  transaction(() => {
-    const ts = nowMs()
-    for (const p of positions) {
-      update('DiagramTable', p.id, {
-        positionX: p.positionX,
-        positionY: p.positionY,
-        updatedAt: ts,
-      })
-    }
-    for (const a of areas) {
-      update('Area', a.id, {
-        positionX: a.positionX,
-        positionY: a.positionY,
-        width: a.width,
-        height: a.height,
-        updatedAt: ts,
-      })
-    }
-  })
-}
 
 /**
  * Server function to bulk-update table positions (used by Auto Layout).
@@ -360,7 +338,12 @@ export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
 
         try {
           // Single transaction — all-or-nothing per NFR Reliability.
-          persistLayout(positions, areas ?? [])
+          await applyLayoutPositions(
+            positions,
+            areas ?? [],
+            userContext(whiteboardId, user.id),
+            data.batchKind ?? 'bulk-move',
+          )
         } catch (error) {
           console.error('Error bulk-updating table positions:', error)
           throw error
@@ -382,7 +365,7 @@ export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
 export const createRelationshipFn = createServerFn({
   method: 'POST',
 })
-  .validator((data: CreateRelationship) => data)
+  .validator((data: CreateRelationship & ClientBatch) => data)
   .handler(requireAuth(createRelationshipHandler))
 
 /**
@@ -481,13 +464,15 @@ export const computeAutoLayout = createServerFn({
                   areas: existingAreas,
                 })
 
-          persistLayout(
+          await applyLayoutPositions(
             positions.map((p) => ({
               id: p.id,
               positionX: p.x,
               positionY: p.y,
             })),
             areas,
+            userContext(data.whiteboardId, user.id),
+            'auto-layout',
           )
 
           return { positions, areas }
@@ -603,7 +588,10 @@ export const createTableReferenceFn = createServerFn({
       const projectId = await getWhiteboardProjectId(data.whiteboardId)
       await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
-        return await createTableReference(data, PHASE2_PLACEHOLDER_CTX)
+        return await createTableReference(
+          data,
+          userContext(data.whiteboardId, user.id),
+        )
       } catch (error) {
         console.error('Error creating table reference:', error)
         throw error
@@ -638,7 +626,7 @@ export const updateTableReferenceFn = createServerFn({
         return await updateTableReference(
           tableId,
           changes,
-          PHASE2_PLACEHOLDER_CTX,
+          userContext(await requireTableWhiteboardId(tableId), user.id),
         )
       } catch (error) {
         console.error('Error updating table reference:', error)
@@ -664,7 +652,10 @@ export const deleteTableReferenceFn = createServerFn({
       const projectId = await getTableProjectId(data.tableId)
       await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
-        return await deleteTableReference(data.tableId, PHASE2_PLACEHOLDER_CTX)
+        return await deleteTableReference(
+          data.tableId,
+          userContext(await requireTableWhiteboardId(data.tableId), user.id),
+        )
       } catch (error) {
         console.error('Error deleting table reference:', error)
         throw error
