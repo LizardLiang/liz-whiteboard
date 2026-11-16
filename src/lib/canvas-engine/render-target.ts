@@ -1,5 +1,7 @@
+import { textCachesFor } from './text-cache'
 import type { Point } from './camera'
 import type { CanvasFontStyle, CanvasFontWeight } from './scene'
+import type { TextCaches } from './text-cache'
 
 export type RenderPathCommand =
   | { kind: 'move'; point: Point }
@@ -47,6 +49,12 @@ export interface CanvasFontSpec {
  * targets only translate those decisions to a concrete output format.
  */
 export interface PersistentRenderTarget {
+  /**
+   * Cross-frame caches for text measured with this target's real font engine.
+   * Absent on targets whose measurer is not stable across frames (SVG export,
+   * test stubs), which then lay text out afresh every time.
+   */
+  textCaches?: TextCaches
   measureText: (text: string, spec: CanvasFontSpec) => number
   rect: (
     x: number,
@@ -111,11 +119,22 @@ export function canvasFont(spec: CanvasFontSpec): string {
 export class CanvasRenderTarget implements PersistentRenderTarget {
   private readonly alphas: Array<number> = []
 
-  constructor(private readonly ctx: CanvasRenderingContext2D) {}
+  /**
+   * Cross-frame text caches for this context. A target is built per frame, so
+   * the caches hang off the context, not the target.
+   */
+  readonly textCaches: TextCaches
+
+  constructor(private readonly ctx: CanvasRenderingContext2D) {
+    this.textCaches = textCachesFor(ctx)
+  }
 
   measureText(text: string, spec: CanvasFontSpec): number {
-    this.ctx.font = canvasFont(spec)
-    return this.ctx.measureText(text).width
+    const font = canvasFont(spec)
+    return this.textCaches.width(font, text, () => {
+      this.ctx.font = font
+      return this.ctx.measureText(text).width
+    })
   }
 
   rect(

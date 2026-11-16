@@ -758,6 +758,8 @@ export function CanvasBoard({
     [camera, resolvedTheme],
   )
 
+  const cullEnabled = renderFraming === undefined
+
   const draw = useCallback(() => {
     const ctx = ctxRef.current
     if (!ctx || viewport.width === 0 || viewport.height === 0) return
@@ -766,11 +768,14 @@ export function CanvasBoard({
       diagramStyle,
       flowDots,
       roleLabels,
+      // A server render takes the whole framed scene, never a culled one.
+      cull: cullEnabled,
     })
   }, [
     camera,
     diagramStyle,
     flowDots,
+    cullEnabled,
     input.displayScene,
     resolvedTheme,
     roleLabels,
@@ -1130,6 +1135,7 @@ export function CanvasBoard({
           <PerfTrackerPanel
             getZoom={() => cameraRef.current.zoom}
             getItemCount={() => input.displayScene.elements.length}
+            showEdgeToggle={false}
           />
         </div>
       )}

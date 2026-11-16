@@ -19,7 +19,7 @@
 //     8 world units, i.e. 0.8 screen px at 0.1x zoom and 16 at 2x — invisible
 //     when zoomed out and clumsy when zoomed in.
 
-import { worldToScreen } from './camera'
+import { visibleWorldRect, worldToScreen } from './camera'
 import {
   DEFAULT_ELEMENT_STYLE,
   bounds,
@@ -33,6 +33,7 @@ import {
   attachPoint,
   bendMidpoint,
   clipToOutline,
+  connectorBounds,
   curveEndDirection,
 } from './connector-geometry'
 import { connectorCurveOf, connectorPathOf, connectorTailOf } from './hit-test'
@@ -46,6 +47,7 @@ import {
   selectionRects,
 } from './text-layout'
 import { CanvasRenderTarget, canvasFont } from './render-target'
+import { textCachesFor } from './text-cache'
 import {
   CARD,
   CARD_EDGE_WIDTH,
@@ -79,6 +81,7 @@ import {
   tableCellRects,
   tablePlusRect,
 } from './table'
+import type { TextCaches } from './text-cache'
 import type {
   TableAffordance,
   TableGrip,
@@ -262,6 +265,12 @@ export interface DrawOptions {
   flowDots?: 'path' | 'always'
   /** Translated card role names; English when absent. */
   roleLabels?: CardRoleLabels
+  /**
+   * Skip elements that cannot reach the viewport. On by default; the
+   * server-render path (framed screenshots) turns it off so it always paints
+   * the whole scene.
+   */
+  cull?: boolean
 }
 
 /** Opacity of everything outside a lit flow path. */
@@ -590,9 +599,13 @@ export function measurerFor(
   spec: CanvasFontSpec,
 ): TextMeasurer {
   const font = canvasFont(spec)
+  const caches = textCachesFor(ctx)
   return (text: string, override?: CanvasFontSpec) => {
-    ctx.font = override ? canvasFont(override) : font
-    return ctx.measureText(text).width
+    const applied = override ? canvasFont(override) : font
+    return caches.width(applied, text, () => {
+      ctx.font = applied
+      return ctx.measureText(text).width
+    })
   }
 }
 
@@ -829,6 +842,7 @@ export function layoutElementText(
   element: CanvasElement,
   measure: TextMeasurer,
   look?: CardLook,
+  caches?: TextCaches,
 ): TextLayout {
   const frame = textFrame(element, look)
   const text = element.text ?? ''
@@ -838,17 +852,32 @@ export function layoutElementText(
   // Runs only change the layout when some survive clamping to the text; a
   // label without them takes the single-font path untouched.
   const hasRuns = normalizeRuns(style.textRuns, text.length).length > 0
-  return layoutText(
-    text,
-    {
-      ...DEFAULT_TEXT_STYLE,
-      fontSize: element.style.fontSize,
-      align: element.style.textAlign,
-    },
+  const segments = hasRuns ? resolveRuns(text, style) : undefined
+  const build = () =>
+    layoutText(
+      text,
+      {
+        ...DEFAULT_TEXT_STYLE,
+        fontSize: element.style.fontSize,
+        align: element.style.textAlign,
+      },
+      frame.maxWidth,
+      measure,
+      segments,
+    )
+  if (!caches) return build()
+  // Every input the layout reads. `measure` reads the element's weight and
+  // style too (see `drawElementText`), so they are part of the key.
+  const key = [
+    element.style.fontSize,
+    element.style.fontWeight,
+    element.style.fontStyle,
+    element.style.textAlign,
     frame.maxWidth,
-    measure,
-    hasRuns ? resolveRuns(text, style) : undefined,
-  )
+    segments ? caches.idOf(segments) : 0,
+    text,
+  ].join('|')
+  return caches.layout(key, build)
 }
 
 /**
@@ -1177,10 +1206,17 @@ function drawTable(
   theme: CanvasTheme,
   openCellKey?: string,
   zoom = 1,
+  cull?: WorldRect,
 ): void {
   const table = element.table
   if (!table) return
-  const cells = tableCellRects(element)
+  const allCells = tableCellRects(element)
+  // A cell whose rect misses the cull rect paints nothing the viewer can see:
+  // its fill is inside the rect. Its text is checked separately below, since
+  // text taller than its cell runs on past the bottom edge.
+  const cells = cull
+    ? allCells.filter(({ rect }) => rectsOverlap(cull, rect))
+    : allCells
   for (const { rowId, colId, rect } of cells) {
     const cell = lookupCell(table.cells, cellKey(rowId, colId))
     const header = table.headerRow && table.rows[0].id === rowId
@@ -1221,7 +1257,7 @@ function drawTable(
       strokeWidth,
     })
   }
-  for (const { rowId, colId } of cells) {
+  for (const { rowId, colId, rect } of allCells) {
     // The cell being edited is drawn by its own virtual text element.
     if (cellKey(rowId, colId) === openCellKey) continue
     const cell = lookupCell(table.cells, cellKey(rowId, colId))
@@ -1229,6 +1265,13 @@ function drawTable(
     if (!cellTextReadable(element.style.fontSize, cell.textRuns, zoom)) continue
     const virtual = cellTextElement(element, rowId, colId)
     if (!virtual) continue
+    if (
+      cull &&
+      !rectsOverlap(cull, rect) &&
+      !textReachesView(virtual, cull, target, undefined)
+    ) {
+      continue
+    }
     const header = table.headerRow && table.rows[0].id === rowId
     const style = tableCellTextStyle(
       virtual.style,
@@ -1310,12 +1353,13 @@ function drawElement(
   look?: CardLook,
   openCellKey?: string,
   zoom = 1,
+  cull?: WorldRect,
 ): TextLayout | null {
   if (isCanvasShapeKind(element.kind)) {
     drawShape(target, element, look)
     drawCardTopRow(target, element, look)
   } else if (element.kind === 'table') {
-    drawTable(target, element, theme, openCellKey, zoom)
+    drawTable(target, element, theme, openCellKey, zoom, cull)
     // The cells draw their own text; the table has no label of its own.
     return null
   } else if (element.kind === 'group') {
@@ -1365,7 +1409,7 @@ function drawElementText(
   const fontSpec = fontSpecOf(element.style)
   const measure = (value: string, spec?: CanvasFontSpec) =>
     target.measureText(value, spec ?? fontSpec)
-  const layout = layoutElementText(element, measure, look)
+  const layout = layoutElementText(element, measure, look, target.textCaches)
   const frame = textFrame(element, look)
   const originY = textOriginY(element, layout, look)
 
@@ -2494,6 +2538,138 @@ function drawHighlight(
   ctx.restore()
 }
 
+/** Screen-space margin kept around the viewport when culling, in px. */
+export const CULL_MARGIN_PX = 64
+/** Floor for the world-space margin, so shadows and strokes at high zoom fit. */
+const CULL_MARGIN_MIN_WORLD = 48
+
+/** True when two world rects share any area (touching edges count). */
+export function rectsOverlap(a: WorldRect, b: WorldRect): boolean {
+  return (
+    a.x <= b.x + b.width &&
+    b.x <= a.x + a.width &&
+    a.y <= b.y + b.height &&
+    b.y <= a.y + a.height
+  )
+}
+
+/**
+ * The world rect worth drawing for a camera and viewport: the visible rect
+ * plus a margin that covers drop shadows, arrowheads and stroke overhang.
+ */
+export function cullRectFor(camera: Camera, viewport: Viewport): WorldRect {
+  const visible = visibleWorldRect(camera, viewport)
+  const margin = Math.max(CULL_MARGIN_PX / camera.zoom, CULL_MARGIN_MIN_WORLD)
+  return {
+    x: visible.x - margin,
+    y: visible.y - margin,
+    width: visible.width + margin * 2,
+    height: visible.height + margin * 2,
+  }
+}
+
+/** Grow a rect by `by` on every side. */
+function inflate(rect: WorldRect, by: number): WorldRect {
+  return {
+    x: rect.x - by,
+    y: rect.y - by,
+    width: rect.width + by * 2,
+    height: rect.height + by * 2,
+  }
+}
+
+/**
+ * True when a text element's label, laid out, reaches into the cull rect from
+ * above. Text taller than its box runs on PAST the bottom edge (never above the
+ * top, see `textOriginY`) and at most a glyph past the sides, so only an element
+ * whose box sits wholly above the view can reach into it this way.
+ */
+function textReachesView(
+  element: CanvasElement,
+  cull: WorldRect,
+  target: PersistentRenderTarget,
+  look: CardLook | undefined,
+): boolean {
+  const text = element.text ?? ''
+  if (text.length === 0) return false
+  const side = element.style.fontSize * 2
+  const box = textBox(element)
+  if (
+    box.x - side > cull.x + cull.width ||
+    box.x + box.width + side < cull.x ||
+    box.y > cull.y + cull.height
+  ) {
+    return false
+  }
+  const fontSpec = fontSpecOf(element.style)
+  const layout = layoutElementText(
+    element,
+    (value, spec) => target.measureText(value, spec ?? fontSpec),
+    look,
+    target.textCaches,
+  )
+  return textOriginY(element, layout, look) + layout.height >= cull.y
+}
+
+/**
+ * Whether a non-connector element can put any pixel inside the cull rect: its
+ * box with stroke overhang (inflated to the circumscribed square when rotated,
+ * so rotation can never hide a corner), or its label spilling past the box.
+ */
+function elementMayShow(
+  element: CanvasElement,
+  cull: WorldRect,
+  target: PersistentRenderTarget,
+  look: CardLook | undefined,
+): boolean {
+  let box: WorldRect = inflate(bounds(element), element.style.strokeWidth)
+  if (element.rotation % 360 !== 0) {
+    const half = Math.hypot(element.width, element.height) / 2
+    const cx = element.x + element.width / 2
+    const cy = element.y + element.height / 2
+    box = inflate(
+      { x: cx, y: cy, width: 0, height: 0 },
+      half + element.style.strokeWidth,
+    )
+  }
+  if (rectsOverlap(cull, box)) return true
+  if (element.kind === 'table') return false
+  return textReachesView(element, cull, target, look)
+}
+
+/**
+ * Whether a connector can put any pixel inside the cull rect. The box is the
+ * whole path, so a connector with both ends off-screen that crosses the view is
+ * kept. A curve's control points are folded in when the path alone misses: they
+ * bound the true curve, so a bow that the sampled path under-reports still
+ * counts. The cull rect's margin covers the arrowhead and the stroke.
+ */
+function connectorMayShow(
+  scene: Scene,
+  element: CanvasElement,
+  path: ReadonlyArray<Point> | null,
+  cull: WorldRect,
+): boolean {
+  if (!path || path.length < 2) return false
+  const box = connectorBounds(path)
+  if (!box) return false
+  const reach = inflate(box, element.style.strokeWidth + CONNECTOR_ARROW_SIZE)
+  if (rectsOverlap(cull, reach)) return true
+  const extra: Array<Point> = []
+  const curve = connectorCurveOf(scene, element)
+  if (curve) extra.push(curve.from, curve.c0, curve.c1, curve.to)
+  const tail = connectorTailOf(scene, element)
+  if (tail) extra.push(tail.join, tail.c0, tail.c1, tail.to)
+  if (extra.length === 0) return false
+  const hull = connectorBounds([...path, ...extra])
+  return hull
+    ? rectsOverlap(
+        cull,
+        inflate(hull, element.style.strokeWidth + CONNECTOR_ARROW_SIZE),
+      )
+    : false
+}
+
 const NO_EMPHASIZED_IDS: ReadonlySet<string> = new Set()
 
 /**
@@ -2516,6 +2692,7 @@ export function renderPersistentScene(
   flow?: FlowRender | null,
   roleLabels?: CardRoleLabels,
   zoom = 1,
+  cull?: WorldRect,
 ): TextLayout | null {
   const look = cardLookOf(diagramStyle, theme, roleLabels)
   // Flow cues belong to the card look; `classic` never reads them.
@@ -2524,9 +2701,17 @@ export function renderPersistentScene(
   let requestedLayout: TextLayout | null = null
   for (const element of scene.elements) {
     if (element.connector) {
-      const preparedPath = preparedConnectorPaths?.has(element.id)
+      let preparedPath = preparedConnectorPaths?.has(element.id)
         ? preparedConnectorPaths.get(element.id)
         : undefined
+      if (cull) {
+        // Resolve the path once: it decides whether to draw, and is then
+        // handed to `drawConnector` so it is not resolved a second time.
+        if (preparedPath === undefined) {
+          preparedPath = connectorPathOf(scene, element)
+        }
+        if (!connectorMayShow(scene, element, preparedPath, cull)) continue
+      }
       const resting = look ? restingLine(element, scene, look.theme) : undefined
       if (!activeFlow || !look) {
         drawConnector(target, element, scene, preparedPath, look, resting)
@@ -2567,6 +2752,18 @@ export function renderPersistentScene(
   }
   for (const element of scene.elements) {
     if (element.connector) continue
+    if (
+      cull &&
+      !(emphasizedIds.has(element.id) || hoveredId === element.id) &&
+      !(
+        layoutElementId !== undefined &&
+        (layoutElementId === element.id ||
+          layoutElementId.startsWith(`${element.id}:`))
+      ) &&
+      !elementMayShow(element, cull, target, look)
+    ) {
+      continue
+    }
     const faded =
       activeFlow !== null && lit && !activeFlow.elements.has(element.id)
     if (faded) target.beginFade(FLOW_FADE)
@@ -2581,6 +2778,7 @@ export function renderPersistentScene(
         ? layoutElementId.slice(element.id.length + 1)
         : undefined,
       zoom,
+      cull,
     )
     if (faded) target.endFade()
     if (element.id === layoutElementId) requestedLayout = layout
@@ -2732,6 +2930,7 @@ export function drawScene(
     flow,
     options.roleLabels,
     camera.zoom,
+    options.cull === false ? undefined : cullRectFor(camera, viewport),
   )
   if (selection.draft) {
     // Never emphasized: a draft is never in `selection.ids` (it is not yet
