@@ -132,7 +132,13 @@ function samplePolyline(
     const a = poly[i - 1]
     const b = poly[i]
     const len = Math.hypot(b.x - a.x, b.y - a.y)
-    while (len > 0 && nextAt <= travelled + len) {
+    // `out.length` cap: a hard stop even if `step` is tiny relative to the
+    // path, so no input can make this loop run away.
+    while (
+      len > 0 &&
+      nextAt <= travelled + len &&
+      out.length <= MAX_SAMPLES + 2
+    ) {
       const t = (nextAt - travelled) / len
       out.push({
         x: a.x + (b.x - a.x) * t,
@@ -201,6 +207,12 @@ export function placeEdgeLabel(input: LabelPlacementInput): LabelPlacement {
   let length = 0
   for (let i = 1; i < poly.length; i++) {
     length += Math.hypot(poly[i].x - poly[i - 1].x, poly[i].y - poly[i - 1].y)
+  }
+  // A non-finite length (a table position near Number.MAX_VALUE, written by a
+  // peer or the MCP) would give an infinite step, and `nextAt <= Infinity`
+  // never ends the sampling loop. Keep the midpoint instead.
+  if (!Number.isFinite(length) || length <= 0) {
+    return { x: mid.x, y: mid.y, covered: true }
   }
   const step = Math.max(input.step ?? DEFAULT_STEP, length / MAX_SAMPLES)
   const samples = samplePolyline(poly, step)

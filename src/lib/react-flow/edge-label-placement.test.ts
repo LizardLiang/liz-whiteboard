@@ -37,6 +37,28 @@ describe('placeEdgeLabel', () => {
     expect(r.x >= 630 || r.x <= 370).toBe(true)
   })
 
+  it('returns at once for a path whose length overflows to Infinity', () => {
+    // Positions near Number.MAX_VALUE: the length overflows, and an infinite
+    // sample step used to spin the sampling loop forever.
+    const r = placeEdgeLabel({
+      ...base,
+      path: 'M-1e308 0L1e308 0',
+      mid: { x: 0, y: 0 },
+      obstacles: [{ x: -1e308, y: -50, width: 1e308, height: 100 }],
+    })
+    expect(r).toEqual({ x: 0, y: 0, covered: true })
+  })
+
+  it('stays bounded on a huge but finite path', () => {
+    const r = placeEdgeLabel({
+      ...base,
+      path: 'M0 0L1e300 0',
+      mid: { x: 5e299, y: 0 },
+      obstacles: [{ x: -1, y: -50, width: 1e301, height: 100 }],
+    })
+    expect(r.covered).toBe(true)
+  })
+
   it('slides the shorter way', () => {
     // Table spans 450..650: the left exit (centre 420) is 80 away, the right
     // exit (centre 680) is 180 away.
