@@ -30,7 +30,7 @@ import {
 import { Minimize2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
-import { PerfTrackerPanel } from './PerfTrackerPanel'
+import { ReactFlowPerfTrackerPanel } from './PerfTrackerPanel'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import { DeleteReferenceDialog } from './DeleteReferenceDialog'
 import { DeleteTableDialog } from './DeleteTableDialog'
@@ -4674,7 +4674,7 @@ function ReactFlowWhiteboardInner({
               JSON report. Gated by `?perf=1` or Ctrl+Shift+P (usePerfTrackerEnabled),
               and intentionally ships in production so real-hardware numbers can
               be captured on the prod bundle. */}
-          {perfEnabled && <PerfTrackerPanel />}
+          {perfEnabled && <ReactFlowPerfTrackerPanel />}
 
           {/* New free-point comment dialog (GH #110) — opened after a
               placement click; body cannot be empty per createCommentSchema,

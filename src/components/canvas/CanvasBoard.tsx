@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Hand, MousePointer2, Search, Table, Type } from 'lucide-react'
 import { TextInputProxy } from './TextInputProxy'
+import { CanvasViewMenu } from './CanvasViewMenu'
 import { ConnectorToolbar } from './ConnectorToolbar'
 import { SelectionToolbar, applyStyleChange } from './SelectionToolbar'
 import { TextEditBar } from './TextEditBar'
@@ -78,6 +79,9 @@ import { planZOrder } from '@/lib/canvas-engine/z-order'
 import { DEFAULT_CAMERA } from '@/lib/canvas-engine/camera'
 import { focusOnRect } from '@/lib/canvas-engine/camera-focus'
 import { useTheme } from '@/hooks/use-theme'
+import { usePerfTrackerEnabled } from '@/hooks/use-perf-tracker-enabled'
+import { PerfTrackerPanel } from '@/components/whiteboard/PerfTrackerPanel'
+import { perfTracker } from '@/lib/perf/perf-tracker'
 import { useCollaboration } from '@/hooks/use-collaboration'
 import { useBoardSettings } from '@/hooks/use-board-settings'
 import { useCanvasElements } from '@/hooks/use-canvas-elements'
@@ -213,6 +217,20 @@ export function CanvasBoard({
     toEngineScene(initialElements),
   )
   const [camera, setCamera] = useState<Camera>(DEFAULT_CAMERA)
+  const perfEnabled = usePerfTrackerEnabled()
+  const cameraRef = useRef(camera)
+  cameraRef.current = camera
+  perfTracker.incRender() // no-op unless recording
+
+  // Tag camera moves for the perf recorder: a zoom change is 'zoom', a pure
+  // translate is 'pan'. A short quiet period ends the gesture. Drags are not
+  // tagged here, so a dragged element's frames record as 'idle'.
+  useEffect(() => {
+    if (!perfEnabled) return
+    perfTracker.noteMove(camera.zoom)
+    const timer = window.setTimeout(() => perfTracker.clearGesture(), 150)
+    return () => window.clearTimeout(timer)
+  }, [camera, perfEnabled])
   const [tool, setTool] = useState<CanvasTool>('select')
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
   const [devicePixelRatio, setDevicePixelRatio] = useState(1)
@@ -1107,6 +1125,15 @@ export function CanvasBoard({
         </div>
       )}
 
+      {perfEnabled && (
+        <div className="pointer-events-none absolute inset-0 top-10">
+          <PerfTrackerPanel
+            getZoom={() => cameraRef.current.zoom}
+            getItemCount={() => input.displayScene.elements.length}
+          />
+        </div>
+      )}
+
       {/* The search button. OUTSIDE the `!effectiveReadOnly` tool-palette
           block above (Locked Decision 3) so viewers and public share-link
           visitors get it too — the same posture the connection badge takes.
@@ -1130,6 +1157,7 @@ export function CanvasBoard({
             readOnly={effectiveReadOnly}
             onChange={handleSettingsChange}
           />
+          <CanvasViewMenu />
           <CanvasExportControl
             scene={input.displayScene}
             theme={resolvedTheme}

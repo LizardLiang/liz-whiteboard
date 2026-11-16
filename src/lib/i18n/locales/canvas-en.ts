@@ -5,6 +5,7 @@ export const canvasEn = {
   board: {
     ariaLabel: 'Canvas board',
     toolsAria: 'Canvas tools',
+    viewMenuAria: 'View options',
     searchAria: 'Search canvas elements (Ctrl/Cmd+K)',
     searchTitle: 'Search canvas elements',
     searchDescription: "Type an element's text to jump to it on the board.",

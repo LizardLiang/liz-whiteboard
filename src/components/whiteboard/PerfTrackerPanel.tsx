@@ -40,7 +40,31 @@ const SERVER_SNAPSHOT: PerfSnapshot = {
   hideEdges: false,
 }
 
-export function PerfTrackerPanel() {
+export interface PerfTrackerPanelProps {
+  /** Live viewport zoom, seeds the tracker's pan/zoom baseline on Record. */
+  getZoom: () => number
+  /** Element count stamped into the report's meta.tableCount. */
+  getItemCount: () => number
+}
+
+/**
+ * The panel for a React Flow board. It reads zoom and node count from the
+ * React Flow instance, so it must render inside the React Flow provider.
+ */
+export function ReactFlowPerfTrackerPanel() {
+  const { getZoom } = useReactFlow()
+  return (
+    <PerfTrackerPanel
+      getZoom={getZoom}
+      getItemCount={() => document.querySelectorAll('.react-flow__node').length}
+    />
+  )
+}
+
+export function PerfTrackerPanel({
+  getZoom,
+  getItemCount,
+}: PerfTrackerPanelProps) {
   const [fps, setFps] = useState(0)
   const [frameTimeMs, setFrameTimeMs] = useState(0)
   const [gesture, setGesture] = useState<Gesture>('idle')
@@ -49,9 +73,6 @@ export function PerfTrackerPanel() {
     setNodesCalls: 0,
   })
   const frameTimestampsRef = useRef<Array<number>>([])
-  // Live viewport zoom — passed to startRecording so noteMove's first-move
-  // pan/zoom disambiguation has a real baseline (avoids first-move mis-tag).
-  const { getZoom } = useReactFlow()
 
   // isRecording flips rarely (start/stop) — cheap to source from the store.
   const isRecording = useSyncExternalStore(
@@ -115,11 +136,9 @@ export function PerfTrackerPanel() {
       perfTracker.downloadReport(report)
       return
     }
-    const tableCount =
-      typeof document !== 'undefined'
-        ? document.querySelectorAll('.react-flow__node').length
-        : 0
-    perfTracker.startRecording({ tableCount, zoom: getZoom() })
+    // Live zoom gives noteMove's first-move pan/zoom disambiguation a real
+    // baseline (avoids first-move mis-tag).
+    perfTracker.startRecording({ tableCount: getItemCount(), zoom: getZoom() })
   }
 
   return (

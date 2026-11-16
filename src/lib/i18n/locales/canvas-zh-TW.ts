@@ -9,6 +9,7 @@ export const canvasZhTW: DeepStringRecord<typeof canvasEn> = {
   board: {
     ariaLabel: '畫布',
     toolsAria: '畫布工具',
+    viewMenuAria: '檢視選項',
     searchAria: '搜尋畫布元素 (Ctrl/Cmd+K)',
     searchTitle: '搜尋畫布元素',
     searchDescription: '輸入元素的文字，即可跳到畫板上的位置。',

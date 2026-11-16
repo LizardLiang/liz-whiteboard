@@ -206,3 +206,69 @@ test.describe('FPS display switch', () => {
     await expect(toggle).toHaveAttribute('aria-checked', 'false')
   })
 })
+
+// Canvas boards have no React Flow, but share the same store, switch and
+// panel. The view-options "…" menu holds the switch; the choice carries over
+// from the ER board's localStorage key.
+test.describe('FPS display switch on a canvas board', () => {
+  const CANVAS_URL = `/canvas/${IDS.canvasBoard}`
+
+  test.beforeEach(() => {
+    // seed-canvas.ts reuses IDS.viewerUser as a project member; see
+    // canvas-dot-grid.spec.ts for the reseed-per-test reasoning.
+    execFileSync('bun', ['run', 'e2e/seed-canvas.ts'], { stdio: 'inherit' })
+  })
+
+  test('switch shows and hides the panel, persists across reload, records a report', async ({
+    page,
+  }) => {
+    await page.goto(CANVAS_URL)
+    await page.waitForSelector('canvas')
+    const panel = page.getByTestId('perf-tracker-panel')
+    await expect(panel).toHaveCount(0)
+
+    await waitForMenusClosed(page)
+    await page.getByTestId('canvas-view-menu-trigger').click()
+    const toggle = page.getByTestId('fps-display-switch')
+    await expect(toggle).toHaveAttribute('aria-checked', 'false')
+    await toggle.click()
+    await expect(panel).toBeVisible()
+    await expect(toggle).toHaveAttribute('aria-checked', 'true')
+    await page.keyboard.press('Escape')
+
+    // Record, pan the camera, stop: the report has frames and a pan tag.
+    await page.getByTestId('perf-tracker-record').click()
+    await expect(page.getByTestId('perf-tracker-live')).toBeVisible()
+    await page.mouse.move(800, 500)
+    await page.keyboard.down('Space')
+    await page.mouse.down()
+    for (let i = 1; i <= 20; i++) {
+      await page.mouse.move(800 + i * 10, 500 + i * 5)
+      await page.waitForTimeout(16)
+    }
+    await page.mouse.up()
+    await page.keyboard.up('Space')
+    await page.getByTestId('perf-tracker-record').click()
+    await expect
+      .poll(async () =>
+        page.evaluate(
+          () =>
+            (
+              window as unknown as {
+                __lastPerfReport?: { overall: { frames: number } }
+              }
+            ).__lastPerfReport?.overall.frames ?? 0,
+        ),
+      )
+      .toBeGreaterThan(0)
+
+    await page.reload()
+    await page.waitForSelector('canvas')
+    await expect(panel).toBeVisible()
+
+    await page.getByTestId('canvas-view-menu-trigger').click()
+    await expect(toggle).toHaveAttribute('aria-checked', 'true')
+    await toggle.click()
+    await expect(panel).toHaveCount(0)
+  })
+})
