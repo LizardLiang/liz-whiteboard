@@ -17,7 +17,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
-import { IDS } from './fixtures'
+import { IDS, waitForMenusClosed } from './fixtures'
 import { tableNode } from './canvas-helpers'
 import type { Locator, Page } from '@playwright/test'
 
@@ -155,5 +155,54 @@ test.describe('Perf tracker record -> report (GH #121 follow-up)', () => {
     expect(report!.perGesture.drag.frames).toBeGreaterThan(0)
 
     expect(pageErrors).toEqual([])
+  })
+})
+
+// The toolbar "Show FPS" switch, Ctrl+Shift+P and ?perf=1 share one store; the
+// switch/hotkey choice persists per browser in localStorage. Contexts are fresh
+// per test and global-setup's storageState only carries the session cookie and
+// the tour flag, so no flag leaks between specs.
+test.describe('FPS display switch', () => {
+  const BOARD_URL = `/whiteboard/${IDS.stressWhiteboard}`
+
+  async function openMenu(page: Page) {
+    await waitForMenusClosed(page)
+    await page.getByTestId('more-tools-trigger').click()
+    return page.getByTestId('fps-display-switch')
+  }
+
+  test('switch shows and hides the panel, persists across reload, follows the hotkey', async ({
+    page,
+  }) => {
+    await page.goto(BOARD_URL)
+    await expect(tableNode(page, 'stress_table_0')).toBeVisible()
+    const panel = page.getByTestId('perf-tracker-panel')
+    await expect(panel).toHaveCount(0)
+
+    let toggle = await openMenu(page)
+    await expect(toggle).toHaveAttribute('aria-checked', 'false')
+    await toggle.click()
+    await expect(panel).toBeVisible()
+    // The menu stays open and the switch reflects the new state.
+    await expect(toggle).toHaveAttribute('aria-checked', 'true')
+
+    await page.reload()
+    await expect(tableNode(page, 'stress_table_0')).toBeVisible()
+    await expect(panel).toBeVisible()
+
+    await page.keyboard.press('Escape')
+    toggle = await openMenu(page)
+    await expect(toggle).toHaveAttribute('aria-checked', 'true')
+    await toggle.click()
+    await expect(panel).toHaveCount(0)
+    await expect(toggle).toHaveAttribute('aria-checked', 'false')
+
+    // Hotkey flips the same state while the menu is open.
+    await page.keyboard.press('Control+Shift+P')
+    await expect(panel).toBeVisible()
+    await expect(toggle).toHaveAttribute('aria-checked', 'true')
+    await page.keyboard.press('Control+Shift+P')
+    await expect(panel).toHaveCount(0)
+    await expect(toggle).toHaveAttribute('aria-checked', 'false')
   })
 })

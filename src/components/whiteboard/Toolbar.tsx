@@ -48,6 +48,7 @@ import {
 } from '@/components/ui/dialog'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -58,6 +59,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
+import {
+  setPerfEnabled,
+  usePerfEnabledValue,
+} from '@/hooks/perf-tracker-enabled-store'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
@@ -277,6 +283,7 @@ export function Toolbar({
   // Help dialog and MCP dialog state. Both open from More menu items, so they
   // are controlled rather than wrapped around a trigger inside the menu.
   const moreToolsRef = useRef<HTMLButtonElement>(null)
+  const perfEnabled = usePerfEnabledValue()
   // A dialog opened from a More menu item has no trigger of its own, so focus
   // would fall to <body> on close; send it back to the menu button.
   const returnFocusToMoreTools = (event: Event) => {
@@ -918,6 +925,22 @@ export function Toolbar({
               </DropdownMenuRadioGroup>
             </>
           )}
+          {(onImportSql || onShowModeChange) && <DropdownMenuSeparator />}
+          <DropdownMenuCheckboxItem
+            checked={perfEnabled}
+            onCheckedChange={setPerfEnabled}
+            onSelect={(e) => e.preventDefault()}
+            data-testid="fps-display-switch"
+            className="justify-between pl-2 [&>span:first-child]:hidden"
+          >
+            {t('whiteboard.toolbar.showFps')}
+            <Switch
+              checked={perfEnabled}
+              tabIndex={-1}
+              aria-hidden="true"
+              className="pointer-events-none"
+            />
+          </DropdownMenuCheckboxItem>
           {(onOpenHistory || mcpEndpointUrl || onExport || onExportSchema) && (
             <DropdownMenuSeparator />
           )}

@@ -86,6 +86,7 @@ export const whiteboardEn = {
     showKeysHint: 'Show table names and primary/foreign keys',
     showAll: 'All',
     showAllHint: 'Show all columns',
+    showFps: 'Show FPS',
     versionHistory: 'Version history',
     connectMcp: 'Connect an MCP client',
     addTableToExport: 'Add a table to export',

@@ -86,6 +86,7 @@ export const whiteboardZhTW: DeepStringRecord<typeof whiteboardEn> = {
     showKeysHint: '顯示資料表名稱與主鍵／外鍵',
     showAll: '全部',
     showAllHint: '顯示所有欄位',
+    showFps: '顯示 FPS',
     versionHistory: '版本記錄',
     connectMcp: '連線 MCP 用戶端',
     addTableToExport: '請先新增資料表才能匯出',
