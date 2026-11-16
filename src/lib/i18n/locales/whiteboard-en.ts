@@ -376,6 +376,9 @@ export const whiteboardEn = {
     skip: 'Skip',
     done: 'Done',
     stepOf: '{step} of {total}',
+    introTitle: 'New: table fields',
+    introBody:
+      'Click any table to see its fields and comments in a floating window.',
     windowTitle: 'Fields of the table',
     windowBody:
       'This window lists the fields of the table you clicked: name, type, key, nullable and comment.',

@@ -1,5 +1,6 @@
 // src/components/whiteboard/field-window/field-window-tour.ts
-// The seven steps of the field window tour. Targets are read lazily by
+// The steps of the field window tour: an intro step (board-entry tour only,
+// spotlights a canvas table) and the seven window steps. Targets are read lazily by
 // data-testid, scoped to the window the tour explains. Step 4 pans the canvas
 // (zoom unchanged) so the table is visible outside the window.
 
@@ -8,6 +9,8 @@ import type { TourStep } from '@/components/tutorial/use-spotlight-tour'
 import type { TFunction } from '@/lib/i18n/translate'
 
 export const TOUR_STEP_COUNT = 7
+/** The board-entry tour adds the intro step in front of the window steps. */
+export const ENTRY_TOUR_STEP_COUNT = TOUR_STEP_COUNT + 1
 
 /** Space the app header takes at the top of the viewport (px). */
 const HEADER_RESERVE_PX = 64
@@ -93,6 +96,55 @@ export function planTablePan(input: {
   }
 }
 
+export interface IntroCandidate {
+  id: string
+  rect: Rect
+}
+
+export interface IntroPick {
+  id: string
+  /** Pan to apply so the table is fully visible; null when it already is. */
+  pan: { dx: number; dy: number } | null
+}
+
+/**
+ * Choose the table the board-entry intro step spotlights: the fully visible
+ * table nearest the viewport centre; if none is fully visible, the nearest
+ * table that fits the free area, panned (same zoom) into the area's centre.
+ */
+export function pickIntroTable(input: {
+  viewport: { width: number; height: number }
+  bottomReserve: number
+  tables: Array<IntroCandidate>
+}): IntroPick | null {
+  const { viewport, bottomReserve, tables } = input
+  const cx = viewport.width / 2
+  const cy = viewport.height / 2
+  const dist = (r: Rect) =>
+    Math.hypot(r.left + r.width / 2 - cx, r.top + r.height / 2 - cy)
+  const sorted = [...tables].sort((a, b) => dist(a.rect) - dist(b.rect))
+  for (const c of sorted) {
+    const plan = planTablePan({
+      viewport,
+      win: null,
+      table: c.rect,
+      bottomReserve,
+    })
+    if (plan.kind === 'keep') return { id: c.id, pan: null }
+  }
+  for (const c of sorted) {
+    const plan = planTablePan({
+      viewport,
+      win: null,
+      table: c.rect,
+      bottomReserve,
+    })
+    if (plan.kind === 'pan')
+      return { id: c.id, pan: { dx: plan.dx, dy: plan.dy } }
+  }
+  return null
+}
+
 /** The slice of the React Flow instance the tour needs. */
 export interface TourFlow {
   getViewport: () => { x: number; y: number; zoom: number }
@@ -130,7 +182,7 @@ function rectOf(el: Element): Rect {
 }
 
 /** Screen rect of a table node, from React Flow's own geometry (works when the node is culled from the DOM). */
-function tableScreenRect(flow: TourFlow, id: string): Rect | null {
+export function tableScreenRect(flow: TourFlow, id: string): Rect | null {
   const node = flow.getInternalNode(id)
   const pane = document.querySelector('.react-flow')
   if (!node || !pane) return null
@@ -232,4 +284,82 @@ export function buildFieldWindowTour(
       body: t('whiteboard.fieldsTour.helpBody'),
     },
   ]
+}
+
+export interface IntroTourDeps {
+  t: TFunction
+  /** Canvas tables (node id and name), in board order. */
+  getTables: () => Array<{ id: string; name: string }>
+  /** The intro table once chosen; null before the intro step runs. */
+  getIntroId: () => string | null
+  setIntroId: (id: string | null) => void
+  /** The field window, when one is open (the intro table may sit under it). */
+  getWindowEl: () => HTMLElement | null
+  getFlow: () => TourFlow | null
+  getBottomReserve: () => number
+}
+
+/** Step 1 of the board-entry tour: spotlight one canvas table, announce the feature. */
+export function buildIntroStep(deps: IntroTourDeps): TourStep {
+  const { t } = deps
+  // Set by `before`: the table cannot be shown, so the card is centred.
+  let noSpot = false
+
+  const target = () => {
+    const id = deps.getIntroId()
+    const name = deps.getTables().find((x) => x.id === id)?.name
+    if (noSpot || !name) return null
+    const el = document.querySelector(`[data-table-name="${CSS.escape(name)}"]`)
+    return el?.closest('.react-flow__node') ?? el
+  }
+
+  const panIntoView = () => {
+    noSpot = false
+    const flow = deps.getFlow()
+    if (!flow) return
+    const viewport = { width: window.innerWidth, height: window.innerHeight }
+    const bottomReserve = deps.getBottomReserve()
+    let pan: { dx: number; dy: number } | null = null
+    const known = deps.getIntroId()
+    if (known) {
+      const rect = tableScreenRect(flow, known)
+      if (!rect) return
+      const winEl = deps.getWindowEl()
+      const plan = planTablePan({
+        viewport,
+        win: winEl ? rectOf(winEl) : null,
+        table: rect,
+        bottomReserve,
+      })
+      if (plan.kind === 'none') noSpot = true
+      else if (plan.kind === 'pan') pan = { dx: plan.dx, dy: plan.dy }
+    } else {
+      const tables = deps.getTables().flatMap((x) => {
+        const rect = tableScreenRect(flow, x.id)
+        return rect ? [{ id: x.id, rect }] : []
+      })
+      const pick = pickIntroTable({ viewport, bottomReserve, tables })
+      if (!pick) {
+        noSpot = true
+        return
+      }
+      deps.setIntroId(pick.id)
+      pan = pick.pan
+    }
+    if (pan) {
+      const vp = flow.getViewport()
+      void flow.setViewport(
+        { x: vp.x + pan.dx, y: vp.y + pan.dy, zoom: vp.zoom },
+        { duration: PAN_DURATION_MS },
+      )
+    }
+  }
+
+  return {
+    id: 'intro',
+    target,
+    title: t('whiteboard.fieldsTour.introTitle'),
+    body: t('whiteboard.fieldsTour.introBody'),
+    before: panIntoView,
+  }
 }

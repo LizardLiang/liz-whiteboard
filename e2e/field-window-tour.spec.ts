@@ -1,6 +1,6 @@
 // e2e/field-window-tour.spec.ts
-// End-to-end coverage for the field window tour: a seven-step spotlight that
-// starts on the first field window of a browser, replays from the '?' button,
+// End-to-end coverage for the field window tour: an eight-step spotlight that
+// starts on entering a board with tables (intro step + the seven window steps), replays from the '?' button,
 // pans the canvas on step 4, ends on Esc / Skip / Done / window close, and
 // keeps its card inside the viewport on a phone.
 // Saved sessions carry `fields-window-tour-seen` (global-setup.ts), so every
@@ -65,14 +65,38 @@ const intersects = (a: Box, b: Box) =>
   a.y < b.y + b.height &&
   a.y + a.height > b.y
 
-async function expectStep(page: Page, step: number) {
-  await expect(card(page)).toContainText(`${step} of 7`)
+async function expectStep(page: Page, step: number, total = 7) {
+  await expect(card(page)).toContainText(`${step} of ${total}`)
+}
+
+/**
+ * Most tests exercise the window tour, so they enter the board with the tour
+ * already consumed (Esc on the intro step) and then open the window by click.
+ */
+async function skipEntryTour(page: Page) {
+  await expectStep(page, 1, 8)
+  // The tour focuses Next in the same effect pass that attaches its key
+  // listener: wait for it so Esc cannot land before the listener exists.
+  await expect(card(page).getByRole('button', { name: 'Next' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(tour(page)).toHaveCount(0)
 }
 
 async function next(page: Page) {
   await card(page)
     .getByRole('button', { name: /^(Next|Done)$/ })
     .click()
+}
+
+/** Enter the board, end the entry tour, open the window and replay the 7 window steps. */
+async function openWindowTour(page: Page, name: string) {
+  await openComplexBoard(page)
+  await skipEntryTour(page)
+  await clickTable(page, name)
+  await expect(drawer(page)).toBeVisible()
+  await expect(tour(page)).toHaveCount(0)
+  await page.getByTestId('fields-window-help').click()
+  await expectStep(page, 1)
 }
 
 /** Wait until the cutout box surrounds the target box (6 px pad, 8 px slack). */
@@ -100,6 +124,42 @@ async function expectCutoutAround(page: Page, target: Locator) {
     .toBe('ok')
 }
 
+/** The seeded table whose canvas node the intro cutout surrounds. */
+async function spotlightedTable(page: Page): Promise<string> {
+  const names = [
+    'customers',
+    'customer_orders',
+    'companies',
+    'order_line_items',
+    'payment_transactions_with_gateway_reconciliation_state',
+    'audit_log',
+  ]
+  let found = ''
+  await expect
+    .poll(
+      async () => {
+        const c = await cutout(page).boundingBox()
+        if (!c) return ''
+        for (const name of names) {
+          const b = await nodeOf(page, name).boundingBox()
+          if (!b) continue
+          if (
+            Math.abs(c.x - (b.x - 6)) < 10 &&
+            Math.abs(c.y - (b.y - 6)) < 10 &&
+            Math.abs(c.width - (b.width + 12)) < 14 &&
+            Math.abs(c.height - (b.height + 12)) < 14
+          ) {
+            found = name
+          }
+        }
+        return found
+      },
+      { timeout: 5000 },
+    )
+    .not.toBe('')
+  return found
+}
+
 function stepTarget(page: Page, index: number, table: string): Locator {
   const id = STEP_TARGETS[index]
   return id ? page.getByTestId(id) : nodeOf(page, table)
@@ -119,25 +179,41 @@ test.describe('Field window tour', () => {
   test.describe('desktop', () => {
     test.use({ viewport: { width: 1600, height: 1000 } })
 
-    test('first open starts the tour and Next walks all seven targets', async ({
+    test('entering a board starts the tour with no click; Next walks all eight steps', async ({
       page,
     }) => {
       await openComplexBoard(page)
-      await expect(tour(page)).toHaveCount(0)
-      await clickTable(page, 'customer_orders')
-      await expect(drawer(page)).toBeVisible()
       await expect(tour(page)).toBeVisible()
-      await expectStep(page, 1)
+      await expect(drawer(page)).toHaveCount(0)
+      await expectStep(page, 1, 8)
+      await expect(card(page)).toContainText('New: table fields')
       expect(
         await page.evaluate((key) => localStorage.getItem(key), TOUR_SEEN_KEY),
       ).toBe('true')
 
+      // Step 1 spotlights one whole canvas table, fully on screen.
+      const name = await spotlightedTable(page)
+      const vp = page.viewportSize()!
+      const spot = await box(nodeOf(page, name))
+      expect(spot.x).toBeGreaterThanOrEqual(0)
+      expect(spot.y).toBeGreaterThanOrEqual(0)
+      expect(spot.x + spot.width).toBeLessThanOrEqual(vp.width)
+      expect(spot.y + spot.height).toBeLessThanOrEqual(vp.height)
+
+      // Next opens the field window for that table and shows step 2 on the grid.
+      await next(page)
+      await expect(drawer(page)).toBeVisible()
+      await expect(
+        drawer(page).getByRole('heading', { name: `Fields of ${name}` }),
+      ).toBeVisible()
+      await expectStep(page, 2, 8)
+      await expectCutoutAround(page, drawer(page))
+
       for (let i = 0; i < 7; i++) {
-        await expectStep(page, i + 1)
+        await expectStep(page, i + 2, 8)
         await expect(card(page).getByRole('heading')).toBeVisible()
-        await expectCutoutAround(page, stepTarget(page, i, 'customer_orders'))
+        await expectCutoutAround(page, stepTarget(page, i, name))
         const c = await box(card(page))
-        const vp = page.viewportSize()!
         expect(c.x).toBeGreaterThanOrEqual(0)
         expect(c.y).toBeGreaterThanOrEqual(0)
         expect(c.x + c.width).toBeLessThanOrEqual(vp.width + 0.5)
@@ -153,20 +229,84 @@ test.describe('Field window tour', () => {
       await expect(
         card(page).getByRole('button', { name: 'Done' }),
       ).toBeVisible()
-      await expect(
-        card(page).getByRole('button', { name: 'Next' }),
-      ).toHaveCount(0)
       await next(page)
       await expect(tour(page)).toHaveCount(0)
       await expect(drawer(page)).toBeVisible()
     })
 
-    test('Back from step 3 shows step 2 with the header spotlighted', async ({
+    test('Esc and Skip on the intro step end the tour and open nothing', async ({
       page,
     }) => {
       await openComplexBoard(page)
+      await expectStep(page, 1, 8)
+      // A click on the dim area does nothing.
+      await page.mouse.click(30, 500)
+      await expectStep(page, 1, 8)
+      await expect(drawer(page)).toHaveCount(0)
+      await expect(
+        card(page).getByRole('button', { name: 'Next' }),
+      ).toBeFocused()
+      await page.keyboard.press('Escape')
+      await expect(tour(page)).toHaveCount(0)
+      await expect(drawer(page)).toHaveCount(0)
+
+      // Skip, on a fresh visit.
+      await page.evaluate((key) => localStorage.removeItem(key), TOUR_SEEN_KEY)
+      await page.reload()
+      await expectStep(page, 1, 8)
+      await card(page).getByRole('button', { name: 'Skip' }).click()
+      await expect(tour(page)).toHaveCount(0)
+      await expect(drawer(page)).toHaveCount(0)
+    })
+
+    test('a reload after the entry tour shows no tour; ? still replays 1 of 7', async ({
+      page,
+    }) => {
+      await openComplexBoard(page)
+      await expectStep(page, 1, 8)
+      await page.reload()
+      await expect(tableNode(page, 'customer_orders').first()).toBeVisible()
+      await page.waitForTimeout(500)
+      await expect(tour(page)).toHaveCount(0)
+
       await clickTable(page, 'customer_orders')
-      await expectStep(page, 1)
+      await expect(drawer(page)).toBeVisible()
+      await expect(tour(page)).toHaveCount(0)
+      await page.getByTestId('fields-window-help').click()
+      await expectStep(page, 1, 7)
+      await expect(card(page)).not.toContainText('New: table fields')
+    })
+
+    test('a board with no tables shows no tour and keeps the flag unset until a table is added', async ({
+      page,
+    }) => {
+      await page.goto(`/whiteboard/${IDS.fdEmptyWhiteboard}`)
+      await expect(
+        page.getByRole('heading', { name: 'E2E Fields Drawer Empty' }),
+      ).toBeVisible()
+      await expect(
+        page.getByRole('button', { name: 'Add Table' }),
+      ).toBeVisible()
+      await page.waitForTimeout(800)
+      await expect(tour(page)).toHaveCount(0)
+      expect(
+        await page.evaluate((key) => localStorage.getItem(key), TOUR_SEEN_KEY),
+      ).toBeNull()
+
+      await page.getByRole('button', { name: 'Add Table' }).click()
+      await page.getByPlaceholder('e.g., Users').fill('tour_first_table')
+      await page.getByRole('button', { name: 'Create Table' }).click()
+      await expect(tableNode(page, 'tour_first_table').first()).toBeVisible()
+      await expectStep(page, 1, 8)
+      expect(
+        await page.evaluate((key) => localStorage.getItem(key), TOUR_SEEN_KEY),
+      ).toBe('true')
+    })
+
+    test('Back from step 3 shows step 2 with the header spotlighted', async ({
+      page,
+    }) => {
+      await openWindowTour(page, 'customer_orders')
       await next(page)
       await next(page)
       await expectStep(page, 3)
@@ -178,9 +318,7 @@ test.describe('Field window tour', () => {
     test('step 4 pans a table under the window into view at the same zoom', async ({
       page,
     }) => {
-      await openComplexBoard(page)
-      await clickTable(page, 'customer_orders')
-      await expectStep(page, 1)
+      await openWindowTour(page, 'customer_orders')
       await page.keyboard.press('Escape')
       await expect(tour(page)).toHaveCount(0)
 
@@ -233,9 +371,7 @@ test.describe('Field window tour', () => {
     test('Esc ends an unpinned tour, the window stays; a dim click keeps the step', async ({
       page,
     }) => {
-      await openComplexBoard(page)
-      await clickTable(page, 'customer_orders')
-      await expectStep(page, 1)
+      await openWindowTour(page, 'customer_orders')
 
       // A click on the dim area does nothing.
       await page.mouse.click(30, 500)
@@ -253,9 +389,7 @@ test.describe('Field window tour', () => {
     })
 
     test('Skip ends the tour and the window stays', async ({ page }) => {
-      await openComplexBoard(page)
-      await clickTable(page, 'customer_orders')
-      await expectStep(page, 1)
+      await openWindowTour(page, 'customer_orders')
       await card(page).getByRole('button', { name: 'Skip' }).click()
       await expect(tour(page)).toHaveCount(0)
       await expect(drawer(page)).toBeVisible()
@@ -264,9 +398,7 @@ test.describe('Field window tour', () => {
     test('the tour does not start after a reload; the ? button replays it', async ({
       page,
     }) => {
-      await openComplexBoard(page)
-      await clickTable(page, 'customer_orders')
-      await expectStep(page, 1)
+      await openWindowTour(page, 'customer_orders')
 
       await page.reload()
       await expect(tableNode(page, 'customer_orders').first()).toBeVisible()
@@ -289,9 +421,7 @@ test.describe('Field window tour', () => {
     test('focus returns to the element focused before the tour started', async ({
       page,
     }) => {
-      await openComplexBoard(page)
-      await clickTable(page, 'customer_orders')
-      await expectStep(page, 1)
+      await openWindowTour(page, 'customer_orders')
       await page.keyboard.press('Escape')
       await expect(tour(page)).toHaveCount(0)
 
@@ -311,9 +441,7 @@ test.describe('Field window tour', () => {
       page,
     }) => {
       await page.emulateMedia({ reducedMotion: 'reduce' })
-      await openComplexBoard(page)
-      await clickTable(page, 'customer_orders')
-      await expectStep(page, 1)
+      await openWindowTour(page, 'customer_orders')
       const durations = await card(page).evaluate((el) => {
         const style = getComputedStyle(el)
         return {
@@ -329,9 +457,7 @@ test.describe('Field window tour', () => {
     test('windows mode: ? explains the window it belongs to', async ({
       page,
     }) => {
-      await openComplexBoard(page)
-      await clickTable(page, 'customers')
-      await expectStep(page, 1)
+      await openWindowTour(page, 'customers')
       await page.keyboard.press('Escape')
       await expect(tour(page)).toHaveCount(0)
       await page.getByTestId('fields-window-pin').click()
@@ -358,9 +484,7 @@ test.describe('Field window tour', () => {
           throw new DOMException('blocked', 'QuotaExceededError')
         }
       })
-      await openComplexBoard(page)
-      await clickTable(page, 'customer_orders')
-      await expectStep(page, 1)
+      await openWindowTour(page, 'customer_orders')
       await page.keyboard.press('Escape')
       await expect(tour(page)).toHaveCount(0)
 
@@ -376,9 +500,7 @@ test.describe('Field window tour', () => {
     test('deleting the window table ends the tour with the window', async ({
       page,
     }) => {
-      await openComplexBoard(page)
-      await clickTable(page, 'companies')
-      await expectStep(page, 1)
+      await openWindowTour(page, 'companies')
 
       // The context menu and its confirm dialog sit above the mask (z-50).
       await tableNode(page, 'companies').first().dispatchEvent('contextmenu', {
@@ -409,11 +531,21 @@ test.describe('Field window tour', () => {
       page,
     }) => {
       await openComplexBoard(page)
-      await clickTable(page, 'customer_orders')
       await expect(tour(page)).toBeVisible()
 
+      // Intro step: the card sits inside the viewport and off the table.
+      await expectStep(page, 1, 8)
+      await page.waitForTimeout(250)
+      const intro = await box(card(page))
+      expect(intro.x).toBeGreaterThanOrEqual(0)
+      expect(intro.y).toBeGreaterThanOrEqual(0)
+      expect(intro.x + intro.width).toBeLessThanOrEqual(390.5)
+      expect(intro.y + intro.height).toBeLessThanOrEqual(844.5)
+      expect(intersects(intro, await box(cutout(page)))).toBe(false)
+      await next(page)
+
       for (let i = 0; i < 7; i++) {
-        await expectStep(page, i + 1)
+        await expectStep(page, i + 2, 8)
         // Let the card settle at its measured size and placement.
         await page.waitForTimeout(250)
         const c = await box(card(page))

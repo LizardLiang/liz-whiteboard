@@ -7,7 +7,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { FieldWindow } from './FieldWindow'
-import { TOUR_STEP_COUNT, buildFieldWindowTour } from './field-window-tour'
+import {
+  ENTRY_TOUR_STEP_COUNT,
+  TOUR_STEP_COUNT,
+  buildFieldWindowTour,
+  buildIntroStep,
+} from './field-window-tour'
 import {
   getFieldWindowPrefs,
   setFieldWindowTourSeen,
@@ -114,6 +119,8 @@ interface FieldWindowsProps {
   items: Array<FieldWindowItem>
   /** Canvas instance; tour step 4 pans it to show the table. */
   flow?: TourFlow
+  /** Every canvas table; the board-entry tour starts once there is one. */
+  tables?: Array<{ id: string; name: string }>
 }
 
 /** The window a tour explains: the one tabs window, or one window by id. */
@@ -122,25 +129,58 @@ interface TourWindow {
   id: string
 }
 
-export function FieldWindows({ fieldWindows, items, flow }: FieldWindowsProps) {
+/** `entry` = the board-entry tour (intro step + window steps), `window` = the 7 window steps. */
+type TourKind = 'entry' | 'window'
+
+export function FieldWindows({
+  fieldWindows,
+  items,
+  flow,
+  tables = [],
+}: FieldWindowsProps) {
   const { state, actions } = fieldWindows
   const viewport = useViewportBox()
   const { t } = useI18n()
   const tour = useSpotlightTour()
   const [tourWindow, setTourWindow] = useState<TourWindow | null>(null)
 
-  const latest = useRef({ items, state, flow, tourWindow })
-  latest.current = { items, state, flow, tourWindow }
+  const [tourKind, setTourKind] = useState<TourKind>('window')
+
+  const latest = useRef({ items, state, flow, tourWindow, tables })
+  latest.current = { items, state, flow, tourWindow, tables }
+  /** The canvas table the intro step spotlights and Next opens. */
+  const introId = useRef<string | null>(null)
 
   const { start: startSteps, end: endTour } = tour
   const startTour = useCallback(
-    (target: TourWindow) => {
+    (target: TourWindow | null) => {
       setFieldWindowTourSeen()
       setTourWindow(target)
-      startSteps(TOUR_STEP_COUNT)
+      setTourKind(target ? 'window' : 'entry')
+      introId.current = null
+      startSteps(target ? TOUR_STEP_COUNT : ENTRY_TOUR_STEP_COUNT)
     },
     [startSteps],
   )
+
+  // Entering a board that has a table, in a browser that never saw the tour:
+  // explain the field window before the user has found it. Waits for React
+  // Flow to measure the first table (the intro step needs its geometry).
+  const hasTables = tables.length > 0
+  const hasFlow = !!flow
+  useEffect(() => {
+    if (!hasTables || !hasFlow) return
+    let frame = 0
+    const tryStart = () => {
+      if (getFieldWindowPrefs().tourSeen) return
+      const { tables: all, flow: f } = latest.current
+      const first = all.length > 0 ? f?.getInternalNode(all[0].id) : undefined
+      if (first?.measured.width) startTour(null)
+      else frame = requestAnimationFrame(tryStart)
+    }
+    tryStart()
+    return () => cancelAnimationFrame(frame)
+  }, [hasTables, hasFlow, startTour])
 
   // The first time a window opens in this browser, explain it.
   const hasItems = items.length > 0
@@ -159,15 +199,18 @@ export function FieldWindows({ fieldWindows, items, flow }: FieldWindowsProps) {
       ? (items.find((i) => i.id === state.activeId) ?? items.at(-1))
       : items.find((i) => i.id === tourWindow.id)
     : undefined
-  const tourAlive =
+  const windowAlive =
     tourWindow !== null && tourWindow.mode === state.mode && !!tourItem
+  // The intro step has no window yet, so it does not depend on one.
+  const onIntro = tourKind === 'entry' && tour.state.step === 0
+  const tourAlive = onIntro || windowAlive
 
   // The tour ends with its window (closed, deleted, or switched mode).
   useEffect(() => {
     if (tourOpen && !tourAlive) endTour()
   }, [tourOpen, tourAlive, endTour])
 
-  const steps = useMemo(
+  const windowSteps = useMemo(
     () =>
       buildFieldWindowTour({
         t,
@@ -194,6 +237,27 @@ export function FieldWindows({ fieldWindows, items, flow }: FieldWindowsProps) {
       }),
     [t],
   )
+  const entrySteps = useMemo(
+    () => [
+      buildIntroStep({
+        t,
+        getTables: () => latest.current.tables,
+        getIntroId: () => introId.current,
+        setIntroId: (id) => {
+          introId.current = id
+        },
+        getWindowEl: () =>
+          document.querySelector<HTMLElement>(
+            '[data-testid="table-fields-drawer"]',
+          ),
+        getFlow: () => latest.current.flow ?? null,
+        getBottomReserve: () => measureBottomReserve(window.innerHeight),
+      }),
+      ...windowSteps,
+    ],
+    [t, windowSteps],
+  )
+  const steps = tourKind === 'entry' ? entrySteps : windowSteps
   const labels = useMemo(
     () => ({
       next: t('whiteboard.fieldsTour.next'),
@@ -206,12 +270,33 @@ export function FieldWindows({ fieldWindows, items, flow }: FieldWindowsProps) {
     [t],
   )
 
-  if (typeof document === 'undefined' || items.length === 0) return null
+  // The intro step's Next opens the window for its table, the same path as a
+  // plain click, then the tour continues on the window steps.
+  const onTourNext = () => {
+    if (onIntro) {
+      const id = introId.current
+      if (!id) {
+        endTour()
+        return
+      }
+      const { state: current } = latest.current
+      setTourWindow({
+        mode: current.mode,
+        id: current.mode === 'windows' ? id : '',
+      })
+      actions.plainClick(id)
+    }
+    tour.next()
+  }
+
+  if (typeof document === 'undefined') return null
 
   const onModeChange = (mode: FieldWindowMode) => fieldWindows.switchMode(mode)
 
-  let content
-  if (state.mode === 'windows') {
+  let content = null
+  if (items.length === 0) {
+    content = null
+  } else if (state.mode === 'windows') {
     content = items.map((item) => {
       const entry = state.windows[item.id]
       return (
@@ -272,21 +357,22 @@ export function FieldWindows({ fieldWindows, items, flow }: FieldWindowsProps) {
 
   return (
     <>
-      {createPortal(
-        <div
-          data-testid="field-window-layer"
-          className="pointer-events-none fixed inset-0 z-40 isolate"
-        >
-          {content}
-        </div>,
-        document.body,
-      )}
+      {content &&
+        createPortal(
+          <div
+            data-testid="field-window-layer"
+            className="pointer-events-none fixed inset-0 z-40 isolate"
+          >
+            {content}
+          </div>,
+          document.body,
+        )}
       <SpotlightTour
         open={tourOpen && tourAlive}
         step={tour.state.step}
         steps={steps}
         labels={labels}
-        onNext={tour.next}
+        onNext={onTourNext}
         onBack={tour.back}
         onEnd={tour.end}
       />

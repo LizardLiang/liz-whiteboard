@@ -671,6 +671,11 @@ function ReactFlowWhiteboardInner({
       }),
     [fieldWindows.state.tableIds, nodes],
   )
+  // The board-entry tour starts from the first table and spotlights one.
+  const tourTables = useMemo(
+    () => nodes.map((n) => ({ id: n.id, name: n.data.table.name })),
+    [nodes],
+  )
   // A deleted table (here or by a collaborator) leaves the window list.
   const tableNodeIdKey = useMemo(
     () => nodes.map((n) => n.id).join('|'),
@@ -4730,6 +4735,7 @@ function ReactFlowWhiteboardInner({
             fieldWindows={fieldWindows}
             items={fieldWindowItems}
             flow={reactFlowInstance}
+            tables={tourTables}
           />
 
           {/* Focus View Overlay — read-only sub-canvas for the selected table + 1-hop neighbors */}

@@ -23,6 +23,21 @@ db.query(
   'INSERT INTO "Whiteboard" (id, name, projectId, folderId, canvasState, textSource, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?)',
 ).run(WB, 'E2E Fields Drawer', PROJECT, null, null, null, now, now)
 
+// A board with no tables: the field window tour must not start on it.
+db.query('DELETE FROM "Whiteboard" WHERE id = ?').run(IDS.fdEmptyWhiteboard)
+db.query(
+  'INSERT INTO "Whiteboard" (id, name, projectId, folderId, canvasState, textSource, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?)',
+).run(
+  IDS.fdEmptyWhiteboard,
+  'E2E Fields Drawer Empty',
+  PROJECT,
+  null,
+  null,
+  null,
+  now,
+  now,
+)
+
 let seq = 0
 const id = (p: string) =>
   `${p}${String(++seq).padStart(4, '0')}-0000-4000-8000-000000000000`.slice(

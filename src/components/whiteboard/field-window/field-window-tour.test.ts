@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   TOUR_STEP_COUNT,
   buildFieldWindowTour,
+  buildIntroStep,
+  pickIntroTable,
   planTablePan,
 } from './field-window-tour'
 import type { FieldWindowTourDeps } from './field-window-tour'
@@ -84,5 +86,72 @@ describe('buildFieldWindowTour', () => {
     for (const step of buildFieldWindowTour(deps)) {
       expect(step.target()).toBeNull()
     }
+  })
+})
+
+describe('pickIntroTable', () => {
+  const size = { width: 300, height: 200 }
+  const input = (tables: Array<{ id: string; left: number; top: number }>) => ({
+    viewport,
+    bottomReserve: 78,
+    tables: tables.map((t) => ({
+      id: t.id,
+      rect: { left: t.left, top: t.top, ...size },
+    })),
+  })
+
+  it('picks the fully visible table nearest the viewport centre', () => {
+    const pick = pickIntroTable(
+      input([
+        { id: 'edge', left: 20, top: 100 },
+        { id: 'centre', left: 650, top: 400 },
+        { id: 'far', left: 1200, top: 700 },
+      ]),
+    )
+    expect(pick).toEqual({ id: 'centre', pan: null })
+  })
+
+  it('skips a table that is cut off even when it is nearest', () => {
+    const pick = pickIntroTable(
+      input([
+        { id: 'cut', left: 750, top: 900 },
+        { id: 'whole', left: 100, top: 150 },
+      ]),
+    )
+    expect(pick).toEqual({ id: 'whole', pan: null })
+  })
+
+  it('pans the nearest table into view when none is fully visible', () => {
+    const pick = pickIntroTable(
+      input([
+        { id: 'near', left: 2000, top: 400 },
+        { id: 'far', left: 5000, top: 400 },
+      ]),
+    )
+    expect(pick?.id).toBe('near')
+    expect(pick?.pan).not.toBeNull()
+    // Work area centre is (800, 493); the table centre was (2150, 500).
+    expect(2000 + 150 + (pick?.pan?.dx ?? 0)).toBeCloseTo(800)
+  })
+
+  it('returns null without tables', () => {
+    expect(pickIntroTable(input([]))).toBeNull()
+  })
+})
+
+describe('buildIntroStep', () => {
+  it('has no target before a table is chosen and uses the intro copy', () => {
+    const step = buildIntroStep({
+      t: (key) => key,
+      getTables: () => [],
+      getIntroId: () => null,
+      setIntroId: () => {},
+      getWindowEl: () => null,
+      getFlow: () => null,
+      getBottomReserve: () => 78,
+    })
+    expect(step.id).toBe('intro')
+    expect(step.title).toBe('whiteboard.fieldsTour.introTitle')
+    expect(step.target()).toBeNull()
   })
 })

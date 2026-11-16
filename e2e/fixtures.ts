@@ -107,6 +107,8 @@ export const IDS = {
   // Complex-data board for the table fields drawer suite, seeded by
   // e2e/seed-fields-drawer.ts (its tables/columns use ids a000xxxx/a001xxxx).
   fdWhiteboard: '80000000-0000-4000-8000-0000000000f1',
+  // Table-less board for the field window tour's "no tables, no tour" test.
+  fdEmptyWhiteboard: '80000000-0000-4000-8000-0000000000f2',
 
   // Dedicated boards for the cross-file reference suite (LizMeter #83). TWO
   // boards, because the whole feature is about pointing from one file at

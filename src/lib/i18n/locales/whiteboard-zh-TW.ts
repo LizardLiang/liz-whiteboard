@@ -364,6 +364,8 @@ export const whiteboardZhTW: DeepStringRecord<typeof whiteboardEn> = {
     skip: '略過',
     done: '完成',
     stepOf: '第 {step} 步，共 {total} 步',
+    introTitle: '新功能：資料表欄位',
+    introBody: '點選任一資料表，就能在浮動視窗中看到它的欄位與備註。',
     windowTitle: '欄位視窗',
     windowBody:
       '這個視窗列出所點選資料表的欄位：名稱、型別、鍵、可為空與備註。',
