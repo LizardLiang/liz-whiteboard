@@ -279,8 +279,9 @@ export const createColumnsFn = createServerFn({ method: 'POST' })
           if (!whiteboardId) throw new Error('Table not found')
           groups.set(whiteboardId, [...(groups.get(whiteboardId) ?? []), index])
         }
-        const columns: Array<Awaited<ReturnType<typeof createColumns>>[number]> =
-          []
+        const columns: Array<
+          Awaited<ReturnType<typeof createColumns>>[number]
+        > = []
         for (const [whiteboardId, indexes] of groups) {
           const { ctx } = withClientBatch(
             userContext(whiteboardId, user.id),
@@ -290,7 +291,8 @@ export const createColumnsFn = createServerFn({ method: 'POST' })
             indexes.map((i) => data[i]),
             ctx,
           )
-          for (const [n, index] of indexes.entries()) columns[index] = created[n]
+          for (const [n, index] of indexes.entries())
+            columns[index] = created[n]
         }
         return columns
       } catch (error) {
