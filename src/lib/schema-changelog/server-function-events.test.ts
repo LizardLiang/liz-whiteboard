@@ -112,7 +112,7 @@ describe('column server functions record an event as the session user', () => {
     const { user, wb, table } = await setup()
     await createColumnFn({
       data: { tableId: table.id, name: 'phone', dataType: 'string', order: 1 },
-    } as never)
+    })
     expect(events()).toMatchObject([
       {
         entityType: 'column',
@@ -138,7 +138,7 @@ describe('column server functions record an event as the session user', () => {
           { tableId: table.id, name: 'b', dataType: 'string', order: 2 },
         ],
       },
-    } as never)
+    })
     const rows = events()
     expect(rows).toHaveLength(2)
     expect(rows.every((r) => r.whiteboardId === wb.id)).toBe(true)
@@ -150,7 +150,7 @@ describe('column server functions record an event as the session user', () => {
     const { column } = await setup()
     await updateColumnFn({
       data: { id: column.id, data: { name: 'email' } },
-    } as never)
+    })
     expect(events()).toMatchObject([
       {
         entityType: 'column',
@@ -164,7 +164,7 @@ describe('column server functions record an event as the session user', () => {
 
   it('updateColumnOrderFn', async () => {
     const { column } = await setup()
-    await updateColumnOrderFn({ data: { id: column.id, order: 5 } } as never)
+    await updateColumnOrderFn({ data: { id: column.id, order: 5 } })
     expect(events()).toMatchObject([
       { entityType: 'column', action: 'reorder', actorName: 'sf_editor' },
     ])
@@ -172,7 +172,7 @@ describe('column server functions record an event as the session user', () => {
 
   it('deleteColumnFn', async () => {
     const { column } = await setup()
-    await deleteColumnFn({ data: column.id } as never)
+    await deleteColumnFn({ data: column.id })
     expect(events()).toMatchObject([
       {
         entityType: 'column',
@@ -190,7 +190,7 @@ describe('position server functions record layout events', () => {
     const { table, wb } = await setup()
     await updateTablePosition({
       data: { id: table.id, positionX: 120, positionY: 80 },
-    } as never)
+    })
     expect(events()).toMatchObject([
       {
         entityType: 'table',
@@ -237,13 +237,13 @@ describe('table reference server functions record events', () => {
         sourceTableId: table.id,
         sourceColumnIds: [column.id],
       },
-    } as never)) as { table: { id: string } }
+    })) as { table: { id: string } }
     await updateTableReferenceFn({
       data: { tableId: created.table.id, sourceColumnIds: [idCol.id] },
-    } as never)
+    })
     await deleteTableReferenceFn({
       data: { tableId: created.table.id },
-    } as never)
+    })
 
     const rows = events().filter((r) => r.entityType === 'reference')
     expect(rows.map((r) => r.action)).toEqual(['create', 'update', 'delete'])

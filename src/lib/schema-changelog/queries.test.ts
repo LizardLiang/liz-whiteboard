@@ -5,13 +5,13 @@
 
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { recordChange, userContext } from './index'
-import type { ActorContext } from './index'
 import {
   getSchemaChangeBatchHandler,
   listChangeLogFacetsHandler,
   listSchemaChangesHandler,
 } from './handlers'
+import { recordChange, userContext } from './index'
+import type { ActorContext } from './index'
 import type { AuthContext } from '@/lib/auth/middleware'
 import { ForbiddenError } from '@/lib/auth/require-role'
 import { upsertProjectMember } from '@/data/permission'
@@ -27,7 +27,7 @@ function authFor(userId: string): AuthContext {
   return {
     user: { id: userId, username: 'u', email: 'u@example.com' },
     session: { id: 's', expiresAt: new Date(Date.now() + 3_600_000) },
-  } as AuthContext
+  }
 }
 
 function setup() {

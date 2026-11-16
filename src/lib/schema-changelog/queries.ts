@@ -5,8 +5,8 @@
 
 import type {
   BatchSummaryDto,
-  ChangeFieldsDto,
   ChangeEventDto,
+  ChangeFieldsDto,
   ChangeLogFacets,
   GetSchemaChangeBatchResult,
   ListSchemaChangesResult,
@@ -50,7 +50,7 @@ const EVENT_COLUMNS =
 function asRecord(value: unknown): ChangeFieldsDto | null {
   const parsed = fromDbJson(value)
   return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
-    ? (parsed as ChangeFieldsDto)
+    ? (parsed)
     : null
 }
 

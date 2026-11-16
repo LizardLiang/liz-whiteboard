@@ -16,9 +16,9 @@ import {
 } from './index'
 import type { ActorContext } from './index'
 import {
+  applyLayoutPositions,
   createArea,
   deleteArea,
-  applyLayoutPositions,
   moveAreaAndMembers,
   removeTableFromAreas,
   updateArea,

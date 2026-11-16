@@ -18,11 +18,6 @@ import type {
 import { getWhiteboardProjectId } from '@/data/resolve-project'
 import { requireServerFnRole } from '@/lib/auth/require-role'
 
-async function requireViewer(userId: string, whiteboardId: string) {
-  const projectId = await getWhiteboardProjectId(whiteboardId)
-  await requireServerFnRole(userId, projectId, 'VIEWER')
-}
-
 /**
  * Newest-first page of a whiteboard's change log. VIEWER+ (the same gate as
  * the Versions tab); share-link guests have no session and never reach it.
@@ -31,7 +26,8 @@ export async function listSchemaChangesHandler(
   { user }: AuthContext,
   data: ListSchemaChanges,
 ) {
-  await requireViewer(user.id, data.whiteboardId)
+  const projectId = await getWhiteboardProjectId(data.whiteboardId)
+  await requireServerFnRole(user.id, projectId, 'VIEWER')
   const { whiteboardId, cursor, limit, ...filters } = data
   return listSchemaChanges(whiteboardId, filters, { cursor, limit })
 }
@@ -41,7 +37,8 @@ export async function getSchemaChangeBatchHandler(
   { user }: AuthContext,
   data: GetSchemaChangeBatch,
 ) {
-  await requireViewer(user.id, data.whiteboardId)
+  const projectId = await getWhiteboardProjectId(data.whiteboardId)
+  await requireServerFnRole(user.id, projectId, 'VIEWER')
   return getSchemaChangeBatch(
     data.whiteboardId,
     data.batchId,
@@ -55,6 +52,7 @@ export async function listChangeLogFacetsHandler(
   { user }: AuthContext,
   data: ListChangeLogFacets,
 ) {
-  await requireViewer(user.id, data.whiteboardId)
+  const projectId = await getWhiteboardProjectId(data.whiteboardId)
+  await requireServerFnRole(user.id, projectId, 'VIEWER')
   return listChangeLogFacets(data.whiteboardId)
 }
