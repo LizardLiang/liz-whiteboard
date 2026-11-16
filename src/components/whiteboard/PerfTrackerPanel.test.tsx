@@ -26,3 +26,22 @@ describe('PerfTrackerPanel without React Flow', () => {
     expect(report.meta.tableCount).toBe(42)
   })
 })
+
+describe('PerfTrackerPanel edge toggle', () => {
+  it('shows the Edges toggle by default (React Flow boards)', () => {
+    render(<PerfTrackerPanel getZoom={() => 1} getItemCount={() => 1} />)
+    expect(screen.getByTestId('perf-tracker-hide-edges')).toBeTruthy()
+  })
+
+  it('hides the Edges toggle when the board has no edge layer (canvas)', () => {
+    render(
+      <PerfTrackerPanel
+        getZoom={() => 1}
+        getItemCount={() => 1}
+        showEdgeToggle={false}
+      />,
+    )
+    expect(screen.queryByTestId('perf-tracker-hide-edges')).toBeNull()
+    expect(screen.getByTestId('perf-tracker-record')).toBeTruthy()
+  })
+})

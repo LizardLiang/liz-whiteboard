@@ -45,6 +45,12 @@ export interface PerfTrackerPanelProps {
   getZoom: () => number
   /** Element count stamped into the report's meta.tableCount. */
   getItemCount: () => number
+  /**
+   * Show the "Edges: on/off" ablation toggle. Only the React Flow board has an
+   * edge layer to drop; canvas boards pass false so the button is not offered
+   * where it does nothing.
+   */
+  showEdgeToggle?: boolean
 }
 
 /**
@@ -64,6 +70,7 @@ export function ReactFlowPerfTrackerPanel() {
 export function PerfTrackerPanel({
   getZoom,
   getItemCount,
+  showEdgeToggle = true,
 }: PerfTrackerPanelProps) {
   const [fps, setFps] = useState(0)
   const [frameTimeMs, setFrameTimeMs] = useState(0)
@@ -72,6 +79,7 @@ export function PerfTrackerPanel({
     renders: 0,
     setNodesCalls: 0,
   })
+  const [liveStats, setLiveStats] = useState({ avg: 0, low1: 0 })
   const frameTimestampsRef = useRef<Array<number>>([])
 
   // isRecording flips rarely (start/stop) — cheap to source from the store.
@@ -118,6 +126,10 @@ export function PerfTrackerPanel({
           renders: live.renders,
           setNodesCalls: live.setNodesCalls,
         })
+        if (live.isRecording) {
+          const { fps: recorded } = perfTracker.getLiveStats()
+          setLiveStats({ avg: recorded.avg, low1: recorded.low1 })
+        }
       }
 
       rafId = requestAnimationFrame(tick)
@@ -169,19 +181,21 @@ export function PerfTrackerPanel({
           record-with-edges vs record-without-edges pair attributes pan/zoom
           cost to the edges. Only the main canvas honors it (its
           `enableEdgeAblation` prop); the focus overlay ignores it. */}
-      <button
-        type="button"
-        data-testid="perf-tracker-hide-edges"
-        aria-pressed={hideEdges}
-        onClick={() => perfTracker.setHideEdges(!hideEdges)}
-        className={`nodrag nowheel pointer-events-auto flex cursor-pointer items-center gap-1 rounded border border-[var(--rf-table-border,#404040)] bg-[var(--rf-table-header-bg,#1a1a1a)] px-1.5 py-0.5 font-semibold ${
-          hideEdges
-            ? 'text-[#eab308]'
-            : 'text-[var(--rf-table-header-text,#9ca3af)]'
-        }`}
-      >
-        {hideEdges ? 'Edges: off' : 'Edges: on'}
-      </button>
+      {showEdgeToggle && (
+        <button
+          type="button"
+          data-testid="perf-tracker-hide-edges"
+          aria-pressed={hideEdges}
+          onClick={() => perfTracker.setHideEdges(!hideEdges)}
+          className={`nodrag nowheel pointer-events-auto flex cursor-pointer items-center gap-1 rounded border border-[var(--rf-table-border,#404040)] bg-[var(--rf-table-header-bg,#1a1a1a)] px-1.5 py-0.5 font-semibold ${
+            hideEdges
+              ? 'text-[#eab308]'
+              : 'text-[var(--rf-table-header-text,#9ca3af)]'
+          }`}
+        >
+          {hideEdges ? 'Edges: off' : 'Edges: on'}
+        </button>
+      )}
 
       <div className="nodrag nowheel pointer-events-auto min-w-32 rounded border border-[var(--rf-table-border,#404040)] bg-[var(--rf-table-header-bg,#1a1a1a)] px-2 py-1 text-right">
         <div className="font-semibold" style={{ color: fpsColor(fps) }}>
@@ -196,6 +210,12 @@ export function PerfTrackerPanel({
             className="mt-1 border-t border-[var(--rf-table-border,#404040)] pt-1 text-[var(--rf-table-header-text,#9ca3af)] opacity-[0.85]"
           >
             <div>gesture: {gesture}</div>
+            <div data-testid="perf-tracker-avg">
+              avg: {liveStats.avg.toFixed(1)} fps
+            </div>
+            <div data-testid="perf-tracker-low1">
+              1% low: {liveStats.low1.toFixed(1)} fps
+            </div>
             <div>renders: {liveCounters.renders}</div>
             <div>setNodes: {liveCounters.setNodesCalls}</div>
           </div>

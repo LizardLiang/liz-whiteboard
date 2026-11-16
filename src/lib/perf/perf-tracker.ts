@@ -39,14 +39,29 @@ interface LatencySample {
   durationMs: number
 }
 
+/**
+ * Report schema version. 1: `fps.avg` was the mean of per-frame 1000/dt and
+ * `fps.p95` the high end of the fps distribution, which both hide stalls.
+ * 2: `fps.avg` is frames per elapsed second and `fps.low1` is the "1% low".
+ */
+export const PERF_REPORT_VERSION = 2
+
 export interface GestureStats {
   frames: number
-  fps: { min: number; avg: number; p95: number }
+  /**
+   * `avg`: frames / elapsed seconds (= 1000 / mean frame time).
+   * `low1`: the "1% low", the fps of the 99th-percentile frame time, so it
+   * is the rate the slowest 1% of frames ran at.
+   * `min`: the slowest single frame, as fps.
+   */
+  fps: { min: number; avg: number; low1: number }
   frameMs: { avg: number; p95: number; worst: number }
   latencyMs: { avg: number; p95: number } | null
 }
 
 export interface PerfReport {
+  /** `PERF_REPORT_VERSION` at the time the report was written. */
+  version: number
   meta: {
     tableCount: number
     domNodeCount: number
@@ -278,6 +293,18 @@ function percentile(xs: Array<number>, p: number): number {
   return sorted[idx]
 }
 
+function fpsOfFrameTime(dtMs: number): number {
+  return dtMs > 0 ? 1000 / dtMs : 0
+}
+
+/**
+ * The statistics of everything recorded so far, for the HUD. Allocates and
+ * sorts; call it from a throttled loop, never from a frame handler.
+ */
+function getLiveStats(): GestureStats {
+  return computeStats(frames, latencies)
+}
+
 function computeStats(
   frameBucket: Array<FrameSample>,
   latencyBucket: Array<LatencySample>,
@@ -285,7 +312,7 @@ function computeStats(
   if (frameBucket.length === 0) {
     return {
       frames: 0,
-      fps: { min: 0, avg: 0, p95: 0 },
+      fps: { min: 0, avg: 0, low1: 0 },
       frameMs: { avg: 0, p95: 0, worst: 0 },
       latencyMs:
         latencyBucket.length === 0
@@ -301,18 +328,18 @@ function computeStats(
   }
 
   const dts = frameBucket.map((f) => f.dtMs)
-  // Frame-time -> instantaneous fps; a 0/negative dt is treated as 0 fps to
-  // avoid Infinity poisoning min/avg.
+  // A 0/negative dt is treated as 0 fps so Infinity cannot poison min.
   const fpsVals = dts.map((dt) => (dt > 0 ? 1000 / dt : 0))
+  const totalMs = dts.reduce((sum, dt) => sum + dt, 0)
 
   return {
     frames: frameBucket.length,
     fps: {
       min: minOf(fpsVals),
-      avg: avg(fpsVals),
-      // p95 over the ascending fps distribution (high end); the worst-case
-      // slow frames are already surfaced by `fps.min` + `frameMs.worst`.
-      p95: percentile(fpsVals, 0.95),
+      // Frames per second of wall time. The mean of per-frame 1000/dt would
+      // weight a fast frame after a stall as heavily as the stall.
+      avg: totalMs > 0 ? (frameBucket.length * 1000) / totalMs : 0,
+      low1: fpsOfFrameTime(percentile(dts, 0.99)),
     },
     frameMs: {
       avg: avg(dts),
@@ -324,7 +351,10 @@ function computeStats(
         ? null
         : {
             avg: avg(latencyBucket.map((l) => l.durationMs)),
-            p95: percentile(latencyBucket.map((l) => l.durationMs), 0.95),
+            p95: percentile(
+              latencyBucket.map((l) => l.durationMs),
+              0.95,
+            ),
           },
   }
 }
@@ -434,6 +464,7 @@ function stopRecording(): PerfReport {
   }
 
   const report: PerfReport = {
+    version: PERF_REPORT_VERSION,
     meta: {
       tableCount: recordTableCount,
       domNodeCount,
@@ -512,4 +543,5 @@ export const perfTracker = {
   subscribe,
   getSnapshot,
   getLive,
+  getLiveStats,
 }
