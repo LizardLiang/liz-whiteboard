@@ -98,7 +98,7 @@ function Meta({
   )
 }
 
-function Value({
+export function Value({
   value,
   tone,
 }: {
@@ -161,7 +161,7 @@ function Details({ event }: { event: ChangeEventDto }) {
   )
 }
 
-function RowShell({
+export function RowShell({
   icon,
   sentence,
   meta,

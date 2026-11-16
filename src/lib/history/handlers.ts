@@ -24,6 +24,7 @@
 
 import type { AuthContext } from '@/lib/auth/middleware'
 import type {
+  CompareVersions,
   GetSnapshot,
   ListSnapshots,
   RestoreSnapshot,
@@ -41,6 +42,7 @@ import {
 } from '@/data/whiteboard-snapshot'
 import { emitToWhiteboard } from '@/routes/api/collaboration'
 import { userContext } from '@/lib/schema-changelog'
+import { diffBoards } from '@/lib/schema-diff'
 
 /**
  * Reshape a flat, self-contained (DB-reloaded) SnapshotPayload into the
@@ -229,4 +231,55 @@ export async function restoreSnapshotHandler(
   })
 
   return { success: true as const }
+}
+
+/**
+ * Compare a saved version with the live board, or two saved versions.
+ * VIEWER+. A snapshot of another whiteboard is treated as not found, so a
+ * snapshot id can never expose a board the caller did not name.
+ */
+export async function compareVersionsHandler(
+  { user }: AuthContext,
+  data: CompareVersions,
+) {
+  const projectId = await getWhiteboardProjectId(data.whiteboardId)
+  await requireServerFnRole(user.id, projectId, 'VIEWER')
+
+  const left = await findSnapshotById(data.leftSnapshotId)
+  if (!left || left.whiteboardId !== data.whiteboardId) {
+    return { error: 'NOT_FOUND' as const, status: 404 as const }
+  }
+
+  const rightSnapshot =
+    data.rightSnapshotId === 'current'
+      ? null
+      : await findSnapshotById(data.rightSnapshotId)
+  if (
+    data.rightSnapshotId !== 'current' &&
+    (!rightSnapshot || rightSnapshot.whiteboardId !== data.whiteboardId)
+  ) {
+    return { error: 'NOT_FOUND' as const, status: 404 as const }
+  }
+
+  const rightPayload = rightSnapshot
+    ? rightSnapshot.payload
+    : await captureWhiteboardState(data.whiteboardId)
+
+  const side = (s: {
+    id: string
+    label: string | null
+    isAuto: boolean
+    createdAt: Date
+  }) => ({
+    id: s.id,
+    label: s.label,
+    isAuto: s.isAuto,
+    createdAt: s.createdAt,
+  })
+
+  return {
+    left: side(left),
+    right: rightSnapshot ? side(rightSnapshot) : null,
+    diff: diffBoards(left.payload, rightPayload),
+  }
 }

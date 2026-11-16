@@ -18,12 +18,14 @@
 import { createServerFn } from '@tanstack/react-start'
 import { requireAuth } from '@/lib/auth/middleware'
 import {
+  compareVersionsHandler,
   getSnapshotHandler,
   listSnapshotsHandler,
   restoreSnapshotHandler,
   saveSnapshotHandler,
 } from '@/lib/history/handlers'
 import {
+  compareVersionsSchema,
   getSnapshotSchema,
   listSnapshotsSchema,
   restoreSnapshotSchema,
@@ -57,3 +59,10 @@ export const getSnapshot = createServerFn({ method: 'GET' })
 export const restoreSnapshot = createServerFn({ method: 'POST' })
   .validator((data: unknown) => restoreSnapshotSchema.parse(data))
   .handler(requireAuth(restoreSnapshotHandler))
+
+/**
+ * @requires viewer
+ */
+export const compareVersions = createServerFn({ method: 'GET' })
+  .validator((data: unknown) => compareVersionsSchema.parse(data))
+  .handler(requireAuth(compareVersionsHandler))

@@ -420,9 +420,15 @@ export function update(
   )
 }
 
-/** Run a function inside a transaction; commits on success, rolls back on throw. */
+/**
+ * Run a function inside a transaction; commits on success, rolls back on throw.
+ * It takes the write lock up front (`BEGIN IMMEDIATE`): the writers read a row
+ * and then write it, and a plain `BEGIN` that reads first fails at once with
+ * "database is locked" when another process commits in between, because
+ * `busy_timeout` does not apply to a read-to-write upgrade of a stale snapshot.
+ */
 export function transaction<T>(fn: () => T): T {
-  db.exec('BEGIN')
+  db.exec('BEGIN IMMEDIATE')
   try {
     const result = fn()
     db.exec('COMMIT')

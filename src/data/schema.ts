@@ -728,6 +728,17 @@ export const getSnapshotSchema = z.object({
 })
 
 /**
+ * Schema for comparing two points of one whiteboard. `leftSnapshotId` is the
+ * older side; `rightSnapshotId` is a snapshot of the same whiteboard or
+ * `'current'` for the live board. Both snapshots must belong to `whiteboardId`.
+ */
+export const compareVersionsSchema = z.object({
+  whiteboardId: z.string().uuid(),
+  leftSnapshotId: z.string().uuid(),
+  rightSnapshotId: z.union([z.string().uuid(), z.literal('current')]),
+})
+
+/**
  * Filters shared by the change-log list and its batch expansion. `from`/`to`
  * are epoch milliseconds; `viaAgent: true` keeps only AI-agent edits.
  */
@@ -773,6 +784,7 @@ export type SaveSnapshot = z.infer<typeof saveSnapshotSchema>
 export type RestoreSnapshot = z.infer<typeof restoreSnapshotSchema>
 export type ListSnapshots = z.infer<typeof listSnapshotsSchema>
 export type GetSnapshot = z.infer<typeof getSnapshotSchema>
+export type CompareVersions = z.infer<typeof compareVersionsSchema>
 
 // Auth type exports
 export type RegisterInput = z.infer<typeof registerInputSchema>

@@ -288,7 +288,7 @@ test('restoring a version brings a deleted reference node back as a reference', 
   await clickMoreTool(page, 'Version history')
   await page
     .getByRole('list', { name: 'Version list' })
-    .getByRole('button', { name: /With reference/ })
+    .getByRole('button', { name: /^With reference/ })
     .click()
   const dialog = page.getByRole('dialog').filter({ hasText: 'Read-only preview' })
   await dialog.getByRole('button', { name: 'Restore this version' }).click()

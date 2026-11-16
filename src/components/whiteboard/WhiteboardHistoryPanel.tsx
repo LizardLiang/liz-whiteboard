@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ReactFlowWhiteboard } from './ReactFlowWhiteboard'
 import { WhiteboardChangesTab } from './WhiteboardChangesTab'
+import { CURRENT, VersionCompare, orderSides } from './VersionCompare'
 import { TableHistoryProvider } from './table-history-context'
 import type { TableHistoryRequest } from './WhiteboardChangesTab'
 import type { EffectiveRole } from '@/data/permission'
@@ -140,6 +141,11 @@ export function WhiteboardHistoryPanel({
     if (tableRequest) setTab('changes')
   }, [tableRequest])
 
+  // The Versions tab shows either the list or the compare view.
+  const [compare, setCompare] = useState<{
+    left: string
+    right: string
+  } | null>(null)
   const [newLabel, setNewLabel] = useState('')
   const [previewSnapshotId, setPreviewSnapshotId] = useState<string | null>(
     null,
@@ -290,93 +296,161 @@ export function WhiteboardHistoryPanel({
               value="versions"
               className="mt-0 flex-1 space-y-6 overflow-y-auto px-6 pt-2 pb-6"
             >
-              {canEdit && (
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">
-                    {t('whiteboard.history.saveCurrent')}
-                  </Label>
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder={t('whiteboard.history.labelPlaceholder')}
-                      value={newLabel}
-                      onChange={(e) => setNewLabel(e.target.value)}
-                      aria-label={t('whiteboard.history.labelAria')}
-                    />
-                    <Button
-                      size="sm"
-                      disabled={saveMutation.isPending}
-                      onClick={() => saveMutation.mutate()}
-                    >
-                      {saveMutation.isPending
-                        ? t('whiteboard.history.saving')
-                        : t('whiteboard.history.saveVersion')}
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <Label className="text-sm font-medium">
-                  {t('whiteboard.history.versions')}
-                </Label>
-                {isLoading ? (
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    {t('whiteboard.history.loading')}
-                  </p>
-                ) : isSnapshotsError ? (
-                  <p className="mt-2 text-sm text-destructive">
-                    {classifyQueryFailure({ error: snapshotsError }) ===
-                    'forbidden'
-                      ? t('whiteboard.history.noAccess')
-                      : t('whiteboard.history.loadFailed')}
-                  </p>
-                ) : (
-                  <ul
-                    className="mt-2 space-y-2"
-                    aria-label={t('whiteboard.history.list')}
-                  >
-                    {snapshots.map((snapshot) => (
-                      <li key={snapshot.id}>
-                        <button
-                          type="button"
-                          className="w-full rounded-md border px-3 py-2 text-left text-sm hover:bg-muted"
-                          onClick={() => setPreviewSnapshotId(snapshot.id)}
+              {compare ? (
+                <VersionCompare
+                  whiteboardId={whiteboardId}
+                  snapshots={snapshots}
+                  nameOf={(snapshot) => {
+                    const item = snapshots.find((s) => s.id === snapshot.id)
+                    return item
+                      ? formatSnapshotName(
+                          item.label,
+                          item.createdAt,
+                          t,
+                          locale,
+                          item.isAuto,
+                        )
+                      : snapshot.id
+                  }}
+                  left={compare.left}
+                  right={compare.right}
+                  onChange={setCompare}
+                  onBack={() => setCompare(null)}
+                />
+              ) : (
+                <>
+                  {canEdit && (
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">
+                        {t('whiteboard.history.saveCurrent')}
+                      </Label>
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder={t('whiteboard.history.labelPlaceholder')}
+                          value={newLabel}
+                          onChange={(e) => setNewLabel(e.target.value)}
+                          aria-label={t('whiteboard.history.labelAria')}
+                        />
+                        <Button
+                          size="sm"
+                          disabled={saveMutation.isPending}
+                          onClick={() => saveMutation.mutate()}
                         >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-medium">
-                              {formatSnapshotName(
-                                snapshot.label,
-                                snapshot.createdAt,
-                                t,
-                                locale,
-                                snapshot.isAuto,
+                          {saveMutation.isPending
+                            ? t('whiteboard.history.saving')
+                            : t('whiteboard.history.saveVersion')}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <Label className="text-sm font-medium">
+                        {t('whiteboard.history.versions')}
+                      </Label>
+                      {snapshots.length >= 2 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const [newest, previous] = snapshots
+                            setCompare(
+                              orderSides(previous.id, newest.id, snapshots),
+                            )
+                          }}
+                        >
+                          {t('whiteboard.history.compare.twoVersions')}
+                        </Button>
+                      )}
+                    </div>
+                    {isLoading ? (
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {t('whiteboard.history.loading')}
+                      </p>
+                    ) : isSnapshotsError ? (
+                      <p className="mt-2 text-sm text-destructive">
+                        {classifyQueryFailure({ error: snapshotsError }) ===
+                        'forbidden'
+                          ? t('whiteboard.history.noAccess')
+                          : t('whiteboard.history.loadFailed')}
+                      </p>
+                    ) : (
+                      <ul
+                        className="mt-2 space-y-2"
+                        aria-label={t('whiteboard.history.list')}
+                      >
+                        {snapshots.map((snapshot) => (
+                          <li key={snapshot.id}>
+                            <button
+                              type="button"
+                              className="w-full rounded-md border px-3 py-2 text-left text-sm hover:bg-muted"
+                              onClick={() => setPreviewSnapshotId(snapshot.id)}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-medium">
+                                  {formatSnapshotName(
+                                    snapshot.label,
+                                    snapshot.createdAt,
+                                    t,
+                                    locale,
+                                    snapshot.isAuto,
+                                  )}
+                                </span>
+                                {snapshot.isAuto && (
+                                  <Badge variant="secondary">
+                                    {t('whiteboard.history.auto')}
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                {new Date(snapshot.createdAt).toLocaleString(
+                                  locale,
+                                )}
+                                {snapshot.authorName
+                                  ? ` · ${snapshot.authorName}`
+                                  : ''}
+                              </div>
+                            </button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="mt-1 h-7 px-2 text-xs"
+                              aria-label={t(
+                                'whiteboard.history.compare.withCurrentAria',
+                                {
+                                  name: formatSnapshotName(
+                                    snapshot.label,
+                                    snapshot.createdAt,
+                                    t,
+                                    locale,
+                                    snapshot.isAuto,
+                                  ),
+                                },
                               )}
-                            </span>
-                            {snapshot.isAuto && (
-                              <Badge variant="secondary">
-                                {t('whiteboard.history.auto')}
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {new Date(snapshot.createdAt).toLocaleString(
-                              locale,
-                            )}
-                            {snapshot.authorName
-                              ? ` · ${snapshot.authorName}`
-                              : ''}
-                          </div>
-                        </button>
-                      </li>
-                    ))}
-                    {snapshots.length === 0 && (
-                      <li className="py-2 text-sm text-muted-foreground">
-                        {t('whiteboard.history.empty')}
-                      </li>
+                              onClick={() =>
+                                setCompare({
+                                  left: snapshot.id,
+                                  right: CURRENT,
+                                })
+                              }
+                            >
+                              {t('whiteboard.history.compare.withCurrent')}
+                            </Button>
+                          </li>
+                        ))}
+                        {snapshots.length === 0 && (
+                          <li className="py-2 text-sm text-muted-foreground">
+                            {t('whiteboard.history.empty')}
+                          </li>
+                        )}
+                      </ul>
                     )}
-                  </ul>
-                )}
-              </div>
+                  </div>
+                </>
+              )}
             </TabsContent>
 
             <TabsContent

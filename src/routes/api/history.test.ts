@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import type { AuthContext } from '@/lib/auth/middleware'
 import {
+  compareVersionsHandler,
   getSnapshotHandler,
   listSnapshotsHandler,
   restoreSnapshotHandler,
@@ -22,7 +23,7 @@ import {
   createDiagramTable,
   findDiagramTablesByWhiteboardId,
 } from '@/data/diagram-table'
-import { createColumn } from '@/data/column'
+import { createColumn, updateColumn } from '@/data/column'
 import { createRelationship } from '@/data/relationship'
 import { createArea } from '@/data/area'
 import {
@@ -390,6 +391,87 @@ describe('restoreSnapshotHandler', () => {
     await expect(
       restoreSnapshotHandler(ctxFor(strangerId), {
         snapshotId: (saved as any).snapshot.id,
+      }),
+    ).rejects.toThrow(ForbiddenError)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// compareVersionsHandler (version compare)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('compareVersionsHandler', () => {
+  async function save(label: string): Promise<string> {
+    const saved = await saveSnapshotHandler(ctxFor(EDITOR_ID), {
+      whiteboardId: WHITEBOARD_ID,
+      label,
+    })
+    return (saved as any).snapshot.id
+  }
+
+  it('VIEWER compares a version with the current board', async () => {
+    const { c1 } = await seedDiagram(WHITEBOARD_ID)
+    const v1 = await save('v1')
+    await updateColumn(c1.id, { name: 'uid' }, SYSTEM)
+
+    const result: any = await compareVersionsHandler(ctxFor(VIEWER_ID), {
+      whiteboardId: WHITEBOARD_ID,
+      leftSnapshotId: v1,
+      rightSnapshotId: 'current',
+    })
+    expect(result.right).toBeNull()
+    expect(result.diff.changed).toHaveLength(1)
+    expect(result.diff.changed[0].fields[0]).toMatchObject({
+      field: 'name',
+      before: 'id',
+      after: 'uid',
+    })
+  })
+
+  it('compares two versions and reports an empty diff for identical ones', async () => {
+    await seedDiagram(WHITEBOARD_ID)
+    const v1 = await save('v1')
+    const v2 = await save('v2')
+    const result: any = await compareVersionsHandler(ctxFor(VIEWER_ID), {
+      whiteboardId: WHITEBOARD_ID,
+      leftSnapshotId: v1,
+      rightSnapshotId: v2,
+    })
+    expect(result.right.label).toBe('v2')
+    expect(result.diff).toEqual({ added: [], removed: [], changed: [] })
+  })
+
+  it('treats a snapshot of another whiteboard as not found (IDOR)', async () => {
+    const other = makeWhiteboard({ projectId: PROJECT_ID, name: 'Other' }).id
+    const foreign = await saveSnapshotHandler(ctxFor(EDITOR_ID), {
+      whiteboardId: other,
+    })
+    const mine = await save('mine')
+    const foreignId = (foreign as any).snapshot.id
+    expect(
+      await compareVersionsHandler(ctxFor(VIEWER_ID), {
+        whiteboardId: WHITEBOARD_ID,
+        leftSnapshotId: foreignId,
+        rightSnapshotId: 'current',
+      }),
+    ).toMatchObject({ error: 'NOT_FOUND' })
+    expect(
+      await compareVersionsHandler(ctxFor(VIEWER_ID), {
+        whiteboardId: WHITEBOARD_ID,
+        leftSnapshotId: mine,
+        rightSnapshotId: foreignId,
+      }),
+    ).toMatchObject({ error: 'NOT_FOUND' })
+  })
+
+  it('denies a user with no project access', async () => {
+    const strangerId = makeUser({ username: 'stranger2' }).id
+    const v1 = await save('v1')
+    await expect(
+      compareVersionsHandler(ctxFor(strangerId), {
+        whiteboardId: WHITEBOARD_ID,
+        leftSnapshotId: v1,
+        rightSnapshotId: 'current',
       }),
     ).rejects.toThrow(ForbiddenError)
   })

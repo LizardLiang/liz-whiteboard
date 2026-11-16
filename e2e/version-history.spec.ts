@@ -49,7 +49,7 @@ test.describe('Whiteboard version history (GH #107)', () => {
     // AC2 — appears in the list with the author name (seeded user).
     const item = page
       .getByRole('list', { name: 'Version list' })
-      .getByRole('button', { name: new RegExp(label) })
+      .getByRole('button', { name: new RegExp(`^${label}`) })
     await expect(item).toBeVisible()
     await expect(item).toContainText('e2e_dogfood')
 
@@ -104,7 +104,7 @@ test.describe('Whiteboard version history (GH #107)', () => {
     await openHistoryPanel(page)
     await page
       .getByRole('list', { name: 'Version list' })
-      .getByRole('button', { name: /Before delete/ })
+      .getByRole('button', { name: /^Before delete/ })
       .click()
     const dialog = page.getByRole('dialog').filter({ hasText: 'Read-only preview' })
     await dialog.getByRole('button', { name: 'Restore this version' }).click()
@@ -132,7 +132,7 @@ test.describe('Whiteboard version history (GH #107)', () => {
     await expect(
       page
         .getByRole('list', { name: 'Version list' })
-        .getByRole('button', { name: /Auto-saved before restore/ }),
+        .getByRole('button', { name: /^Auto-saved before restore/ }),
     ).toBeVisible()
   })
 })
