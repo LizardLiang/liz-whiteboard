@@ -31,6 +31,7 @@ import {
   makeWhiteboard,
   resetDb,
 } from '@/test/db-helpers'
+import { SYSTEM } from '@/lib/schema-changelog'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test helpers
@@ -52,56 +53,74 @@ function ctxFor(userId: string): AuthContext {
 
 /** Seed a small but representative diagram: 2 tables, 1 relationship, 1 area. */
 async function seedDiagram(whiteboardId: string) {
-  const t1 = await createDiagramTable({
-    whiteboardId,
-    name: 'users',
-    positionX: 0,
-    positionY: 0,
-  })
-  const c1 = await createColumn({
-    tableId: t1.id,
-    name: 'id',
-    dataType: 'uuid',
-    isPrimaryKey: true,
-    isForeignKey: false,
-    isUnique: true,
-    isNullable: false,
-    order: 0,
-  })
-  const t2 = await createDiagramTable({
-    whiteboardId,
-    name: 'posts',
-    positionX: 100,
-    positionY: 100,
-  })
-  const c2 = await createColumn({
-    tableId: t2.id,
-    name: 'user_id',
-    dataType: 'uuid',
-    isForeignKey: true,
-    isPrimaryKey: false,
-    isUnique: false,
-    isNullable: false,
-    order: 0,
-  })
-  const rel = await createRelationship({
-    whiteboardId,
-    sourceTableId: t1.id,
-    targetTableId: t2.id,
-    sourceColumnId: c1.id,
-    targetColumnId: c2.id,
-    cardinality: 'ONE_TO_MANY',
-  })
-  const area = await createArea({
-    whiteboardId,
-    name: 'Core',
-    color: 'blue',
-    positionX: 0,
-    positionY: 0,
-    width: 400,
-    height: 300,
-    memberTableIds: [t1.id, t2.id],
-  })
+  const t1 = await createDiagramTable(
+    {
+      whiteboardId,
+      name: 'users',
+      positionX: 0,
+      positionY: 0,
+    },
+    SYSTEM,
+  )
+  const c1 = await createColumn(
+    {
+      tableId: t1.id,
+      name: 'id',
+      dataType: 'uuid',
+      isPrimaryKey: true,
+      isForeignKey: false,
+      isUnique: true,
+      isNullable: false,
+      order: 0,
+    },
+    SYSTEM,
+  )
+  const t2 = await createDiagramTable(
+    {
+      whiteboardId,
+      name: 'posts',
+      positionX: 100,
+      positionY: 100,
+    },
+    SYSTEM,
+  )
+  const c2 = await createColumn(
+    {
+      tableId: t2.id,
+      name: 'user_id',
+      dataType: 'uuid',
+      isForeignKey: true,
+      isPrimaryKey: false,
+      isUnique: false,
+      isNullable: false,
+      order: 0,
+    },
+    SYSTEM,
+  )
+  const rel = await createRelationship(
+    {
+      whiteboardId,
+      sourceTableId: t1.id,
+      targetTableId: t2.id,
+      sourceColumnId: c1.id,
+      targetColumnId: c2.id,
+      cardinality: 'ONE_TO_MANY',
+    },
+    SYSTEM,
+  )
+  const area = await createArea(
+    {
+      whiteboardId,
+      name: 'Core',
+      color: 'blue',
+      positionX: 0,
+      positionY: 0,
+      width: 400,
+      height: 300,
+      memberTableIds: [t1.id, t2.id],
+    },
+    SYSTEM,
+  )
   return { t1, c1, t2, c2, rel, area }
 }
 
@@ -282,10 +301,13 @@ describe('restoreSnapshotHandler', () => {
     const v1Id = (v1 as any).snapshot.id
 
     // Mutate live state after v1 was saved.
-    await createDiagramTable({
-      whiteboardId: WHITEBOARD_ID,
-      name: 'extra_table',
-    })
+    await createDiagramTable(
+      {
+        whiteboardId: WHITEBOARD_ID,
+        name: 'extra_table',
+      },
+      SYSTEM,
+    )
 
     const restoreResult = await restoreSnapshotHandler(ctxFor(EDITOR_ID), {
       snapshotId: v1Id,
@@ -338,10 +360,13 @@ describe('restoreSnapshotHandler', () => {
       userId: EDITOR_ID,
       role: 'EDITOR',
     })
-    const tableB = await createDiagramTable({
-      whiteboardId: whiteboardB,
-      name: 'b_table',
-    })
+    const tableB = await createDiagramTable(
+      {
+        whiteboardId: whiteboardB,
+        name: 'b_table',
+      },
+      SYSTEM,
+    )
 
     await seedDiagram(WHITEBOARD_ID)
     const savedA = await saveSnapshotHandler(ctxFor(EDITOR_ID), {

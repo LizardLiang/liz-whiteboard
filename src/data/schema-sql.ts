@@ -363,6 +363,31 @@ CREATE TABLE IF NOT EXISTS "WhiteboardSnapshot" (
 CREATE INDEX IF NOT EXISTS "WhiteboardSnapshot_whiteboardId_idx" ON "WhiteboardSnapshot"("whiteboardId");
 CREATE INDEX IF NOT EXISTS "WhiteboardSnapshot_whiteboardId_createdAt_idx" ON "WhiteboardSnapshot"("whiteboardId", "createdAt");
 
+CREATE TABLE IF NOT EXISTS "SchemaChangeEvent" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "whiteboardId" TEXT NOT NULL,
+    "batchId" TEXT,
+    "batchKind" TEXT,
+    "actorUserId" TEXT,
+    "actorName" TEXT NOT NULL,
+    "viaAgent" INTEGER NOT NULL DEFAULT 0,
+    "category" TEXT NOT NULL,
+    "entityType" TEXT NOT NULL,
+    "action" TEXT NOT NULL,
+    "entityId" TEXT NOT NULL,
+    "entityName" TEXT,
+    "tableId" TEXT,
+    "tableName" TEXT,
+    "before" JSONB,
+    "after" JSONB,
+    "createdAt" INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    CONSTRAINT "SchemaChangeEvent_whiteboardId_fkey" FOREIGN KEY ("whiteboardId") REFERENCES "Whiteboard" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "SchemaChangeEvent_actorUserId_fkey" FOREIGN KEY ("actorUserId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+CREATE INDEX IF NOT EXISTS "SchemaChangeEvent_whiteboardId_createdAt_idx" ON "SchemaChangeEvent"("whiteboardId", "createdAt");
+CREATE INDEX IF NOT EXISTS "SchemaChangeEvent_whiteboardId_tableId_idx" ON "SchemaChangeEvent"("whiteboardId", "tableId");
+CREATE INDEX IF NOT EXISTS "SchemaChangeEvent_batchId_idx" ON "SchemaChangeEvent"("batchId");
+
 CREATE TABLE IF NOT EXISTS "Comment" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "whiteboardId" TEXT NOT NULL,

@@ -24,6 +24,7 @@ import {
   makeWhiteboard,
   resetDb,
 } from '@/test/db-helpers'
+import { SYSTEM } from '@/lib/schema-changelog'
 
 /** Build the FK chain a Column requires: Project → Whiteboard → DiagramTable. */
 function makeTableId(): string {
@@ -39,16 +40,19 @@ describe('createColumn', () => {
   it('inserts a column and returns the mapped model', async () => {
     const tableId = makeTableId()
 
-    const col = await createColumn({
-      tableId,
-      name: 'email',
-      dataType: 'string',
-      isPrimaryKey: true,
-      isForeignKey: false,
-      isUnique: true,
-      isNullable: false,
-      order: 0,
-    })
+    const col = await createColumn(
+      {
+        tableId,
+        name: 'email',
+        dataType: 'string',
+        isPrimaryKey: true,
+        isForeignKey: false,
+        isUnique: true,
+        isNullable: false,
+        order: 0,
+      },
+      SYSTEM,
+    )
 
     expect(col.id).toBeTruthy()
     expect(col.tableId).toBe(tableId)
@@ -69,11 +73,14 @@ describe('createColumn', () => {
   it('applies schema defaults for optional flags', async () => {
     const tableId = makeTableId()
 
-    const col = await createColumn({
-      tableId,
-      name: 'plain',
-      dataType: 'string',
-    })
+    const col = await createColumn(
+      {
+        tableId,
+        name: 'plain',
+        dataType: 'string',
+      },
+      SYSTEM,
+    )
 
     expect(col.isPrimaryKey).toBe(false)
     expect(col.isForeignKey).toBe(false)
@@ -87,11 +94,14 @@ describe('createColumns', () => {
   it('inserts multiple columns in one transaction', async () => {
     const tableId = makeTableId()
 
-    const cols = await createColumns([
-      { tableId, name: 'a', dataType: 'string', order: 0 },
-      { tableId, name: 'b', dataType: 'string', order: 1 },
-      { tableId, name: 'c', dataType: 'string', order: 2 },
-    ])
+    const cols = await createColumns(
+      [
+        { tableId, name: 'a', dataType: 'string', order: 0 },
+        { tableId, name: 'b', dataType: 'string', order: 1 },
+        { tableId, name: 'c', dataType: 'string', order: 2 },
+      ],
+      SYSTEM,
+    )
 
     expect(cols).toHaveLength(3)
     expect(cols.map((c) => c.name)).toEqual(['a', 'b', 'c'])
@@ -104,10 +114,13 @@ describe('createColumns', () => {
     const tableId = makeTableId()
     const id = randomUUID()
 
-    const error = await createColumns([
-      { id, tableId, name: 'a', dataType: 'string', order: 0 },
-      { id, tableId, name: 'b', dataType: 'string', order: 1 },
-    ]).catch((e: unknown) => e)
+    const error = await createColumns(
+      [
+        { id, tableId, name: 'a', dataType: 'string', order: 0 },
+        { id, tableId, name: 'b', dataType: 'string', order: 1 },
+      ],
+      SYSTEM,
+    ).catch((e: unknown) => e)
 
     expect(error).toBeInstanceOf(Error)
     expect(error).not.toBeInstanceOf(AlreadyExistsError)
@@ -118,10 +131,13 @@ describe('createColumns', () => {
     const tableId = makeTableId()
     const taken = makeColumn({ tableId })
 
-    const error = await createColumns([
-      { tableId, name: 'fresh', dataType: 'string', order: 0 },
-      { id: taken.id, tableId, name: 'again', dataType: 'string', order: 1 },
-    ]).catch((e: unknown) => e)
+    const error = await createColumns(
+      [
+        { tableId, name: 'fresh', dataType: 'string', order: 0 },
+        { id: taken.id, tableId, name: 'again', dataType: 'string', order: 1 },
+      ],
+      SYSTEM,
+    ).catch((e: unknown) => e)
 
     expect(error).toBeInstanceOf(Error)
     expect(error).not.toBeInstanceOf(AlreadyExistsError)
@@ -134,11 +150,14 @@ describe('createColumns', () => {
     const tableId = makeTableId()
 
     await expect(
-      createColumns([
-        { tableId, name: 'valid', dataType: 'string', order: 0 },
-        // empty name fails Zod validation
-        { tableId, name: '', dataType: 'string', order: 1 },
-      ]),
+      createColumns(
+        [
+          { tableId, name: 'valid', dataType: 'string', order: 0 },
+          // empty name fails Zod validation
+          { tableId, name: '', dataType: 'string', order: 1 },
+        ],
+        SYSTEM,
+      ),
     ).rejects.toThrow()
 
     // Nothing should have been persisted.
@@ -150,7 +169,7 @@ describe('createColumns', () => {
 describe('reorderColumns', () => {
   it('UT-07: throws on empty orderedColumnIds', async () => {
     const tableId = makeTableId()
-    await expect(reorderColumns(tableId, [])).rejects.toThrow(
+    await expect(reorderColumns(tableId, [], SYSTEM)).rejects.toThrow(
       'orderedColumnIds must not be empty',
     )
   })
@@ -161,9 +180,9 @@ describe('reorderColumns', () => {
     const otherTableId = makeTableId()
     const foreign = makeColumn({ tableId: otherTableId, name: 'x', order: 0 })
 
-    await expect(reorderColumns(tableId, [a.id, foreign.id])).rejects.toThrow(
-      /does not belong to table/,
-    )
+    await expect(
+      reorderColumns(tableId, [a.id, foreign.id], SYSTEM),
+    ).rejects.toThrow(/does not belong to table/)
   })
 
   it('UT-10: re-sequences order to 0..N-1 in the given order', async () => {
@@ -173,7 +192,7 @@ describe('reorderColumns', () => {
     const c = makeColumn({ tableId, name: 'c', order: 2 })
 
     // Desired new order: c, a, b
-    const result = await reorderColumns(tableId, [c.id, a.id, b.id])
+    const result = await reorderColumns(tableId, [c.id, a.id, b.id], SYSTEM)
 
     expect(result.map((col) => col.id)).toEqual([c.id, a.id, b.id])
     expect(result.map((col) => col.order)).toEqual([0, 1, 2])
@@ -188,7 +207,7 @@ describe('reorderColumns', () => {
     const a = makeColumn({ tableId, name: 'a', order: 0 })
     const b = makeColumn({ tableId, name: 'b', order: 1 })
 
-    const result = await reorderColumns(tableId, [b.id, a.id])
+    const result = await reorderColumns(tableId, [b.id, a.id], SYSTEM)
 
     expect(result.map((col) => col.id)).toEqual([b.id, a.id])
     expect(result[0].order).toBe(0)
@@ -199,17 +218,20 @@ describe('reorderColumns', () => {
 describe('duplicateColumn', () => {
   it('creates a "_copy" clone inserted directly below the source', async () => {
     const tableId = makeTableId()
-    const source = await createColumn({
-      tableId,
-      name: 'price',
-      dataType: 'string',
-      isUnique: true,
-      isNullable: true,
-      order: 0,
-    })
+    const source = await createColumn(
+      {
+        tableId,
+        name: 'price',
+        dataType: 'string',
+        isUnique: true,
+        isNullable: true,
+        order: 0,
+      },
+      SYSTEM,
+    )
     const sibling = makeColumn({ tableId, name: 'after', order: 1 })
 
-    const dup = await duplicateColumn(source.id)
+    const dup = await duplicateColumn(source.id, SYSTEM)
 
     expect(dup.name).toBe('price_copy')
     expect(dup.order).toBe(1)
@@ -229,22 +251,25 @@ describe('duplicateColumn', () => {
 
   it('increments the suffix when "_copy" already exists', async () => {
     const tableId = makeTableId()
-    const source = await createColumn({
-      tableId,
-      name: 'price',
-      dataType: 'string',
-      order: 0,
-    })
+    const source = await createColumn(
+      {
+        tableId,
+        name: 'price',
+        dataType: 'string',
+        order: 0,
+      },
+      SYSTEM,
+    )
 
-    const first = await duplicateColumn(source.id)
-    const second = await duplicateColumn(source.id)
+    const first = await duplicateColumn(source.id, SYSTEM)
+    const second = await duplicateColumn(source.id, SYSTEM)
 
     expect(first.name).toBe('price_copy')
     expect(second.name).toBe('price_copy2')
   })
 
   it('throws when the source column does not exist', async () => {
-    await expect(duplicateColumn('non-existent-id')).rejects.toThrow(
+    await expect(duplicateColumn('non-existent-id', SYSTEM)).rejects.toThrow(
       /Column not found/,
     )
   })
@@ -253,16 +278,19 @@ describe('duplicateColumn', () => {
 describe('updateColumn', () => {
   it('applies a partial update without touching unspecified fields', async () => {
     const tableId = makeTableId()
-    const col = await createColumn({
-      tableId,
-      name: 'old_name',
-      dataType: 'string',
-      isPrimaryKey: true,
-      isNullable: false,
-      order: 0,
-    })
+    const col = await createColumn(
+      {
+        tableId,
+        name: 'old_name',
+        dataType: 'string',
+        isPrimaryKey: true,
+        isNullable: false,
+        order: 0,
+      },
+      SYSTEM,
+    )
 
-    const updated = await updateColumn(col.id, { name: 'new_name' })
+    const updated = await updateColumn(col.id, { name: 'new_name' }, SYSTEM)
 
     expect(updated.name).toBe('new_name')
     // Untouched fields are preserved.
@@ -273,15 +301,18 @@ describe('updateColumn', () => {
 
   it('toggles a boolean flag', async () => {
     const tableId = makeTableId()
-    const col = await createColumn({
-      tableId,
-      name: 'c',
-      dataType: 'string',
-      isNullable: false,
-      order: 0,
-    })
+    const col = await createColumn(
+      {
+        tableId,
+        name: 'c',
+        dataType: 'string',
+        isNullable: false,
+        order: 0,
+      },
+      SYSTEM,
+    )
 
-    const updated = await updateColumn(col.id, { isNullable: true })
+    const updated = await updateColumn(col.id, { isNullable: true }, SYSTEM)
     expect(updated.isNullable).toBe(true)
 
     const fetched = await findColumnById(col.id)
@@ -294,7 +325,7 @@ describe('deleteColumn', () => {
     const tableId = makeTableId()
     const col = makeColumn({ tableId, name: 'gone', order: 0 })
 
-    const deleted = await deleteColumn(col.id)
+    const deleted = await deleteColumn(col.id, SYSTEM)
     expect(deleted.id).toBe(col.id)
     expect(deleted.name).toBe('gone')
 
@@ -303,6 +334,6 @@ describe('deleteColumn', () => {
   })
 
   it('throws when the column does not exist', async () => {
-    await expect(deleteColumn('non-existent-id')).rejects.toThrow()
+    await expect(deleteColumn('non-existent-id', SYSTEM)).rejects.toThrow()
   })
 })

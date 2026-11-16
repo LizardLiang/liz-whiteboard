@@ -222,39 +222,50 @@ export async function handleTableReferenceRequest(
     resolveTableReferences,
     updateTableReference,
   } = await import('@/data/table-reference')
+  const { PHASE2_PLACEHOLDER_CTX } = await import('@/lib/schema-changelog')
 
   try {
     if (body.op === 'create') {
-      const reference = await createTableReference({
-        id: body.id,
-        whiteboardId: body.whiteboardId,
-        sourceWhiteboardId: body.sourceWhiteboardId,
-        sourceTableId: body.sourceTableId,
-        sourceColumnIds: body.sourceColumnIds,
-        positionX: body.positionX,
-        positionY: body.positionY,
-      })
+      const reference = await createTableReference(
+        {
+          id: body.id,
+          whiteboardId: body.whiteboardId,
+          sourceWhiteboardId: body.sourceWhiteboardId,
+          sourceTableId: body.sourceTableId,
+          sourceColumnIds: body.sourceColumnIds,
+          positionX: body.positionX,
+          positionY: body.positionY,
+        },
+        PHASE2_PLACEHOLDER_CTX,
+      )
       return jsonOk({ reference })
     }
     if (body.op === 'update') {
-      const result = await updateTableReference(body.tableId, {
-        ...(body.sourceWhiteboardId !== undefined
-          ? { sourceWhiteboardId: body.sourceWhiteboardId }
-          : {}),
-        ...(body.sourceTableId !== undefined
-          ? { sourceTableId: body.sourceTableId }
-          : {}),
-        ...(body.sourceColumnIds !== undefined
-          ? { sourceColumnIds: body.sourceColumnIds }
-          : {}),
-      })
+      const result = await updateTableReference(
+        body.tableId,
+        {
+          ...(body.sourceWhiteboardId !== undefined
+            ? { sourceWhiteboardId: body.sourceWhiteboardId }
+            : {}),
+          ...(body.sourceTableId !== undefined
+            ? { sourceTableId: body.sourceTableId }
+            : {}),
+          ...(body.sourceColumnIds !== undefined
+            ? { sourceColumnIds: body.sourceColumnIds }
+            : {}),
+        },
+        PHASE2_PLACEHOLDER_CTX,
+      )
       return jsonOk({
         reference: result.reference,
         deletedRelationships: result.deletedRelationships,
       })
     }
     if (body.op === 'delete') {
-      const reference = await deleteTableReference(body.tableId)
+      const reference = await deleteTableReference(
+        body.tableId,
+        PHASE2_PLACEHOLDER_CTX,
+      )
       return jsonOk({ reference })
     }
     const references = await resolveTableReferences(body.whiteboardId)

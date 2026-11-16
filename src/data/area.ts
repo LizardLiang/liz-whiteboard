@@ -5,7 +5,37 @@ import { createAreaSchema, updateAreaSchema } from './schema'
 import { claimClientId, refuseTakenIdAfterInsertError } from './already-exists'
 import type { CreateArea, UpdateArea } from './schema'
 import type { Area } from './models'
+import type { ChangeContext } from '@/lib/schema-changelog'
 import { db, insert, mapArea, nowMs, toDbJson, transaction, update } from '@/db'
+import {
+  ensureBatch,
+  eventRow,
+  recordChange,
+  recordUpdate,
+  tableNameOf,
+} from '@/lib/schema-changelog'
+
+const AREA_EVENT_FIELDS = [
+  'name',
+  'color',
+  'positionX',
+  'positionY',
+  'width',
+  'height',
+  'memberTableIds',
+] as const
+
+function readArea(id: string): Area | null {
+  return mapArea(db.prepare('SELECT * FROM "Area" WHERE "id" = ?').get(id))
+}
+
+function areaEventBase(area: Area) {
+  return {
+    entityType: 'area' as const,
+    entityId: area.id,
+    entityName: area.name,
+  }
+}
 
 /**
  * Create a new subject area. A given `id` is stored as the area's id; an id
@@ -14,26 +44,38 @@ import { db, insert, mapArea, nowMs, toDbJson, transaction, update } from '@/db'
  * @returns Created area
  * @throws Error if validation fails or database operation fails
  */
-export async function createArea(data: CreateArea): Promise<Area> {
+export async function createArea(
+  data: CreateArea,
+  ctx: ChangeContext,
+): Promise<Area> {
   const validated = createAreaSchema.parse(data)
   const { id, claim } = claimClientId('Area', 'area', validated)
 
   try {
     const ts = nowMs()
-    insert('Area', {
-      id,
-      whiteboardId: validated.whiteboardId,
-      name: validated.name,
-      color: validated.color,
-      positionX: validated.positionX,
-      positionY: validated.positionY,
-      width: validated.width,
-      height: validated.height,
-      memberTableIds: toDbJson(validated.memberTableIds),
-      createdAt: ts,
-      updatedAt: ts,
+    return transaction(() => {
+      insert('Area', {
+        id,
+        whiteboardId: validated.whiteboardId,
+        name: validated.name,
+        color: validated.color,
+        positionX: validated.positionX,
+        positionY: validated.positionY,
+        width: validated.width,
+        height: validated.height,
+        memberTableIds: toDbJson(validated.memberTableIds),
+        createdAt: ts,
+        updatedAt: ts,
+      })
+      const created = readArea(id)!
+      recordChange(ctx, {
+        ...areaEventBase(created),
+        category: 'schema',
+        action: 'create',
+        after: eventRow(created),
+      })
+      return created
     })
-    return mapArea(db.prepare('SELECT * FROM "Area" WHERE "id" = ?').get(id))!
   } catch (error) {
     refuseTakenIdAfterInsertError(error, claim)
     throw new Error(
@@ -84,7 +126,11 @@ export async function findAreaById(id: string): Promise<Area | null> {
  * @param data - Partial area data (validated with Zod)
  * @returns Updated area
  */
-export async function updateArea(id: string, data: UpdateArea): Promise<Area> {
+export async function updateArea(
+  id: string,
+  data: UpdateArea,
+  ctx: ChangeContext,
+): Promise<Area> {
   const validated = updateAreaSchema.parse(data)
 
   try {
@@ -99,8 +145,21 @@ export async function updateArea(id: string, data: UpdateArea): Promise<Area> {
     if (validated.height !== undefined) values.height = validated.height
     if (validated.memberTableIds !== undefined)
       values.memberTableIds = toDbJson(validated.memberTableIds)
-    update('Area', id, values)
-    return mapArea(db.prepare('SELECT * FROM "Area" WHERE "id" = ?').get(id))!
+    return transaction(() => {
+      const before = readArea(id)
+      update('Area', id, values)
+      const after = readArea(id)!
+      if (before) {
+        recordUpdate(
+          ctx,
+          areaEventBase(after),
+          before,
+          after,
+          AREA_EVENT_FIELDS,
+        )
+      }
+      return after
+    })
   } catch (error) {
     throw new Error(
       `Failed to update area: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -127,26 +186,59 @@ export async function moveAreaAndMembers(
   areaId: string,
   position: { positionX: number; positionY: number },
   members: Array<{ tableId: string; positionX: number; positionY: number }>,
+  ctx: ChangeContext,
 ): Promise<Area> {
   try {
-    transaction(() => {
+    return transaction(() => {
+      const batchCtx = ensureBatch(ctx, 'area-move')
       const ts = nowMs()
+      const areaBefore = readArea(areaId)
       update('Area', areaId, {
         positionX: position.positionX,
         positionY: position.positionY,
         updatedAt: ts,
       })
+      const area = readArea(areaId)!
+      if (areaBefore) {
+        recordUpdate(
+          batchCtx,
+          areaEventBase(area),
+          areaBefore,
+          area,
+          AREA_EVENT_FIELDS,
+        )
+      }
       for (const member of members) {
+        const before = db
+          .prepare(
+            'SELECT "name", "positionX", "positionY" FROM "DiagramTable" WHERE "id" = ?',
+          )
+          .get(member.tableId) as
+          | { name: string; positionX: number | null; positionY: number | null }
+          | undefined
         update('DiagramTable', member.tableId, {
           positionX: member.positionX,
           positionY: member.positionY,
           updatedAt: ts,
         })
+        if (before) {
+          recordUpdate(
+            batchCtx,
+            {
+              entityType: 'table',
+              entityId: member.tableId,
+              entityName: before.name,
+              tableId: member.tableId,
+              tableName: tableNameOf(member.tableId),
+            },
+            before,
+            { positionX: member.positionX, positionY: member.positionY },
+            ['positionX', 'positionY'],
+          )
+        }
       }
+      return area
     })
-    return mapArea(
-      db.prepare('SELECT * FROM "Area" WHERE "id" = ?').get(areaId),
-    )!
   } catch (error) {
     throw new Error(
       `Failed to move area and members: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -160,14 +252,23 @@ export async function moveAreaAndMembers(
  * @returns The deleted area
  * @throws Error if the area does not exist
  */
-export async function deleteArea(id: string): Promise<Area> {
+export async function deleteArea(
+  id: string,
+  ctx: ChangeContext,
+): Promise<Area> {
   try {
-    const existing = mapArea(
-      db.prepare('SELECT * FROM "Area" WHERE "id" = ?').get(id),
-    )
-    if (!existing) throw new Error('Area not found')
-    db.prepare('DELETE FROM "Area" WHERE "id" = ?').run(id)
-    return existing
+    return transaction(() => {
+      const existing = readArea(id)
+      if (!existing) throw new Error('Area not found')
+      recordChange(ctx, {
+        ...areaEventBase(existing),
+        category: 'schema',
+        action: 'delete',
+        before: eventRow(existing),
+      })
+      db.prepare('DELETE FROM "Area" WHERE "id" = ?').run(id)
+      return existing
+    })
   } catch (error) {
     throw new Error(
       `Failed to delete area: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -183,13 +284,14 @@ export async function deleteArea(id: string): Promise<Area> {
 export async function removeTableFromAreas(
   whiteboardId: string,
   tableId: string,
+  ctx: ChangeContext,
 ): Promise<Array<Area>> {
   const areas = await findAreasByWhiteboard(whiteboardId)
   const affected: Array<Area> = []
   for (const area of areas) {
     if (area.memberTableIds.includes(tableId)) {
       const next = area.memberTableIds.filter((mid) => mid !== tableId)
-      affected.push(await updateArea(area.id, { memberTableIds: next }))
+      affected.push(await updateArea(area.id, { memberTableIds: next }, ctx))
     }
   }
   return affected

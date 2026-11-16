@@ -17,17 +17,25 @@ import { z } from 'zod'
 
 import { claimClientId, refuseTakenIdAfterInsertError } from './already-exists'
 import type { Column, DiagramTable } from './models'
+import type { ChangeContext } from '@/lib/schema-changelog'
 import {
   db,
   genId,
   insert,
   mapColumn,
   mapDiagramTable,
+  mapRelationship,
   nowMs,
   toDbBool,
   transaction,
   update,
 } from '@/db'
+import {
+  ensureBatch,
+  eventRow,
+  recordChange,
+  relationshipDisplayName,
+} from '@/lib/schema-changelog'
 
 // ============================================================================
 // Types
@@ -270,6 +278,14 @@ function readReference(tableId: string): TableReference {
   return { table, columns: stubColumnsOf(tableId) }
 }
 
+/** What a reference event stores: the node's name, its source and its stub columns. */
+function referenceEventRow(reference: TableReference): Record<string, unknown> {
+  return {
+    ...eventRow(reference.table),
+    columns: reference.columns.map((c) => c.name),
+  }
+}
+
 function requireReference(tableId: string): DiagramTable {
   const table = mapDiagramTable(
     db.prepare('SELECT * FROM "DiagramTable" WHERE "id" = ?').get(tableId),
@@ -296,6 +312,7 @@ function requireReference(tableId: string): DiagramTable {
  */
 export async function createTableReference(
   data: CreateTableReferenceInput,
+  ctx: ChangeContext,
 ): Promise<TableReference> {
   const validated = createTableReferenceSchema.parse(data)
   const { sourceTable, sourceColumns } = loadSource(validated)
@@ -338,7 +355,18 @@ export async function createTableReference(
       sourceColumns.forEach((column, index) => {
         insertStubColumn(id, column, index)
       })
-      return readReference(id)
+      const created = readReference(id)
+      recordChange(ctx, {
+        category: 'schema',
+        entityType: 'reference',
+        action: 'create',
+        entityId: id,
+        entityName: created.table.name,
+        tableId: id,
+        tableName: created.table.name,
+        after: referenceEventRow(created),
+      })
+      return created
     })
   } catch (error) {
     refuseTakenIdAfterInsertError(error, claim)
@@ -500,6 +528,7 @@ export async function resolveTableReferences(
 export async function updateTableReference(
   tableId: string,
   data: UpdateTableReferenceInput,
+  ctx: ChangeContext,
 ): Promise<UpdateTableReferenceResult> {
   const validated = updateTableReferenceSchema.parse(data)
   const existing = requireReference(tableId)
@@ -553,7 +582,27 @@ export async function updateTableReference(
     )?.name ?? null
 
   const reference = transaction(() => {
+    const beforeReference = readReference(tableId)
+    const batchCtx = ensureBatch(ctx, 'reference')
     for (const column of doomed) {
+      const cascaded = db
+        .prepare(
+          'SELECT * FROM "Relationship" WHERE "sourceColumnId" = ? OR "targetColumnId" = ?',
+        )
+        .all(column.id, column.id)
+        .map((r) => mapRelationship(r)!)
+      for (const relationship of cascaded) {
+        recordChange(batchCtx, {
+          category: 'schema',
+          entityType: 'relationship',
+          action: 'delete',
+          entityId: relationship.id,
+          entityName: relationshipDisplayName(relationship),
+          tableId,
+          tableName: existing.name,
+          before: eventRow(relationship),
+        })
+      }
       // Relationship's ON DELETE CASCADE on sourceColumnId/targetColumnId
       // removes the edges with the column.
       db.prepare('DELETE FROM "Column" WHERE "id" = ?').run(column.id)
@@ -583,7 +632,19 @@ export async function updateTableReference(
       updatedAt: nowMs(),
     })
 
-    return readReference(tableId)
+    const afterReference = readReference(tableId)
+    recordChange(batchCtx, {
+      category: 'schema',
+      entityType: 'reference',
+      action: 'update',
+      entityId: tableId,
+      entityName: afterReference.table.name,
+      tableId,
+      tableName: afterReference.table.name,
+      before: referenceEventRow(beforeReference),
+      after: referenceEventRow(afterReference),
+    })
+    return afterReference
   })
 
   return { reference, deletedRelationships }
@@ -595,9 +656,22 @@ export async function updateTableReference(
  */
 export async function deleteTableReference(
   tableId: string,
+  ctx: ChangeContext,
 ): Promise<TableReference> {
   requireReference(tableId)
-  const existing = readReference(tableId)
-  db.prepare('DELETE FROM "DiagramTable" WHERE "id" = ?').run(tableId)
-  return existing
+  return transaction(() => {
+    const existing = readReference(tableId)
+    recordChange(ctx, {
+      category: 'schema',
+      entityType: 'reference',
+      action: 'delete',
+      entityId: tableId,
+      entityName: existing.table.name,
+      tableId,
+      tableName: existing.table.name,
+      before: referenceEventRow(existing),
+    })
+    db.prepare('DELETE FROM "DiagramTable" WHERE "id" = ?').run(tableId)
+    return existing
+  })
 }

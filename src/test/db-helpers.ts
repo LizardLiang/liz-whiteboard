@@ -14,6 +14,7 @@ const ALL_TABLES = [
   'CanvasBoard',
   'CollaborationSession',
   'WhiteboardSnapshot',
+  'SchemaChangeEvent',
   'Area',
   'Relationship',
   'Column',

@@ -11,6 +11,7 @@ import {
 import type { CreateColumn, CreateColumnInput, UpdateColumn } from './schema'
 import type { Column } from './models'
 import type { IdClaim } from './already-exists'
+import type { ChangeContext } from '@/lib/schema-changelog'
 import {
   db,
   genId,
@@ -21,6 +22,58 @@ import {
   transaction,
   update,
 } from '@/db'
+import {
+  eventRow,
+  recordChange,
+  recordUpdate,
+  tableNameOf,
+} from '@/lib/schema-changelog'
+
+const COLUMN_EVENT_FIELDS = [
+  'name',
+  'dataType',
+  'isPrimaryKey',
+  'isForeignKey',
+  'isUnique',
+  'isNullable',
+  'description',
+  'order',
+] as const
+
+function readColumn(id: string): Column | null {
+  return mapColumn(db.prepare('SELECT * FROM "Column" WHERE "id" = ?').get(id))
+}
+
+/** Write `values` to a column and record what changed, in one transaction. */
+function writeColumnUpdate(
+  id: string,
+  values: Record<string, unknown>,
+  ctx: ChangeContext,
+  action: 'update' | 'reorder' = 'update',
+): Column {
+  return transaction(() => {
+    const before = readColumn(id)
+    update('Column', id, values)
+    const after = readColumn(id)!
+    if (before) {
+      recordUpdate(
+        ctx,
+        {
+          entityType: 'column',
+          entityId: id,
+          entityName: after.name,
+          tableId: after.tableId,
+          tableName: tableNameOf(after.tableId),
+        },
+        before,
+        after,
+        COLUMN_EVENT_FIELDS,
+        action,
+      )
+    }
+    return after
+  })
+}
 
 /** A column create's id claim: it writes to the whiteboard of its table. */
 function columnClaim(validated: CreateColumn): IdClaim {
@@ -35,7 +88,8 @@ function columnClaim(validated: CreateColumn): IdClaim {
   }
 }
 
-function insertColumn(validated: CreateColumn): Column {
+/** Insert a column and record its creation. Callers own the transaction. */
+function insertColumn(validated: CreateColumn, ctx: ChangeContext): Column {
   assertIdFree(columnClaim(validated))
   const id = validated.id ?? genId()
   const ts = nowMs()
@@ -53,7 +107,18 @@ function insertColumn(validated: CreateColumn): Column {
     createdAt: ts,
     updatedAt: ts,
   })
-  return mapColumn(db.prepare('SELECT * FROM "Column" WHERE "id" = ?').get(id))!
+  const created = readColumn(id)!
+  recordChange(ctx, {
+    category: 'schema',
+    entityType: 'column',
+    action: 'create',
+    entityId: id,
+    entityName: created.name,
+    tableId: created.tableId,
+    tableName: tableNameOf(created.tableId),
+    after: eventRow(created),
+  })
+  return created
 }
 
 function rethrowIdTaken(error: unknown, validated: CreateColumn): void {
@@ -75,10 +140,13 @@ function refusesAnyId(error: unknown, batch: Array<CreateColumn>): boolean {
  * Create a new column. A given `id` is stored as the column's id; an id any
  * column already has is refused (see already-exists.ts).
  */
-export async function createColumn(data: CreateColumnInput): Promise<Column> {
+export async function createColumn(
+  data: CreateColumnInput,
+  ctx: ChangeContext,
+): Promise<Column> {
   const validated = createColumnSchema.parse(data)
   try {
-    return insertColumn(validated)
+    return transaction(() => insertColumn(validated, ctx))
   } catch (error) {
     rethrowIdTaken(error, validated)
     throw new Error(
@@ -98,6 +166,7 @@ export async function createColumn(data: CreateColumnInput): Promise<Column> {
  */
 export async function createColumns(
   columns: Array<CreateColumnInput>,
+  ctx: ChangeContext,
 ): Promise<Array<Column>> {
   const validated = columns.map((col) => createColumnSchema.parse(col))
   const ids = validated.flatMap((data) =>
@@ -107,7 +176,7 @@ export async function createColumns(
     throw new Error('Failed to create columns: the batch repeats a column id')
   }
   try {
-    return transaction(() => validated.map((data) => insertColumn(data)))
+    return transaction(() => validated.map((data) => insertColumn(data, ctx)))
   } catch (error) {
     if (isIdRefusal(error) || refusesAnyId(error, validated)) {
       throw new Error('Failed to create columns')
@@ -159,6 +228,7 @@ export async function findColumnById(id: string): Promise<Column | null> {
 export async function updateColumn(
   id: string,
   data: UpdateColumn,
+  ctx: ChangeContext,
 ): Promise<Column> {
   const validated = updateColumnSchema.parse(data)
   try {
@@ -175,10 +245,7 @@ export async function updateColumn(
       values.isNullable = toDbBool(validated.isNullable)
     if (validated.description !== undefined)
       values.description = validated.description
-    update('Column', id, values)
-    return mapColumn(
-      db.prepare('SELECT * FROM "Column" WHERE "id" = ?').get(id),
-    )!
+    return writeColumnUpdate(id, values, ctx)
   } catch (error) {
     throw new Error(
       `Failed to update column: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -192,12 +259,10 @@ export async function updateColumn(
 export async function updateColumnOrder(
   id: string,
   order: number,
+  ctx: ChangeContext,
 ): Promise<Column> {
   try {
-    update('Column', id, { order, updatedAt: nowMs() })
-    return mapColumn(
-      db.prepare('SELECT * FROM "Column" WHERE "id" = ?').get(id),
-    )!
+    return writeColumnUpdate(id, { order, updatedAt: nowMs() }, ctx, 'reorder')
   } catch (error) {
     throw new Error(
       `Failed to update column order: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -208,14 +273,27 @@ export async function updateColumnOrder(
 /**
  * Delete a column (cascade deletes relationships referencing this column)
  */
-export async function deleteColumn(id: string): Promise<Column> {
+export async function deleteColumn(
+  id: string,
+  ctx: ChangeContext,
+): Promise<Column> {
   try {
-    const existing = mapColumn(
-      db.prepare('SELECT * FROM "Column" WHERE "id" = ?').get(id),
-    )
-    if (!existing) throw new Error('Column not found')
-    db.prepare('DELETE FROM "Column" WHERE "id" = ?').run(id)
-    return existing
+    return transaction(() => {
+      const existing = readColumn(id)
+      if (!existing) throw new Error('Column not found')
+      recordChange(ctx, {
+        category: 'schema',
+        entityType: 'column',
+        action: 'delete',
+        entityId: id,
+        entityName: existing.name,
+        tableId: existing.tableId,
+        tableName: tableNameOf(existing.tableId),
+        before: eventRow(existing),
+      })
+      db.prepare('DELETE FROM "Column" WHERE "id" = ?').run(id)
+      return existing
+    })
   } catch (error) {
     throw new Error(
       `Failed to delete column: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -251,6 +329,7 @@ export async function findPrimaryKeyColumnsByTableId(
 export async function reorderColumns(
   tableId: string,
   orderedColumnIds: Array<string>,
+  ctx: ChangeContext,
 ): Promise<Array<Column>> {
   if (orderedColumnIds.length === 0) {
     throw new Error('orderedColumnIds must not be empty')
@@ -271,10 +350,26 @@ export async function reorderColumns(
     return transaction(() => {
       const ts = nowMs()
       return orderedColumnIds.map((id, index) => {
+        const before = readColumn(id)
         update('Column', id, { order: index, updatedAt: ts })
-        return mapColumn(
-          db.prepare('SELECT * FROM "Column" WHERE "id" = ?').get(id),
-        )!
+        const after = readColumn(id)!
+        if (before) {
+          recordUpdate(
+            ctx,
+            {
+              entityType: 'column',
+              entityId: id,
+              entityName: after.name,
+              tableId: tableId,
+              tableName: tableNameOf(tableId),
+            },
+            before,
+            after,
+            ['order'],
+            'reorder',
+          )
+        }
+        return after
       })
     })
   } catch (error) {
@@ -287,7 +382,10 @@ export async function reorderColumns(
 /**
  * Duplicate a column by ID, inserting it directly below the source.
  */
-export async function duplicateColumn(columnId: string): Promise<Column> {
+export async function duplicateColumn(
+  columnId: string,
+  ctx: ChangeContext,
+): Promise<Column> {
   const source = mapColumn(
     db.prepare('SELECT * FROM "Column" WHERE "id" = ?').get(columnId),
   )
@@ -295,37 +393,42 @@ export async function duplicateColumn(columnId: string): Promise<Column> {
     throw new Error(`Column not found: ${columnId}`)
   }
 
-  const newOrder = source.order + 1
+  return transaction(() => {
+    const newOrder = source.order + 1
 
-  // Shift all sibling columns with order >= newOrder down by 1 to make room
-  db.prepare(
-    'UPDATE "Column" SET "order" = "order" + 1 WHERE "tableId" = ? AND "order" >= ?',
-  ).run(source.tableId, newOrder)
+    // Shift all sibling columns with order >= newOrder down by 1 to make room
+    db.prepare(
+      'UPDATE "Column" SET "order" = "order" + 1 WHERE "tableId" = ? AND "order" >= ?',
+    ).run(source.tableId, newOrder)
 
-  // Build a unique name (try _copy, then _copy2, _copy3, …)
-  const baseName = `${source.name}_copy`
-  let candidateName = baseName
-  let suffix = 2
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- intentional infinite loop with an internal break once a unique name is found.
-  while (true) {
-    const conflict = db
-      .prepare('SELECT "id" FROM "Column" WHERE "tableId" = ? AND "name" = ?')
-      .get(source.tableId, candidateName)
-    if (!conflict) break
-    candidateName = `${baseName}${suffix}`
-    suffix++
-  }
+    // Build a unique name (try _copy, then _copy2, _copy3, …)
+    const baseName = `${source.name}_copy`
+    let candidateName = baseName
+    let suffix = 2
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- intentional infinite loop with an internal break once a unique name is found.
+    while (true) {
+      const conflict = db
+        .prepare('SELECT "id" FROM "Column" WHERE "tableId" = ? AND "name" = ?')
+        .get(source.tableId, candidateName)
+      if (!conflict) break
+      candidateName = `${baseName}${suffix}`
+      suffix++
+    }
 
-  return insertColumn({
-    tableId: source.tableId,
-    name: candidateName,
-    dataType: source.dataType as CreateColumn['dataType'],
-    isPrimaryKey: false,
-    isForeignKey: false,
-    isUnique: source.isUnique,
-    isNullable: source.isNullable,
-    description: source.description ?? undefined,
-    order: newOrder,
+    return insertColumn(
+      {
+        tableId: source.tableId,
+        name: candidateName,
+        dataType: source.dataType as CreateColumn['dataType'],
+        isPrimaryKey: false,
+        isForeignKey: false,
+        isUnique: source.isUnique,
+        isNullable: source.isNullable,
+        description: source.description ?? undefined,
+        order: newOrder,
+      },
+      ctx,
+    )
   })
 }
 

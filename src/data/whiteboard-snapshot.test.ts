@@ -40,6 +40,7 @@ import {
   makeWhiteboard,
   resetDb,
 } from '@/test/db-helpers'
+import { SYSTEM } from '@/lib/schema-changelog'
 
 // AC8 rollback test needs a way to force a write failure partway through the
 // restore transaction. Mock `insert` to throw for the Relationship table
@@ -68,57 +69,75 @@ function makeWhiteboardId(): string {
 
 /** Seed a small but representative diagram: 2 tables, 1 relationship, 1 area. */
 async function seedDiagram(whiteboardId: string) {
-  const t1 = await createDiagramTable({
-    whiteboardId,
-    name: 'users',
-    positionX: 0,
-    positionY: 0,
-  })
-  const c1 = await createColumn({
-    tableId: t1.id,
-    name: 'id',
-    dataType: 'uuid',
-    isPrimaryKey: true,
-    isForeignKey: false,
-    isUnique: true,
-    isNullable: false,
-    order: 0,
-  })
-  const t2 = await createDiagramTable({
-    whiteboardId,
-    name: 'posts',
-    positionX: 100,
-    positionY: 100,
-  })
-  const c2 = await createColumn({
-    tableId: t2.id,
-    name: 'user_id',
-    dataType: 'uuid',
-    isForeignKey: true,
-    isPrimaryKey: false,
-    isUnique: false,
-    isNullable: false,
-    order: 0,
-  })
-  const rel = await createRelationship({
-    whiteboardId,
-    sourceTableId: t1.id,
-    targetTableId: t2.id,
-    sourceColumnId: c1.id,
-    targetColumnId: c2.id,
-    cardinality: 'ONE_TO_MANY',
-    routingPoints: [{ x: 10, y: 20 }],
-  })
-  const area = await createArea({
-    whiteboardId,
-    name: 'Core',
-    color: 'blue',
-    positionX: 0,
-    positionY: 0,
-    width: 400,
-    height: 300,
-    memberTableIds: [t1.id, t2.id],
-  })
+  const t1 = await createDiagramTable(
+    {
+      whiteboardId,
+      name: 'users',
+      positionX: 0,
+      positionY: 0,
+    },
+    SYSTEM,
+  )
+  const c1 = await createColumn(
+    {
+      tableId: t1.id,
+      name: 'id',
+      dataType: 'uuid',
+      isPrimaryKey: true,
+      isForeignKey: false,
+      isUnique: true,
+      isNullable: false,
+      order: 0,
+    },
+    SYSTEM,
+  )
+  const t2 = await createDiagramTable(
+    {
+      whiteboardId,
+      name: 'posts',
+      positionX: 100,
+      positionY: 100,
+    },
+    SYSTEM,
+  )
+  const c2 = await createColumn(
+    {
+      tableId: t2.id,
+      name: 'user_id',
+      dataType: 'uuid',
+      isForeignKey: true,
+      isPrimaryKey: false,
+      isUnique: false,
+      isNullable: false,
+      order: 0,
+    },
+    SYSTEM,
+  )
+  const rel = await createRelationship(
+    {
+      whiteboardId,
+      sourceTableId: t1.id,
+      targetTableId: t2.id,
+      sourceColumnId: c1.id,
+      targetColumnId: c2.id,
+      cardinality: 'ONE_TO_MANY',
+      routingPoints: [{ x: 10, y: 20 }],
+    },
+    SYSTEM,
+  )
+  const area = await createArea(
+    {
+      whiteboardId,
+      name: 'Core',
+      color: 'blue',
+      positionX: 0,
+      positionY: 0,
+      width: 400,
+      height: 300,
+      memberTableIds: [t1.id, t2.id],
+    },
+    SYSTEM,
+  )
   const shape = await createShape({
     whiteboardId,
     kind: 'rectangle',
@@ -278,7 +297,7 @@ describe('restoreWhiteboardFromSnapshot', () => {
     const payload = await captureWhiteboardState(whiteboardId)
 
     // Mutate live state after capture.
-    await createDiagramTable({ whiteboardId, name: 'extra_table' })
+    await createDiagramTable({ whiteboardId, name: 'extra_table' }, SYSTEM)
 
     await restoreWhiteboardFromSnapshot(whiteboardId, payload)
 
@@ -489,8 +508,11 @@ describe('UNIT-06: restore round-trip — the only test that catches a missing w
     const { updateShape } = await import('./shape')
     await updateShape(shape.id, { positionX: 12345 })
     const { updateArea } = await import('./area')
-    await updateArea(area.id, { name: 'Renamed while dirty' })
-    await createDiagramTable({ whiteboardId, name: 'dirty_extra_table' })
+    await updateArea(area.id, { name: 'Renamed while dirty' }, SYSTEM)
+    await createDiagramTable(
+      { whiteboardId, name: 'dirty_extra_table' },
+      SYSTEM,
+    )
 
     await restoreWhiteboardFromSnapshot(whiteboardId, S1)
 
@@ -555,39 +577,51 @@ describe('restore of a cross-file table reference', () => {
       name: 'customer_id',
       order: 1,
     })
-    const ref = await createTableReference({
-      whiteboardId: local.id,
-      sourceWhiteboardId: source.id,
-      sourceTableId: orders.id,
-      sourceColumnIds: [ordersId.id, ordersCustomer.id],
-      positionX: 10,
-      positionY: 20,
-    })
-    const invoices = await createDiagramTable({
-      whiteboardId: local.id,
-      name: 'invoices',
-      positionX: 0,
-      positionY: 0,
-    })
-    const invoiceCol = await createColumn({
-      tableId: invoices.id,
-      name: 'order_id',
-      dataType: 'uuid',
-      isPrimaryKey: false,
-      isForeignKey: true,
-      isUnique: false,
-      isNullable: false,
-      order: 0,
-    })
+    const ref = await createTableReference(
+      {
+        whiteboardId: local.id,
+        sourceWhiteboardId: source.id,
+        sourceTableId: orders.id,
+        sourceColumnIds: [ordersId.id, ordersCustomer.id],
+        positionX: 10,
+        positionY: 20,
+      },
+      SYSTEM,
+    )
+    const invoices = await createDiagramTable(
+      {
+        whiteboardId: local.id,
+        name: 'invoices',
+        positionX: 0,
+        positionY: 0,
+      },
+      SYSTEM,
+    )
+    const invoiceCol = await createColumn(
+      {
+        tableId: invoices.id,
+        name: 'order_id',
+        dataType: 'uuid',
+        isPrimaryKey: false,
+        isForeignKey: true,
+        isUnique: false,
+        isNullable: false,
+        order: 0,
+      },
+      SYSTEM,
+    )
     const stubId = ref.columns.find((c) => c.sourceColumnId === ordersId.id)!
-    const rel = await createRelationship({
-      whiteboardId: local.id,
-      sourceTableId: ref.table.id,
-      targetTableId: invoices.id,
-      sourceColumnId: stubId.id,
-      targetColumnId: invoiceCol.id,
-      cardinality: 'ONE_TO_MANY',
-    })
+    const rel = await createRelationship(
+      {
+        whiteboardId: local.id,
+        sourceTableId: ref.table.id,
+        targetTableId: invoices.id,
+        sourceColumnId: stubId.id,
+        targetColumnId: invoiceCol.id,
+        cardinality: 'ONE_TO_MANY',
+      },
+      SYSTEM,
+    )
     return { local, source, orders, ordersId, ordersCustomer, ref, rel }
   }
 

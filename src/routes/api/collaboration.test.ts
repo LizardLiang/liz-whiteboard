@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // We need to import after mocks are set up
 import { deleteRelationship, findRelationshipById } from '@/data/relationship'
+import { SYSTEM } from '@/lib/schema-changelog'
 import { updateSessionActivity } from '@/data/collaboration'
 
 // -----------------------------------------------------------------------------
@@ -187,7 +188,7 @@ describe('relationship:delete handler', () => {
             return
           }
 
-          await deleteRel(relId)
+          await deleteRel(relId, SYSTEM)
 
           socket.broadcast.emit('relationship:deleted', {
             relationshipId: relId,
@@ -229,7 +230,7 @@ describe('relationship:delete handler', () => {
     const handler = handlers['relationship:delete']
     await handler({ relationshipId: validRelationshipId })
 
-    expect(deleteRelationship).toHaveBeenCalledWith(validRelationshipId)
+    expect(deleteRelationship).toHaveBeenCalledWith(validRelationshipId, SYSTEM)
     expect(broadcastEmitSpy).toHaveBeenCalledWith('relationship:deleted', {
       relationshipId: validRelationshipId,
       deletedBy: userId,

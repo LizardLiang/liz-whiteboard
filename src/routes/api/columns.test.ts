@@ -45,6 +45,7 @@ import {
   ForbiddenError,
   requireServerFnRole,
 } from '@/lib/auth/require-role'
+import { SYSTEM } from '@/lib/schema-changelog'
 
 const mockGetTableProjectId = vi.mocked(getTableProjectId)
 const mockRequireServerFnRole = vi.mocked(requireServerFnRole)
@@ -92,7 +93,7 @@ async function createColumnsBatchHandler(
     }
   }
 
-  return createColumns(data as any)
+  return createColumns(data as any, SYSTEM)
 }
 
 function makeColumnInput(tableId: string, i: number = 0): ColumnInput {

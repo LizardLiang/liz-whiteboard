@@ -21,6 +21,7 @@ import {
   makeWhiteboard,
   resetDb,
 } from '@/test/db-helpers'
+import { SYSTEM } from '@/lib/schema-changelog'
 
 /**
  * One project, two whiteboards: `local` is where the reference node lives,
@@ -88,14 +89,17 @@ describe('createTableReference', () => {
   it('creates a DiagramTable row carrying its source ids plus a stub column', async () => {
     const { local, source, sourceTable, idCol } = makeTwoFileProject()
 
-    const ref = await createTableReference({
-      whiteboardId: local.id,
-      sourceWhiteboardId: source.id,
-      sourceTableId: sourceTable.id,
-      sourceColumnIds: [idCol.id],
-      positionX: 120,
-      positionY: 80,
-    })
+    const ref = await createTableReference(
+      {
+        whiteboardId: local.id,
+        sourceWhiteboardId: source.id,
+        sourceTableId: sourceTable.id,
+        sourceColumnIds: [idCol.id],
+        positionX: 120,
+        positionY: 80,
+      },
+      SYSTEM,
+    )
 
     expect(ref.table.whiteboardId).toBe(local.id)
     expect(ref.table.sourceWhiteboardId).toBe(source.id)
@@ -110,12 +114,15 @@ describe('createTableReference', () => {
   it('copies the source column dataType onto the stub so the node can render it', async () => {
     const { local, source, sourceTable, otherCol } = makeTwoFileProject()
 
-    const ref = await createTableReference({
-      whiteboardId: local.id,
-      sourceWhiteboardId: source.id,
-      sourceTableId: sourceTable.id,
-      sourceColumnIds: [otherCol.id],
-    })
+    const ref = await createTableReference(
+      {
+        whiteboardId: local.id,
+        sourceWhiteboardId: source.id,
+        sourceTableId: sourceTable.id,
+        sourceColumnIds: [otherCol.id],
+      },
+      SYSTEM,
+    )
 
     expect(ref.columns[0].dataType).toBe('string')
   })
@@ -124,12 +131,15 @@ describe('createTableReference', () => {
     const { local, source, sourceTable, idCol } = makeTwoFileProject()
     makeTable({ whiteboardId: local.id, name: 'orders' })
 
-    const ref = await createTableReference({
-      whiteboardId: local.id,
-      sourceWhiteboardId: source.id,
-      sourceTableId: sourceTable.id,
-      sourceColumnIds: [idCol.id],
-    })
+    const ref = await createTableReference(
+      {
+        whiteboardId: local.id,
+        sourceWhiteboardId: source.id,
+        sourceTableId: sourceTable.id,
+        sourceColumnIds: [idCol.id],
+      },
+      SYSTEM,
+    )
 
     expect(ref.table.name).not.toBe('orders')
     expect(ref.table.name).toContain('orders')
@@ -143,12 +153,15 @@ describe('createTableReference', () => {
     const foreignCol = makeColumn({ tableId: foreignTable.id })
 
     await expect(
-      createTableReference({
-        whiteboardId: local.id,
-        sourceWhiteboardId: foreign.id,
-        sourceTableId: foreignTable.id,
-        sourceColumnIds: [foreignCol.id],
-      }),
+      createTableReference(
+        {
+          whiteboardId: local.id,
+          sourceWhiteboardId: foreign.id,
+          sourceTableId: foreignTable.id,
+          sourceColumnIds: [foreignCol.id],
+        },
+        SYSTEM,
+      ),
     ).rejects.toThrow(/same project/i)
   })
 
@@ -158,12 +171,15 @@ describe('createTableReference', () => {
     const localCol = makeColumn({ tableId: localTable.id })
 
     await expect(
-      createTableReference({
-        whiteboardId: local.id,
-        sourceWhiteboardId: local.id,
-        sourceTableId: localTable.id,
-        sourceColumnIds: [localCol.id],
-      }),
+      createTableReference(
+        {
+          whiteboardId: local.id,
+          sourceWhiteboardId: local.id,
+          sourceTableId: localTable.id,
+          sourceColumnIds: [localCol.id],
+        },
+        SYSTEM,
+      ),
     ).rejects.toThrow(/same whiteboard/i)
   })
 
@@ -173,12 +189,15 @@ describe('createTableReference', () => {
     const strayCol = makeColumn({ tableId: strayTable.id })
 
     await expect(
-      createTableReference({
-        whiteboardId: local.id,
-        sourceWhiteboardId: source.id,
-        sourceTableId: sourceTable.id,
-        sourceColumnIds: [strayCol.id],
-      }),
+      createTableReference(
+        {
+          whiteboardId: local.id,
+          sourceWhiteboardId: source.id,
+          sourceTableId: sourceTable.id,
+          sourceColumnIds: [strayCol.id],
+        },
+        SYSTEM,
+      ),
     ).rejects.toThrow(/does not belong/i)
   })
 
@@ -188,12 +207,15 @@ describe('createTableReference', () => {
     const strayCol = makeColumn({ tableId: strayTable.id })
 
     await expect(
-      createTableReference({
-        whiteboardId: local.id,
-        sourceWhiteboardId: source.id,
-        sourceTableId: sourceTable.id,
-        sourceColumnIds: [strayCol.id],
-      }),
+      createTableReference(
+        {
+          whiteboardId: local.id,
+          sourceWhiteboardId: source.id,
+          sourceTableId: sourceTable.id,
+          sourceColumnIds: [strayCol.id],
+        },
+        SYSTEM,
+      ),
     ).rejects.toThrow()
 
     expect(await listTableReferences(local.id)).toHaveLength(0)
@@ -205,12 +227,15 @@ describe('listTableReferences / isTableReference', () => {
     const { local, source, sourceTable, idCol } = makeTwoFileProject()
     makeTable({ whiteboardId: local.id, name: 'invoices' })
 
-    const ref = await createTableReference({
-      whiteboardId: local.id,
-      sourceWhiteboardId: source.id,
-      sourceTableId: sourceTable.id,
-      sourceColumnIds: [idCol.id],
-    })
+    const ref = await createTableReference(
+      {
+        whiteboardId: local.id,
+        sourceWhiteboardId: source.id,
+        sourceTableId: sourceTable.id,
+        sourceColumnIds: [idCol.id],
+      },
+      SYSTEM,
+    )
 
     const refs = await listTableReferences(local.id)
     expect(refs).toHaveLength(1)
@@ -222,12 +247,15 @@ describe('listTableReferences / isTableReference', () => {
 describe('resolveTableReferences', () => {
   it('repaints from the source after the source table is renamed', async () => {
     const { local, source, sourceTable, idCol } = makeTwoFileProject()
-    await createTableReference({
-      whiteboardId: local.id,
-      sourceWhiteboardId: source.id,
-      sourceTableId: sourceTable.id,
-      sourceColumnIds: [idCol.id],
-    })
+    await createTableReference(
+      {
+        whiteboardId: local.id,
+        sourceWhiteboardId: source.id,
+        sourceTableId: sourceTable.id,
+        sourceColumnIds: [idCol.id],
+      },
+      SYSTEM,
+    )
 
     db.prepare('UPDATE "DiagramTable" SET "name" = ? WHERE "id" = ?').run(
       'purchase_orders',
@@ -243,12 +271,15 @@ describe('resolveTableReferences', () => {
 
   it('reports the new column name after the source column is renamed', async () => {
     const { local, source, sourceTable, idCol } = makeTwoFileProject()
-    await createTableReference({
-      whiteboardId: local.id,
-      sourceWhiteboardId: source.id,
-      sourceTableId: sourceTable.id,
-      sourceColumnIds: [idCol.id],
-    })
+    await createTableReference(
+      {
+        whiteboardId: local.id,
+        sourceWhiteboardId: source.id,
+        sourceTableId: sourceTable.id,
+        sourceColumnIds: [idCol.id],
+      },
+      SYSTEM,
+    )
 
     db.prepare('UPDATE "Column" SET "name" = ? WHERE "id" = ?').run(
       'order_id',
@@ -262,12 +293,15 @@ describe('resolveTableReferences', () => {
 
   it('marks the reference missing when the source table is deleted, keeping its edges', async () => {
     const { local, source, sourceTable, idCol } = makeTwoFileProject()
-    const ref = await createTableReference({
-      whiteboardId: local.id,
-      sourceWhiteboardId: source.id,
-      sourceTableId: sourceTable.id,
-      sourceColumnIds: [idCol.id],
-    })
+    const ref = await createTableReference(
+      {
+        whiteboardId: local.id,
+        sourceWhiteboardId: source.id,
+        sourceTableId: sourceTable.id,
+        sourceColumnIds: [idCol.id],
+      },
+      SYSTEM,
+    )
     const localTable = makeTable({ whiteboardId: local.id, name: 'invoices' })
     const localCol = makeColumn({ tableId: localTable.id })
     makeRelationship({
@@ -289,12 +323,15 @@ describe('resolveTableReferences', () => {
 
   it('marks the reference missing when the whole source file is deleted', async () => {
     const { local, source, sourceTable, idCol } = makeTwoFileProject()
-    await createTableReference({
-      whiteboardId: local.id,
-      sourceWhiteboardId: source.id,
-      sourceTableId: sourceTable.id,
-      sourceColumnIds: [idCol.id],
-    })
+    await createTableReference(
+      {
+        whiteboardId: local.id,
+        sourceWhiteboardId: source.id,
+        sourceTableId: sourceTable.id,
+        sourceColumnIds: [idCol.id],
+      },
+      SYSTEM,
+    )
 
     db.prepare('DELETE FROM "Whiteboard" WHERE "id" = ?').run(source.id)
 
@@ -308,12 +345,15 @@ describe('resolveTableReferences', () => {
     // table and a column that re-used a deleted source's ids. The reference
     // must not read them as the source's own.
     const { local, source, sourceTable, idCol } = makeTwoFileProject()
-    await createTableReference({
-      whiteboardId: local.id,
-      sourceWhiteboardId: source.id,
-      sourceTableId: sourceTable.id,
-      sourceColumnIds: [idCol.id],
-    })
+    await createTableReference(
+      {
+        whiteboardId: local.id,
+        sourceWhiteboardId: source.id,
+        sourceTableId: sourceTable.id,
+        sourceColumnIds: [idCol.id],
+      },
+      SYSTEM,
+    )
     db.prepare('DELETE FROM "DiagramTable" WHERE "id" = ?').run(sourceTable.id)
     db.exec('DELETE FROM "RetiredId"')
 
@@ -348,12 +388,15 @@ describe('resolveTableReferences', () => {
 
   it('marks only the vanished column missing when the table survives', async () => {
     const { local, source, sourceTable, idCol, otherCol } = makeTwoFileProject()
-    await createTableReference({
-      whiteboardId: local.id,
-      sourceWhiteboardId: source.id,
-      sourceTableId: sourceTable.id,
-      sourceColumnIds: [idCol.id, otherCol.id],
-    })
+    await createTableReference(
+      {
+        whiteboardId: local.id,
+        sourceWhiteboardId: source.id,
+        sourceTableId: sourceTable.id,
+        sourceColumnIds: [idCol.id, otherCol.id],
+      },
+      SYSTEM,
+    )
 
     db.prepare('DELETE FROM "Column" WHERE "id" = ?').run(otherCol.id)
 
@@ -370,12 +413,15 @@ describe('resolveTableReferences', () => {
 describe('updateTableReference', () => {
   it('re-targets to another table and reports the relationships it deleted', async () => {
     const { local, source, sourceTable, idCol } = makeTwoFileProject()
-    const ref = await createTableReference({
-      whiteboardId: local.id,
-      sourceWhiteboardId: source.id,
-      sourceTableId: sourceTable.id,
-      sourceColumnIds: [idCol.id],
-    })
+    const ref = await createTableReference(
+      {
+        whiteboardId: local.id,
+        sourceWhiteboardId: source.id,
+        sourceTableId: sourceTable.id,
+        sourceColumnIds: [idCol.id],
+      },
+      SYSTEM,
+    )
     const localTable = makeTable({ whiteboardId: local.id, name: 'invoices' })
     const localCol = makeColumn({ tableId: localTable.id })
     makeRelationship({
@@ -389,10 +435,14 @@ describe('updateTableReference', () => {
     const nextTable = makeTable({ whiteboardId: source.id, name: 'payments' })
     const nextCol = makeColumn({ tableId: nextTable.id, name: 'id' })
 
-    const result = await updateTableReference(ref.table.id, {
-      sourceTableId: nextTable.id,
-      sourceColumnIds: [nextCol.id],
-    })
+    const result = await updateTableReference(
+      ref.table.id,
+      {
+        sourceTableId: nextTable.id,
+        sourceColumnIds: [nextCol.id],
+      },
+      SYSTEM,
+    )
 
     expect(result.deletedRelationships).toBe(1)
     expect(result.reference.table.sourceTableId).toBe(nextTable.id)
@@ -402,12 +452,15 @@ describe('updateTableReference', () => {
 
   it('keeps a relationship whose picked column survives the change', async () => {
     const { local, source, sourceTable, idCol, otherCol } = makeTwoFileProject()
-    const ref = await createTableReference({
-      whiteboardId: local.id,
-      sourceWhiteboardId: source.id,
-      sourceTableId: sourceTable.id,
-      sourceColumnIds: [idCol.id, otherCol.id],
-    })
+    const ref = await createTableReference(
+      {
+        whiteboardId: local.id,
+        sourceWhiteboardId: source.id,
+        sourceTableId: sourceTable.id,
+        sourceColumnIds: [idCol.id, otherCol.id],
+      },
+      SYSTEM,
+    )
     const localTable = makeTable({ whiteboardId: local.id, name: 'invoices' })
     const localCol = makeColumn({ tableId: localTable.id })
     const keptStub = ref.columns.find((c) => c.sourceColumnId === idCol.id)!
@@ -419,9 +472,13 @@ describe('updateTableReference', () => {
       targetColumnId: keptStub.id,
     })
 
-    const result = await updateTableReference(ref.table.id, {
-      sourceColumnIds: [idCol.id],
-    })
+    const result = await updateTableReference(
+      ref.table.id,
+      {
+        sourceColumnIds: [idCol.id],
+      },
+      SYSTEM,
+    )
 
     expect(result.deletedRelationships).toBe(0)
     expect(result.reference.columns).toHaveLength(1)
@@ -433,29 +490,36 @@ describe('updateTableReference', () => {
     const plain = makeTable({ whiteboardId: local.id, name: 'invoices' })
 
     await expect(
-      updateTableReference(plain.id, { sourceColumnIds: [] }),
+      updateTableReference(plain.id, { sourceColumnIds: [] }, SYSTEM),
     ).rejects.toThrow(/not a table reference/i)
   })
 
   it('rejects a re-target that leaves the project', async () => {
     const { local, source, sourceTable, idCol } = makeTwoFileProject()
-    const ref = await createTableReference({
-      whiteboardId: local.id,
-      sourceWhiteboardId: source.id,
-      sourceTableId: sourceTable.id,
-      sourceColumnIds: [idCol.id],
-    })
+    const ref = await createTableReference(
+      {
+        whiteboardId: local.id,
+        sourceWhiteboardId: source.id,
+        sourceTableId: sourceTable.id,
+        sourceColumnIds: [idCol.id],
+      },
+      SYSTEM,
+    )
     const otherProject = makeProject({ name: 'Other' })
     const foreign = makeWhiteboard({ projectId: otherProject.id })
     const foreignTable = makeTable({ whiteboardId: foreign.id })
     const foreignCol = makeColumn({ tableId: foreignTable.id })
 
     await expect(
-      updateTableReference(ref.table.id, {
-        sourceWhiteboardId: foreign.id,
-        sourceTableId: foreignTable.id,
-        sourceColumnIds: [foreignCol.id],
-      }),
+      updateTableReference(
+        ref.table.id,
+        {
+          sourceWhiteboardId: foreign.id,
+          sourceTableId: foreignTable.id,
+          sourceColumnIds: [foreignCol.id],
+        },
+        SYSTEM,
+      ),
     ).rejects.toThrow(/same project/i)
   })
 })
@@ -463,12 +527,15 @@ describe('updateTableReference', () => {
 describe('deleteTableReference', () => {
   it('removes the reference and cascades its relationships', async () => {
     const { local, source, sourceTable, idCol } = makeTwoFileProject()
-    const ref = await createTableReference({
-      whiteboardId: local.id,
-      sourceWhiteboardId: source.id,
-      sourceTableId: sourceTable.id,
-      sourceColumnIds: [idCol.id],
-    })
+    const ref = await createTableReference(
+      {
+        whiteboardId: local.id,
+        sourceWhiteboardId: source.id,
+        sourceTableId: sourceTable.id,
+        sourceColumnIds: [idCol.id],
+      },
+      SYSTEM,
+    )
     const localTable = makeTable({ whiteboardId: local.id, name: 'invoices' })
     const localCol = makeColumn({ tableId: localTable.id })
     makeRelationship({
@@ -479,7 +546,7 @@ describe('deleteTableReference', () => {
       targetColumnId: ref.columns[0].id,
     })
 
-    await deleteTableReference(ref.table.id)
+    await deleteTableReference(ref.table.id, SYSTEM)
 
     expect(await listTableReferences(local.id)).toHaveLength(0)
     expect(countRelationships(local.id)).toBe(0)
@@ -489,7 +556,7 @@ describe('deleteTableReference', () => {
     const { local } = makeTwoFileProject()
     const plain = makeTable({ whiteboardId: local.id, name: 'invoices' })
 
-    await expect(deleteTableReference(plain.id)).rejects.toThrow(
+    await expect(deleteTableReference(plain.id, SYSTEM)).rejects.toThrow(
       /not a table reference/i,
     )
   })
@@ -534,12 +601,15 @@ describe('listReferenceTargets', () => {
     // Put a reference on `source`, pointing back at a table on `local`.
     const localTable = makeTable({ whiteboardId: local.id, name: 'invoices' })
     const localCol = makeColumn({ tableId: localTable.id })
-    await createTableReference({
-      whiteboardId: source.id,
-      sourceWhiteboardId: local.id,
-      sourceTableId: localTable.id,
-      sourceColumnIds: [localCol.id],
-    })
+    await createTableReference(
+      {
+        whiteboardId: source.id,
+        sourceWhiteboardId: local.id,
+        sourceTableId: localTable.id,
+        sourceColumnIds: [localCol.id],
+      },
+      SYSTEM,
+    )
 
     const [file] = await listReferenceTargets(local.id)
 

@@ -9,6 +9,7 @@ import {
 } from './already-exists'
 import type { CreateTable, UpdateTable } from './schema'
 import type { Column, DiagramTable, Relationship } from './models'
+import type { ChangeContext } from '@/lib/schema-changelog'
 import {
   db,
   insert,
@@ -16,8 +17,31 @@ import {
   mapDiagramTable,
   mapRelationship,
   nowMs,
+  transaction,
   update,
 } from '@/db'
+import {
+  ensureBatch,
+  eventRow,
+  recordChange,
+  recordUpdate,
+  relationshipDisplayName,
+} from '@/lib/schema-changelog'
+
+const TABLE_EVENT_FIELDS = [
+  'name',
+  'description',
+  'positionX',
+  'positionY',
+  'width',
+  'height',
+] as const
+
+function readTable(id: string): DiagramTable | null {
+  return mapDiagramTable(
+    db.prepare('SELECT * FROM "DiagramTable" WHERE "id" = ?').get(id),
+  )
+}
 
 /**
  * DiagramTable with columns and relationships
@@ -58,6 +82,7 @@ function attachTableRelations(table: DiagramTable): DiagramTableWithRelations {
  */
 export async function createDiagramTable(
   data: CreateTable,
+  ctx: ChangeContext,
 ): Promise<DiagramTable> {
   // Validate input with Zod schema
   const validated = createTableSchema.parse(data)
@@ -65,21 +90,32 @@ export async function createDiagramTable(
 
   try {
     const ts = nowMs()
-    insert('DiagramTable', {
-      id,
-      whiteboardId: validated.whiteboardId,
-      name: validated.name,
-      description: validated.description ?? null,
-      positionX: validated.positionX ?? null,
-      positionY: validated.positionY ?? null,
-      width: validated.width ?? null,
-      height: validated.height ?? null,
-      createdAt: ts,
-      updatedAt: ts,
+    return transaction(() => {
+      insert('DiagramTable', {
+        id,
+        whiteboardId: validated.whiteboardId,
+        name: validated.name,
+        description: validated.description ?? null,
+        positionX: validated.positionX ?? null,
+        positionY: validated.positionY ?? null,
+        width: validated.width ?? null,
+        height: validated.height ?? null,
+        createdAt: ts,
+        updatedAt: ts,
+      })
+      const created = readTable(id)!
+      recordChange(ctx, {
+        category: 'schema',
+        entityType: 'table',
+        action: 'create',
+        entityId: id,
+        entityName: created.name,
+        tableId: id,
+        tableName: created.name,
+        after: eventRow(created),
+      })
+      return created
     })
-    return mapDiagramTable(
-      db.prepare('SELECT * FROM "DiagramTable" WHERE "id" = ?').get(id),
-    )!
   } catch (error) {
     refuseTakenIdAfterInsertError(error, claim)
     refuseTakenTableName(error, validated.whiteboardId, validated.name)
@@ -209,6 +245,35 @@ export async function findDiagramTableByIdWithRelations(
   }
 }
 
+/** Write `values` to a table and record what changed, in one transaction. */
+function writeTableUpdate(
+  id: string,
+  values: Record<string, unknown>,
+  ctx: ChangeContext,
+): DiagramTable {
+  return transaction(() => {
+    const before = readTable(id)
+    update('DiagramTable', id, values)
+    const after = readTable(id)!
+    if (before) {
+      recordUpdate(
+        ctx,
+        {
+          entityType: 'table',
+          entityId: id,
+          entityName: after.name,
+          tableId: id,
+          tableName: after.name,
+        },
+        before,
+        after,
+        TABLE_EVENT_FIELDS,
+      )
+    }
+    return after
+  })
+}
+
 /**
  * Update a table
  * @param id - Table UUID
@@ -219,6 +284,7 @@ export async function findDiagramTableByIdWithRelations(
 export async function updateDiagramTable(
   id: string,
   data: UpdateTable,
+  ctx: ChangeContext,
 ): Promise<DiagramTable> {
   // Validate input with Zod schema
   const validated = updateTableSchema.parse(data)
@@ -234,10 +300,7 @@ export async function updateDiagramTable(
       values.positionY = validated.positionY
     if (validated.width !== undefined) values.width = validated.width
     if (validated.height !== undefined) values.height = validated.height
-    update('DiagramTable', id, values)
-    return mapDiagramTable(
-      db.prepare('SELECT * FROM "DiagramTable" WHERE "id" = ?').get(id),
-    )!
+    return writeTableUpdate(id, values, ctx)
   } catch (error) {
     throw new Error(
       `Failed to update table: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -256,12 +319,14 @@ export async function updateDiagramTablePosition(
   id: string,
   positionX: number,
   positionY: number,
+  ctx: ChangeContext,
 ): Promise<DiagramTable> {
   try {
-    update('DiagramTable', id, { positionX, positionY, updatedAt: nowMs() })
-    return mapDiagramTable(
-      db.prepare('SELECT * FROM "DiagramTable" WHERE "id" = ?').get(id),
-    )!
+    return writeTableUpdate(
+      id,
+      { positionX, positionY, updatedAt: nowMs() },
+      ctx,
+    )
   } catch (error) {
     throw new Error(
       `Failed to update table position: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -291,18 +356,32 @@ export async function initDiagramTablePosition(
   id: string,
   positionX: number,
   positionY: number,
+  ctx: ChangeContext,
 ): Promise<{ changes: number; row: DiagramTable | null }> {
   try {
     const ts = nowMs()
-    const result = db
-      .prepare(
-        `UPDATE "DiagramTable" SET "positionX" = ?, "positionY" = ?, "updatedAt" = ? WHERE "id" = ? AND "positionX" IS NULL`,
-      )
-      .run(positionX, positionY, ts, id) as { changes: number }
-    const row = mapDiagramTable(
-      db.prepare('SELECT * FROM "DiagramTable" WHERE "id" = ?').get(id),
-    )
-    return { changes: result.changes, row }
+    return transaction(() => {
+      const result = db
+        .prepare(
+          `UPDATE "DiagramTable" SET "positionX" = ?, "positionY" = ?, "updatedAt" = ? WHERE "id" = ? AND "positionX" IS NULL`,
+        )
+        .run(positionX, positionY, ts, id) as { changes: number }
+      const row = readTable(id)
+      if (result.changes > 0 && row) {
+        recordChange(ctx, {
+          category: 'layout',
+          entityType: 'table',
+          action: 'move',
+          entityId: id,
+          entityName: row.name,
+          tableId: id,
+          tableName: row.name,
+          before: { positionX: null, positionY: null },
+          after: { positionX, positionY },
+        })
+      }
+      return { changes: result.changes, row }
+    })
   } catch (error) {
     throw new Error(
       `Failed to initialize table position: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -316,14 +395,60 @@ export async function initDiagramTablePosition(
  * @returns Deleted table
  * @throws Error if table not found
  */
-export async function deleteDiagramTable(id: string): Promise<DiagramTable> {
+export async function deleteDiagramTable(
+  id: string,
+  ctx: ChangeContext,
+): Promise<DiagramTable> {
   try {
-    const existing = mapDiagramTable(
-      db.prepare('SELECT * FROM "DiagramTable" WHERE "id" = ?').get(id),
-    )
-    if (!existing) throw new Error('Table not found')
-    db.prepare('DELETE FROM "DiagramTable" WHERE "id" = ?').run(id)
-    return existing
+    return transaction(() => {
+      const existing = readTable(id)
+      if (!existing) throw new Error('Table not found')
+      const batchCtx = ensureBatch(ctx, 'table-delete')
+      const columns = db
+        .prepare('SELECT * FROM "Column" WHERE "tableId" = ? ORDER BY "order"')
+        .all(id)
+        .map((r) => mapColumn(r)!)
+      const relationships = db
+        .prepare(
+          'SELECT * FROM "Relationship" WHERE "sourceTableId" = ? OR "targetTableId" = ?',
+        )
+        .all(id, id)
+        .map((r) => mapRelationship(r)!)
+      const own = { tableId: id, tableName: existing.name }
+      for (const relationship of relationships) {
+        recordChange(batchCtx, {
+          category: 'schema',
+          entityType: 'relationship',
+          action: 'delete',
+          entityId: relationship.id,
+          entityName: relationshipDisplayName(relationship),
+          ...own,
+          before: eventRow(relationship),
+        })
+      }
+      for (const column of columns) {
+        recordChange(batchCtx, {
+          category: 'schema',
+          entityType: 'column',
+          action: 'delete',
+          entityId: column.id,
+          entityName: column.name,
+          ...own,
+          before: eventRow(column),
+        })
+      }
+      recordChange(batchCtx, {
+        category: 'schema',
+        entityType: existing.sourceTableId ? 'reference' : 'table',
+        action: 'delete',
+        entityId: id,
+        entityName: existing.name,
+        ...own,
+        before: eventRow(existing),
+      })
+      db.prepare('DELETE FROM "DiagramTable" WHERE "id" = ?').run(id)
+      return existing
+    })
   } catch (error) {
     throw new Error(
       `Failed to delete table: ${error instanceof Error ? error.message : 'Unknown error'}`,

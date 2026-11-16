@@ -22,6 +22,7 @@ import {
   makeWhiteboard,
   resetDb,
 } from '@/test/db-helpers'
+import { SYSTEM } from '@/lib/schema-changelog'
 
 // moveAreaAndMembers rollback test needs a way to force a write failure
 // mid-transaction (the generic `update()` helper never throws on its own —
@@ -68,7 +69,7 @@ beforeEach(() => resetDb())
 describe('createArea', () => {
   it('inserts an area and returns the mapped model with empty members by default', async () => {
     const wbId = makeWhiteboardId()
-    const area = await createArea(baseArea(wbId))
+    const area = await createArea(baseArea(wbId), SYSTEM)
 
     expect(area.id).toBeTruthy()
     expect(area.whiteboardId).toBe(wbId)
@@ -86,6 +87,7 @@ describe('createArea', () => {
     const t2 = makeTable({ whiteboardId: wbId, name: 't2' })
     const area = await createArea(
       baseArea(wbId, { memberTableIds: [t1.id, t2.id] }),
+      SYSTEM,
     )
     expect(area.memberTableIds).toEqual([t1.id, t2.id])
 
@@ -96,7 +98,7 @@ describe('createArea', () => {
   it('rejects a color outside the palette', async () => {
     const wbId = makeWhiteboardId()
     await expect(
-      createArea(baseArea(wbId, { color: 'chartreuse' })),
+      createArea(baseArea(wbId, { color: 'chartreuse' }), SYSTEM),
     ).rejects.toThrow()
   })
 })
@@ -105,9 +107,9 @@ describe('findAreasByWhiteboard', () => {
   it('returns only areas for the given whiteboard, in creation order', async () => {
     const wbA = makeWhiteboardId()
     const wbB = makeWhiteboardId()
-    const a1 = await createArea(baseArea(wbA, { name: 'A1' }))
-    const a2 = await createArea(baseArea(wbA, { name: 'A2' }))
-    await createArea(baseArea(wbB, { name: 'B1' }))
+    const a1 = await createArea(baseArea(wbA, { name: 'A1' }), SYSTEM)
+    const a2 = await createArea(baseArea(wbA, { name: 'A2' }), SYSTEM)
+    await createArea(baseArea(wbB, { name: 'B1' }), SYSTEM)
 
     const areas = await findAreasByWhiteboard(wbA)
     expect(areas.map((a) => a.id)).toEqual([a1.id, a2.id])
@@ -117,9 +119,13 @@ describe('findAreasByWhiteboard', () => {
 describe('updateArea', () => {
   it('updates only the provided fields', async () => {
     const wbId = makeWhiteboardId()
-    const area = await createArea(baseArea(wbId))
+    const area = await createArea(baseArea(wbId), SYSTEM)
 
-    const updated = await updateArea(area.id, { name: 'Payments', color: 'red' })
+    const updated = await updateArea(
+      area.id,
+      { name: 'Payments', color: 'red' },
+      SYSTEM,
+    )
     expect(updated.name).toBe('Payments')
     expect(updated.color).toBe('red')
     // untouched fields preserved
@@ -131,9 +137,16 @@ describe('updateArea', () => {
     const wbId = makeWhiteboardId()
     const t1 = makeTable({ whiteboardId: wbId, name: 't1' })
     const t2 = makeTable({ whiteboardId: wbId, name: 't2' })
-    const area = await createArea(baseArea(wbId, { memberTableIds: [t1.id] }))
+    const area = await createArea(
+      baseArea(wbId, { memberTableIds: [t1.id] }),
+      SYSTEM,
+    )
 
-    const updated = await updateArea(area.id, { memberTableIds: [t2.id] })
+    const updated = await updateArea(
+      area.id,
+      { memberTableIds: [t2.id] },
+      SYSTEM,
+    )
     expect(updated.memberTableIds).toEqual([t2.id])
   })
 })
@@ -145,6 +158,7 @@ describe('moveAreaAndMembers', () => {
     const t2 = makeTable({ whiteboardId: wbId, name: 't2' })
     const area = await createArea(
       baseArea(wbId, { memberTableIds: [t1.id, t2.id] }),
+      SYSTEM,
     )
 
     const updated = await moveAreaAndMembers(
@@ -154,16 +168,21 @@ describe('moveAreaAndMembers', () => {
         { tableId: t1.id, positionX: 50, positionY: 60 },
         { tableId: t2.id, positionX: 70, positionY: 80 },
       ],
+      SYSTEM,
     )
 
     expect(updated.positionX).toBe(500)
     expect(updated.positionY).toBe(600)
 
     const row1 = db
-      .prepare('SELECT "positionX", "positionY" FROM "DiagramTable" WHERE "id" = ?')
+      .prepare(
+        'SELECT "positionX", "positionY" FROM "DiagramTable" WHERE "id" = ?',
+      )
       .get(t1.id) as { positionX: number; positionY: number }
     const row2 = db
-      .prepare('SELECT "positionX", "positionY" FROM "DiagramTable" WHERE "id" = ?')
+      .prepare(
+        'SELECT "positionX", "positionY" FROM "DiagramTable" WHERE "id" = ?',
+      )
       .get(t2.id) as { positionX: number; positionY: number }
     expect(row1).toEqual({ positionX: 50, positionY: 60 })
     expect(row2).toEqual({ positionX: 70, positionY: 80 })
@@ -171,12 +190,13 @@ describe('moveAreaAndMembers', () => {
 
   it('supports a member-less area (empty members array)', async () => {
     const wbId = makeWhiteboardId()
-    const area = await createArea(baseArea(wbId))
+    const area = await createArea(baseArea(wbId), SYSTEM)
 
     const updated = await moveAreaAndMembers(
       area.id,
       { positionX: 33, positionY: 44 },
       [],
+      SYSTEM,
     )
     expect(updated.positionX).toBe(33)
     expect(updated.positionY).toBe(44)
@@ -191,6 +211,7 @@ describe('moveAreaAndMembers', () => {
         positionY: 20,
         memberTableIds: [t1.id],
       }),
+      SYSTEM,
     )
 
     await expect(
@@ -201,6 +222,7 @@ describe('moveAreaAndMembers', () => {
           { tableId: t1.id, positionX: 111, positionY: 222 },
           { tableId: 'FORCE_WRITE_FAILURE', positionX: 0, positionY: 0 },
         ],
+        SYSTEM,
       ),
     ).rejects.toThrow()
 
@@ -213,7 +235,9 @@ describe('moveAreaAndMembers', () => {
     // Member position rolled back too — proves all-or-nothing, not
     // partial-commit.
     const row1 = db
-      .prepare('SELECT "positionX", "positionY" FROM "DiagramTable" WHERE "id" = ?')
+      .prepare(
+        'SELECT "positionX", "positionY" FROM "DiagramTable" WHERE "id" = ?',
+      )
       .get(t1.id) as { positionX: number; positionY: number }
     expect(row1).toEqual({ positionX: 0, positionY: 0 })
   })
@@ -223,9 +247,12 @@ describe('deleteArea', () => {
   it('removes the area but leaves member tables intact', async () => {
     const wbId = makeWhiteboardId()
     const t1 = makeTable({ whiteboardId: wbId, name: 't1' })
-    const area = await createArea(baseArea(wbId, { memberTableIds: [t1.id] }))
+    const area = await createArea(
+      baseArea(wbId, { memberTableIds: [t1.id] }),
+      SYSTEM,
+    )
 
-    await deleteArea(area.id)
+    await deleteArea(area.id, SYSTEM)
 
     expect(await findAreaById(area.id)).toBeNull()
     const tableStill = db
@@ -235,7 +262,9 @@ describe('deleteArea', () => {
   })
 
   it('throws when the area does not exist', async () => {
-    await expect(deleteArea('00000000-0000-0000-0000-000000000000')).rejects.toThrow()
+    await expect(
+      deleteArea('00000000-0000-0000-0000-000000000000', SYSTEM),
+    ).rejects.toThrow()
   })
 })
 
@@ -246,12 +275,14 @@ describe('removeTableFromAreas', () => {
     const t2 = makeTable({ whiteboardId: wbId, name: 't2' })
     const withT1 = await createArea(
       baseArea(wbId, { name: 'has-t1', memberTableIds: [t1.id, t2.id] }),
+      SYSTEM,
     )
     const withoutT1 = await createArea(
       baseArea(wbId, { name: 'no-t1', memberTableIds: [t2.id] }),
+      SYSTEM,
     )
 
-    const affected = await removeTableFromAreas(wbId, t1.id)
+    const affected = await removeTableFromAreas(wbId, t1.id, SYSTEM)
     expect(affected.map((a) => a.id)).toEqual([withT1.id])
 
     expect((await findAreaById(withT1.id))?.memberTableIds).toEqual([t2.id])
@@ -262,7 +293,7 @@ describe('removeTableFromAreas', () => {
 describe('cascade on whiteboard delete', () => {
   it('deletes areas when their whiteboard is deleted', async () => {
     const wbId = makeWhiteboardId()
-    const area = await createArea(baseArea(wbId))
+    const area = await createArea(baseArea(wbId), SYSTEM)
 
     db.exec('PRAGMA foreign_keys = ON;')
     db.prepare('DELETE FROM "Whiteboard" WHERE "id" = ?').run(wbId)

@@ -26,6 +26,7 @@ import {
   requireServerFnRole,
 } from '@/lib/auth/require-role'
 import { logSampledError } from '@/lib/auth/log-sample'
+import { PHASE2_PLACEHOLDER_CTX } from '@/lib/schema-changelog'
 
 /**
  * Get all columns in a table
@@ -187,7 +188,7 @@ export const createColumnFn = createServerFn({ method: 'POST' })
       const projectId = await getTableProjectId(data.tableId)
       await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
-        const column = await createColumn(data)
+        const column = await createColumn(data, PHASE2_PLACEHOLDER_CTX)
         return column
       } catch (error) {
         throw new Error(
@@ -245,7 +246,7 @@ export const createColumnsFn = createServerFn({ method: 'POST' })
 
       // Step 2: WRITE — only reached when every item passed RBAC.
       try {
-        const columns = await createColumns(data)
+        const columns = await createColumns(data, PHASE2_PLACEHOLDER_CTX)
         return columns
       } catch (error) {
         throw new Error(
@@ -274,7 +275,11 @@ export const updateColumnFn = createServerFn({ method: 'POST' })
       const projectId = await getColumnProjectId(params.id)
       await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
-        const column = await updateColumn(params.id, params.data)
+        const column = await updateColumn(
+          params.id,
+          params.data,
+          PHASE2_PLACEHOLDER_CTX,
+        )
         return column
       } catch (error) {
         throw new Error(
@@ -303,7 +308,11 @@ export const updateColumnOrderFn = createServerFn({ method: 'POST' })
       const projectId = await getColumnProjectId(params.id)
       await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
-        const column = await updateColumnOrder(params.id, params.order)
+        const column = await updateColumnOrder(
+          params.id,
+          params.order,
+          PHASE2_PLACEHOLDER_CTX,
+        )
         return column
       } catch (error) {
         throw new Error(
@@ -330,7 +339,7 @@ export const deleteColumnFn = createServerFn({ method: 'POST' })
       const projectId = await getColumnProjectId(columnId)
       await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
-        const column = await deleteColumn(columnId)
+        const column = await deleteColumn(columnId, PHASE2_PLACEHOLDER_CTX)
         return column
       } catch (error) {
         throw new Error(

@@ -59,6 +59,7 @@ import {
   resolveTableReferences,
   updateTableReference,
 } from '@/data/table-reference'
+import { PHASE2_PLACEHOLDER_CTX } from '@/lib/schema-changelog'
 
 /**
  * WhiteboardWithDiagram plus the requesting user's effective role on the
@@ -266,6 +267,7 @@ export const updateTablePosition = createServerFn({
           data.id,
           data.positionX,
           data.positionY,
+          PHASE2_PLACEHOLDER_CTX,
         )
         return table
       } catch (error) {
@@ -601,7 +603,7 @@ export const createTableReferenceFn = createServerFn({
       const projectId = await getWhiteboardProjectId(data.whiteboardId)
       await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
-        return await createTableReference(data)
+        return await createTableReference(data, PHASE2_PLACEHOLDER_CTX)
       } catch (error) {
         console.error('Error creating table reference:', error)
         throw error
@@ -633,7 +635,11 @@ export const updateTableReferenceFn = createServerFn({
       await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const { tableId, ...changes } = data
-        return await updateTableReference(tableId, changes)
+        return await updateTableReference(
+          tableId,
+          changes,
+          PHASE2_PLACEHOLDER_CTX,
+        )
       } catch (error) {
         console.error('Error updating table reference:', error)
         throw error
@@ -658,7 +664,7 @@ export const deleteTableReferenceFn = createServerFn({
       const projectId = await getTableProjectId(data.tableId)
       await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
-        return await deleteTableReference(data.tableId)
+        return await deleteTableReference(data.tableId, PHASE2_PLACEHOLDER_CTX)
       } catch (error) {
         console.error('Error deleting table reference:', error)
         throw error

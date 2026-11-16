@@ -69,6 +69,7 @@ export async function authenticateSocketHandshake(
         const payload = await validateCollabToken(authToken)
         socket.data.userId = payload.sub
         socket.data.sessionId = '' // no DB session for JWT auth path
+        socket.data.viaAgent = true // MCP agent: the change log marks its edits
         socket.data.sessionExpiresAt = payload.exp * 1000
         return next()
       } catch (jwtErr) {
@@ -100,6 +101,7 @@ export async function authenticateSocketHandshake(
     // Attach auth data to socket for use in event handlers
     socket.data.userId = authResult.user.id
     socket.data.sessionId = authResult.session.id
+    socket.data.viaAgent = false
     socket.data.sessionExpiresAt = authResult.session.expiresAt.getTime()
     next()
   } catch {

@@ -6,7 +6,15 @@ import { z } from 'zod'
 import type { Server as HTTPServer } from 'node:http'
 import type { AreaBounds, CursorPosition } from '@/data/schema'
 import type { EffectiveRole } from '@/data/permission'
+import type { ChangeContext } from '@/lib/schema-changelog'
 import { clientErrorMessage } from '@/lib/client-error'
+import {
+  SYSTEM,
+  acceptBatchId,
+  batchIdSchema,
+  ensureBatch,
+  userContext,
+} from '@/lib/schema-changelog'
 import {
   createCollaborationSession,
   deleteCollaborationSession,
@@ -486,6 +494,22 @@ export function setupCollaborationEventHandlers(
   whiteboardId: string,
   userId: string,
 ): void {
+  // The change log's actor, built once per socket. `data.viaAgent` is set by
+  // the handshake: true on the MCP JWT path, false for the browser cookie path.
+  const baseCtx = userContext(whiteboardId, userId, {
+    viaAgent: socket.data?.viaAgent === true,
+  })
+  // A client may group writes by sending `batchId` (string, 64 characters at
+  // most); the server accepts it only when no other whiteboard or user owns it.
+  const ctxFor = (data: unknown): ChangeContext => {
+    const parsed = batchIdSchema.safeParse(
+      (data as { batchId?: unknown } | null | undefined)?.batchId,
+    )
+    return parsed.success && parsed.data !== undefined
+      ? acceptBatchId(baseCtx, parsed.data, 'agent-batch')
+      : baseCtx
+  }
+
   // Cursor update (throttled by client to 60Hz)
   const allowCursor = createEventLimiter(60, 1000)
   socket.on('cursor:update', async (data: { x: number; y: number }) => {
@@ -601,7 +625,7 @@ export function setupCollaborationEventHandlers(
         })
 
         // Create table in database
-        const table = await createDiagramTable(validated)
+        const table = await createDiagramTable(validated, ctxFor(data))
 
         // Broadcast to other users
         broadcastCommitted('table:created', () =>
@@ -753,6 +777,7 @@ export function setupCollaborationEventHandlers(
             data.tableId,
             data.positionX,
             data.positionY,
+            SYSTEM,
           )
           if (changes > 0) {
             // This client won the race — broadcast so other clients update.
@@ -790,6 +815,7 @@ export function setupCollaborationEventHandlers(
           data.tableId,
           data.positionX,
           data.positionY,
+          ctxFor(data),
         )
 
         // Broadcast to other users
@@ -974,7 +1000,11 @@ export function setupCollaborationEventHandlers(
         const validated = updateTableSchema.parse(updateData)
 
         // Update table in database
-        const updatedTable = await updateDiagramTable(tableId, validated)
+        const updatedTable = await updateDiagramTable(
+          tableId,
+          validated,
+          ctxFor(data),
+        )
 
         // Broadcast to other users
         socket.broadcast.emit('table:updated', {
@@ -1079,11 +1109,16 @@ export function setupCollaborationEventHandlers(
         const affectedCommentIds = await findCommentIdsByTableId(tableId)
 
         // Delete table from database (cascade deletes columns and relationships)
-        await deleteDiagramTable(tableId)
+        const deleteCtx = ensureBatch(ctxFor(data), 'table-delete')
+        await deleteDiagramTable(tableId, deleteCtx)
 
         // GH #106: drop the deleted table from any subject area's membership so
         // no area keeps a dangling member id, and tell peers about the change.
-        const affectedAreas = await removeTableFromAreas(whiteboardId, tableId)
+        const affectedAreas = await removeTableFromAreas(
+          whiteboardId,
+          tableId,
+          deleteCtx,
+        )
         for (const area of affectedAreas) {
           socket.broadcast.emit('area:updated', {
             areaId: area.id,
@@ -1172,7 +1207,7 @@ export function setupCollaborationEventHandlers(
         })
         return
       }
-      const area = await createArea(validated)
+      const area = await createArea(validated, ctxFor(data))
       broadcastCommitted('area:created', () =>
         socket.broadcast.emit('area:created', { ...area, createdBy: userId }),
       )
@@ -1252,7 +1287,7 @@ export function setupCollaborationEventHandlers(
           cb?.({ ok: false, code: 'FORBIDDEN', message })
           return
         }
-        const updatedArea = await updateArea(areaId, validated)
+        const updatedArea = await updateArea(areaId, validated, ctxFor(data))
         socket.broadcast.emit('area:updated', {
           areaId,
           ...validated,
@@ -1375,7 +1410,12 @@ export function setupCollaborationEventHandlers(
         }
 
         // Persist area + all members atomically (one transaction).
-        await moveAreaAndMembers(areaId, { positionX, positionY }, members)
+        await moveAreaAndMembers(
+          areaId,
+          { positionX, positionY },
+          members,
+          ctxFor(data),
+        )
 
         // Broadcast to peers only AFTER the write succeeds — one event,
         // one render tick, no detachment window.
@@ -1453,7 +1493,7 @@ export function setupCollaborationEventHandlers(
           return
         }
 
-        await deleteArea(areaId)
+        await deleteArea(areaId, ctxFor(data))
         socket.broadcast.emit('area:deleted', { areaId, deletedBy: userId })
         cb?.({ ok: true, entity: { id: areaId } })
       } catch (error) {
@@ -1934,7 +1974,7 @@ export function setupCollaborationEventHandlers(
         }
 
         // Create column in database
-        const column = await createColumn(validated)
+        const column = await createColumn(validated, ctxFor(data))
 
         // Broadcast to other users, and confirm creation back to the
         // originating socket so the client can replace its optimistic temp ID
@@ -2023,7 +2063,7 @@ export function setupCollaborationEventHandlers(
         const validated = updateColumnSchema.parse(updateData)
 
         // Update column in database
-        const column = await updateColumn(columnId, validated)
+        const column = await updateColumn(columnId, validated, ctxFor(data))
 
         // Broadcast to other users
         socket.broadcast.emit('column:updated', {
@@ -2118,7 +2158,7 @@ export function setupCollaborationEventHandlers(
         )
 
         // Delete column from database (cascade deletes relationships)
-        await deleteColumn(data.columnId)
+        await deleteColumn(data.columnId, ctxFor(data))
 
         // Broadcast to other users
         socket.broadcast.emit('column:deleted', {
@@ -2259,7 +2299,7 @@ export function setupCollaborationEventHandlers(
         ]
 
         // Persist via single Prisma transaction (REQ-03)
-        await reorderColumns(tableId, mergedOrderedIds)
+        await reorderColumns(tableId, mergedOrderedIds, ctxFor(data))
 
         // Broadcast the merged order to all other clients
         socket.broadcast.emit('column:reordered', {
@@ -2340,7 +2380,7 @@ export function setupCollaborationEventHandlers(
       }
 
       // Perform the duplicate (shifts siblings + creates new column)
-      const newColumn = await duplicateColumn(columnId)
+      const newColumn = await duplicateColumn(columnId, ctxFor(data))
 
       // The payload broadcast includes the siblings that shifted so clients can
       // re-sort without a full refetch.  We embed the new column and the
@@ -2407,7 +2447,7 @@ export function setupCollaborationEventHandlers(
         })
 
         // Create relationship in database
-        const relationship = await createRelationship(validated)
+        const relationship = await createRelationship(validated, ctxFor(data))
 
         // Broadcast to other users
         broadcastCommitted('relationship:created', () =>
@@ -2544,6 +2584,7 @@ export function setupCollaborationEventHandlers(
         const updatedRelationship = await updateRelationship(
           relationshipId,
           validated,
+          ctxFor(data),
         )
 
         // Broadcast to other users
@@ -2653,7 +2694,7 @@ export function setupCollaborationEventHandlers(
         }
 
         // Delete relationship from database
-        await deleteRelationship(relationshipId)
+        await deleteRelationship(relationshipId, ctxFor(data))
 
         // Broadcast to other users
         socket.broadcast.emit('relationship:deleted', {

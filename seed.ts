@@ -4,9 +4,25 @@
 import { db } from '@/db'
 import { createProject } from '@/data/project'
 import { createWhiteboard } from '@/data/whiteboard'
-import { createDiagramTable } from '@/data/diagram-table'
-import { createColumn, createColumns } from '@/data/column'
-import { createRelationship } from '@/data/relationship'
+import { createDiagramTable as createDiagramTableLogged } from '@/data/diagram-table'
+import {
+  createColumn as createColumnLogged,
+  createColumns as createColumnsLogged,
+} from '@/data/column'
+import { createRelationship as createRelationshipLogged } from '@/data/relationship'
+import { SYSTEM } from '@/lib/schema-changelog'
+
+// Seed rows are written by the server, not by a user: SYSTEM logs no event.
+const createDiagramTable = (
+  data: Parameters<typeof createDiagramTableLogged>[0],
+) => createDiagramTableLogged(data, SYSTEM)
+const createColumn = (data: Parameters<typeof createColumnLogged>[0]) =>
+  createColumnLogged(data, SYSTEM)
+const createColumns = (data: Parameters<typeof createColumnsLogged>[0]) =>
+  createColumnsLogged(data, SYSTEM)
+const createRelationship = (
+  data: Parameters<typeof createRelationshipLogged>[0],
+) => createRelationshipLogged(data, SYSTEM)
 
 async function main() {
   console.log('🌱 Seeding database...')

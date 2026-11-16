@@ -20,6 +20,7 @@ import {
   makeWhiteboard,
   resetDb,
 } from '@/test/db-helpers'
+import { SYSTEM } from '@/lib/schema-changelog'
 
 function retired(id: string): { entity: string; whiteboardId: string } | null {
   const row = db
@@ -78,24 +79,30 @@ describe('RetiredId triggers', () => {
     const b = makeTable({ whiteboardId: wb.id, name: 'b' })
     const ca = makeColumn({ tableId: a.id })
     const cb = makeColumn({ tableId: b.id })
-    const rel = await createRelationship({
-      whiteboardId: wb.id,
-      sourceTableId: a.id,
-      targetTableId: b.id,
-      sourceColumnId: ca.id,
-      targetColumnId: cb.id,
-      cardinality: 'ONE_TO_MANY',
-    })
-    const area = await createArea({
-      whiteboardId: wb.id,
-      name: 'area',
-      color: 'red',
-      positionX: 0,
-      positionY: 0,
-      width: 100,
-      height: 100,
-      memberTableIds: [],
-    })
+    const rel = await createRelationship(
+      {
+        whiteboardId: wb.id,
+        sourceTableId: a.id,
+        targetTableId: b.id,
+        sourceColumnId: ca.id,
+        targetColumnId: cb.id,
+        cardinality: 'ONE_TO_MANY',
+      },
+      SYSTEM,
+    )
+    const area = await createArea(
+      {
+        whiteboardId: wb.id,
+        name: 'area',
+        color: 'red',
+        positionX: 0,
+        positionY: 0,
+        width: 100,
+        height: 100,
+        memberTableIds: [],
+      },
+      SYSTEM,
+    )
 
     del('DiagramTable', a.id)
     del('Area', area.id)
@@ -213,57 +220,57 @@ describe('a client id that last belonged to another whiteboard', () => {
     del('DiagramTable', table.id)
 
     await expect(
-      createDiagramTable({
-        id: table.id,
-        whiteboardId: elsewhere.id,
-        name: 'x',
-      }),
+      createDiagramTable(
+        {
+          id: table.id,
+          whiteboardId: elsewhere.id,
+          name: 'x',
+        },
+        SYSTEM,
+      ),
     ).rejects.toThrow('Failed to create table')
     const squatTable = makeTable({ whiteboardId: elsewhere.id })
     await expect(
-      createColumn({
-        id: column.id,
-        tableId: squatTable.id,
-        name: 'INJECTED',
-        dataType: 'text',
-        order: 0,
-      }),
+      createColumn(
+        {
+          id: column.id,
+          tableId: squatTable.id,
+          name: 'INJECTED',
+          dataType: 'text',
+          order: 0,
+        },
+        SYSTEM,
+      ),
     ).rejects.toThrow('Failed to create column')
 
-    const back = await createDiagramTable({
-      id: table.id,
-      whiteboardId: home.id,
-      name: 'x',
-    })
+    const back = await createDiagramTable(
+      {
+        id: table.id,
+        whiteboardId: home.id,
+        name: 'x',
+      },
+      SYSTEM,
+    )
     expect(back.id).toBe(table.id)
-    const backColumn = await createColumn({
-      id: column.id,
-      tableId: back.id,
-      name: 'c',
-      dataType: 'text',
-      order: 0,
-    })
+    const backColumn = await createColumn(
+      {
+        id: column.id,
+        tableId: back.id,
+        name: 'c',
+        dataType: 'text',
+        order: 0,
+      },
+      SYSTEM,
+    )
     expect(backColumn.id).toBe(column.id)
   })
 
   it('cannot be claimed for a relationship, an area or a canvas element', async () => {
     const home = makeWhiteboard({ projectId: makeProject().id })
     const elsewhere = makeWhiteboard({ projectId: makeProject().id })
-    const area = await createArea({
-      whiteboardId: home.id,
-      name: 'a',
-      color: 'red',
-      positionX: 0,
-      positionY: 0,
-      width: 10,
-      height: 10,
-      memberTableIds: [],
-    })
-    del('Area', area.id)
-    await expect(
-      createArea({
-        id: area.id,
-        whiteboardId: elsewhere.id,
+    const area = await createArea(
+      {
+        whiteboardId: home.id,
         name: 'a',
         color: 'red',
         positionX: 0,
@@ -271,7 +278,25 @@ describe('a client id that last belonged to another whiteboard', () => {
         width: 10,
         height: 10,
         memberTableIds: [],
-      }),
+      },
+      SYSTEM,
+    )
+    del('Area', area.id)
+    await expect(
+      createArea(
+        {
+          id: area.id,
+          whiteboardId: elsewhere.id,
+          name: 'a',
+          color: 'red',
+          positionX: 0,
+          positionY: 0,
+          width: 10,
+          height: 10,
+          memberTableIds: [],
+        },
+        SYSTEM,
+      ),
     ).rejects.toThrow('Failed to create area')
 
     const homeBoard = await createCanvasBoard({

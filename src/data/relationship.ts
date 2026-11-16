@@ -5,6 +5,7 @@ import { createRelationshipSchema, updateRelationshipSchema } from './schema'
 import { claimClientId, refuseTakenIdAfterInsertError } from './already-exists'
 import type { CreateRelationship, UpdateRelationship } from './schema'
 import type { Column, DiagramTable, Relationship } from './models'
+import type { ChangeContext } from '@/lib/schema-changelog'
 import {
   db,
   insert,
@@ -13,8 +14,43 @@ import {
   mapRelationship,
   nowMs,
   toDbJson,
+  transaction,
   update,
 } from '@/db'
+import {
+  eventRow,
+  recordChange,
+  recordUpdate,
+  relationshipDisplayName,
+  tableNameOf,
+} from '@/lib/schema-changelog'
+
+const RELATIONSHIP_EVENT_FIELDS = [
+  'sourceTableId',
+  'targetTableId',
+  'sourceColumnId',
+  'targetColumnId',
+  'cardinality',
+  'label',
+  'routingPoints',
+] as const
+
+function readRelationship(id: string): Relationship | null {
+  return mapRelationship(
+    db.prepare('SELECT * FROM "Relationship" WHERE "id" = ?').get(id),
+  )
+}
+
+/** The event fields that name a relationship and the table it is listed under. */
+function relationshipEventBase(relationship: Relationship) {
+  return {
+    entityType: 'relationship' as const,
+    entityId: relationship.id,
+    entityName: relationshipDisplayName(relationship),
+    tableId: relationship.sourceTableId,
+    tableName: tableNameOf(relationship.sourceTableId),
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Shared referential-integrity validator (Apollo SA-2)
@@ -139,6 +175,7 @@ function attachRelationshipDetails(
  */
 export async function createRelationship(
   data: CreateRelationship,
+  ctx: ChangeContext,
 ): Promise<Relationship> {
   // Validate input with Zod schema
   const validated = createRelationshipSchema.parse(data)
@@ -155,22 +192,29 @@ export async function createRelationship(
     })
 
     const ts = nowMs()
-    insert('Relationship', {
-      id,
-      whiteboardId: validated.whiteboardId,
-      sourceTableId: validated.sourceTableId,
-      targetTableId: validated.targetTableId,
-      sourceColumnId: validated.sourceColumnId,
-      targetColumnId: validated.targetColumnId,
-      cardinality: validated.cardinality,
-      label: validated.label ?? null,
-      routingPoints: toDbJson(validated.routingPoints),
-      createdAt: ts,
-      updatedAt: ts,
+    return transaction(() => {
+      insert('Relationship', {
+        id,
+        whiteboardId: validated.whiteboardId,
+        sourceTableId: validated.sourceTableId,
+        targetTableId: validated.targetTableId,
+        sourceColumnId: validated.sourceColumnId,
+        targetColumnId: validated.targetColumnId,
+        cardinality: validated.cardinality,
+        label: validated.label ?? null,
+        routingPoints: toDbJson(validated.routingPoints),
+        createdAt: ts,
+        updatedAt: ts,
+      })
+      const created = readRelationship(id)!
+      recordChange(ctx, {
+        ...relationshipEventBase(created),
+        category: 'schema',
+        action: 'create',
+        after: eventRow(created),
+      })
+      return created
     })
-    return mapRelationship(
-      db.prepare('SELECT * FROM "Relationship" WHERE "id" = ?').get(id),
-    )!
   } catch (error) {
     refuseTakenIdAfterInsertError(error, claim)
     throw new Error(
@@ -298,6 +342,7 @@ export async function findRelationshipsByTableId(
 export async function updateRelationship(
   id: string,
   data: UpdateRelationship,
+  ctx: ChangeContext,
 ): Promise<Relationship> {
   // Validate input with Zod schema
   const validated = updateRelationshipSchema.parse(data)
@@ -346,10 +391,18 @@ export async function updateRelationship(
     if (validated.label !== undefined) values.label = validated.label
     if (validated.routingPoints !== undefined)
       values.routingPoints = toDbJson(validated.routingPoints)
-    update('Relationship', id, values)
-    return mapRelationship(
-      db.prepare('SELECT * FROM "Relationship" WHERE "id" = ?').get(id),
-    )!
+    return transaction(() => {
+      update('Relationship', id, values)
+      const after = readRelationship(id)!
+      recordUpdate(
+        ctx,
+        relationshipEventBase(after),
+        current,
+        after,
+        RELATIONSHIP_EVENT_FIELDS,
+      )
+      return after
+    })
   } catch (error) {
     throw new Error(
       `Failed to update relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -363,14 +416,23 @@ export async function updateRelationship(
  * @returns Deleted relationship
  * @throws Error if relationship not found
  */
-export async function deleteRelationship(id: string): Promise<Relationship> {
+export async function deleteRelationship(
+  id: string,
+  ctx: ChangeContext,
+): Promise<Relationship> {
   try {
-    const existing = mapRelationship(
-      db.prepare('SELECT * FROM "Relationship" WHERE "id" = ?').get(id),
-    )
-    if (!existing) throw new Error('Relationship not found')
-    db.prepare('DELETE FROM "Relationship" WHERE "id" = ?').run(id)
-    return existing
+    return transaction(() => {
+      const existing = readRelationship(id)
+      if (!existing) throw new Error('Relationship not found')
+      recordChange(ctx, {
+        ...relationshipEventBase(existing),
+        category: 'schema',
+        action: 'delete',
+        before: eventRow(existing),
+      })
+      db.prepare('DELETE FROM "Relationship" WHERE "id" = ?').run(id)
+      return existing
+    })
   } catch (error) {
     throw new Error(
       `Failed to delete relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,

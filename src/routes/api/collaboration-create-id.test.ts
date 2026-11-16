@@ -30,6 +30,7 @@ import { createTableHandler } from '@/lib/diagram-table/handlers'
 import { createRelationshipHandler } from '@/lib/diagram-relationship/handlers'
 import { createTableReference } from '@/data/table-reference'
 import { AlreadyExistsError } from '@/data/already-exists'
+import { SYSTEM } from '@/lib/schema-changelog'
 
 vi.mock('@/lib/auth/require-role', async (importOriginal) => {
   const actual = await importOriginal<typeof RequireRoleModule>()
@@ -540,13 +541,16 @@ describe('createTableReference with a client id', () => {
     const f = makeFixture()
     const id = randomUUID()
 
-    const reference = await createTableReference({
-      id,
-      whiteboardId: f.whiteboardId,
-      sourceWhiteboardId: f.otherWhiteboardId,
-      sourceTableId: f.otherTableId,
-      sourceColumnIds: [f.otherColumnId],
-    })
+    const reference = await createTableReference(
+      {
+        id,
+        whiteboardId: f.whiteboardId,
+        sourceWhiteboardId: f.otherWhiteboardId,
+        sourceTableId: f.otherTableId,
+        sourceColumnIds: [f.otherColumnId],
+      },
+      SYSTEM,
+    )
     expect(reference.table.id).toBe(id)
 
     const referenceWith = (refId: string) => ({
@@ -558,12 +562,12 @@ describe('createTableReference with a client id', () => {
     })
     const before = row('DiagramTable', f.tableId)
     await expect(
-      createTableReference(referenceWith(f.tableId)),
+      createTableReference(referenceWith(f.tableId), SYSTEM),
     ).rejects.toBeInstanceOf(AlreadyExistsError)
     expect(row('DiagramTable', f.tableId)).toEqual(before)
 
     const foreignBefore = row('DiagramTable', f.otherTableId)
-    const foreign = createTableReference(referenceWith(f.otherTableId))
+    const foreign = createTableReference(referenceWith(f.otherTableId), SYSTEM)
     await expect(foreign).rejects.toThrow('Failed to create table reference')
     await expect(foreign).rejects.not.toBeInstanceOf(AlreadyExistsError)
     expect(row('DiagramTable', f.otherTableId)).toEqual(foreignBefore)
