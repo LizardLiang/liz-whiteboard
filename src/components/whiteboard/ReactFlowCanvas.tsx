@@ -1310,19 +1310,25 @@ export function ReactFlowCanvas({
   // choices. On the main canvas this is a harmless no-op (same handles already
   // chosen by drag routing). On the overlay it corrects the initial pass which
   // ran with DEFAULT_NODE_WIDTH fallbacks.
+  //
+  // `nodes` is React Flow state, where an area member's position is RELATIVE
+  // to its area. Edge routing compares positions across tables, so it must get
+  // ABSOLUTE ones: fed the relative x, a member of an area far left of the
+  // origin looked like it sat right of its partner, and its edge left from the
+  // wrong side and looped around both tables. Reference nodes are never nested.
   useEffect(() => {
     if (!nodesInitialized || hasReRoutedAfterMeasureRef.current) return
     hasReRoutedAfterMeasureRef.current = true
     setEdges((prevEdges) => {
       if (prevEdges.length === 0) return prevEdges
       const measured = [
-        ...nodes,
+        ...toAbsoluteNodes(nodes, parentIndex),
         ...(externalTableNodesState as unknown as typeof nodes),
       ]
       const allIds = new Set(measured.map((n) => n.id))
       return recalculateEdgeRouting(prevEdges, measured, allIds)
     })
-  }, [nodesInitialized, nodes, externalTableNodesState, setEdges])
+  }, [nodesInitialized, nodes, externalTableNodesState, parentIndex, setEdges])
 
   // Apply NODE highlighting when selection/relations-preview changes (GH
   // #121 perf, opt #1). Deliberately keyed on [activeTableId,
