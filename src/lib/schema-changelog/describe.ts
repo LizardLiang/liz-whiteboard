@@ -176,7 +176,7 @@ function describeCounts(batch: BatchSummaryDto, t: TFunction): string {
         action: t(`${CHANGES}.actionPast.${c.action}`),
       }),
     )
-    .join(', ')
+    .join(t(`${CHANGES}.countJoin`))
 }
 
 /** Title and counts of a collapsed batch row. */

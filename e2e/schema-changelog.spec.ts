@@ -34,7 +34,7 @@ async function openBoard(page: Page, whiteboardId: string, heading: string) {
 async function openChanges(page: Page) {
   await clickMoreTool(page, 'Version history')
   await expect(
-    page.getByRole('heading', { name: 'Version History' }),
+    page.getByRole('heading', { name: 'History', exact: true }),
   ).toBeVisible()
   await page.getByRole('tab', { name: 'Changes' }).click()
 }
@@ -146,12 +146,12 @@ test.describe('Changes tab, seeded history', () => {
 
     const restore = row(page, 'restored version Before the billing rewrite')
     await restore.getByRole('button', { name: 'Show items' }).click()
-    // 3 deletes, 3 creates and the marker line.
+    // 3 deletes and 3 creates; the restore marker is the header, not a row.
     await expect(
       restore
         .getByRole('list', { name: 'Items in this change' })
         .getByTestId('change-event'),
-    ).toHaveCount(7)
+    ).toHaveCount(6)
   })
 
   test('Load more pages to the end of the list', async ({ page }) => {
@@ -248,7 +248,7 @@ test.describe('Changes tab, seeded history', () => {
     await page.getByRole('menuitem', { name: 'View history' }).click()
 
     await expect(
-      page.getByRole('heading', { name: 'Version History' }),
+      page.getByRole('heading', { name: 'History', exact: true }),
     ).toBeVisible()
     await expect(page.getByRole('tab', { name: 'Changes' })).toHaveAttribute(
       'aria-selected',

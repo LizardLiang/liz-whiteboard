@@ -245,7 +245,7 @@ test.describe('Floating dock', () => {
     await openWhiteboard(page)
     await clickMoreTool(page, 'Version history')
     await expect(
-      page.getByRole('heading', { name: 'Version History' }),
+      page.getByRole('heading', { name: 'History', exact: true }),
     ).toBeVisible()
   })
 

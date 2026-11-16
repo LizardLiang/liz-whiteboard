@@ -508,8 +508,8 @@ export const whiteboardEn = {
       'This version was saved before there were shapes on this board, so restoring it will remove the {shapes} shape(s) and {connectors} connector(s) currently here — but your current board, shapes included, is saved first as an automatic version called "Auto-saved before restore", which appears at the top of this list with an Auto badge and can be restored in one click.',
     restoreCopy:
       'Restoring replaces the current board with this version, which contains {snapshot} shape(s); the board currently has {live}. Your current board is saved first as an automatic version called "Auto-saved before restore", which appears at the top of this list and can be restored in one click.',
-    title: 'Version History',
-    description: 'Save and browse point-in-time versions of this whiteboard.',
+    title: 'History',
+    description: 'Save versions, compare them and browse every change to this whiteboard.',
     saveCurrent: 'Save current version',
     labelPlaceholder: 'Optional label',
     labelAria: 'Version label',
@@ -634,6 +634,7 @@ export const whiteboardEn = {
         resize: 'resized',
       },
       countPart: '{count} {entity} {action}',
+      countJoin: ', ',
     },
   },
   tableNode: {

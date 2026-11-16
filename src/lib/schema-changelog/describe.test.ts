@@ -191,6 +191,13 @@ describe('describeBatch', () => {
     })
   })
 
+  it('joins the counts with a full-width comma in zh-TW', () => {
+    const { counts } = describeBatch(batch({}), tZh, 'zh-TW')
+    expect(counts).toContain('、')
+    expect(counts).not.toContain(', ')
+    expect(describeBatch(batch({}), t, 'en').counts).toContain(', ')
+  })
+
   it('reads the restored version label from the marker', () => {
     expect(
       stripMarks(

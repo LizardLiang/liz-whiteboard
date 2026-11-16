@@ -291,7 +291,11 @@ export function BatchRow({
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     enabled: expanded,
   })
-  const events = items.data?.pages.flatMap((page) => page.events) ?? []
+  // The restore marker already names the batch header, so it is not a row.
+  const events =
+    items.data?.pages
+      .flatMap((page) => page.events)
+      .filter((event) => event.entityType !== 'board') ?? []
 
   return (
     <RowShell
