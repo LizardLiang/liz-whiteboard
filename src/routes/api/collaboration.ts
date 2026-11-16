@@ -992,7 +992,6 @@ export function setupCollaborationEventHandlers(
           event: 'table:update',
           error: 'UPDATE_FAILED',
           message,
-          relationshipId: data.relationshipId,
         })
         cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
         return
@@ -2566,6 +2565,7 @@ export function setupCollaborationEventHandlers(
           event: 'relationship:update',
           error: 'UPDATE_FAILED',
           message,
+          relationshipId: data.relationshipId,
         })
         cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
         return
