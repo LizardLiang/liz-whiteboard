@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { useCollaboration } from './use-collaboration'
 import type { TableErrorEvent } from './use-table-mutations'
 import type { RelationshipErrorEvent } from './use-relationship-mutations'
+import type { RelationshipUpdatePatch } from '@/lib/react-flow/relationship-endpoints'
 import type { DiagramTable } from '@/data/models'
 import type { AreaBounds } from '@/data/schema'
 import { useT } from '@/lib/i18n/use-t'
@@ -98,7 +99,10 @@ export function useWhiteboardCollaboration(
   onTableError?: (data: TableErrorEvent) => void,
   onRelationshipDeleted?: (relationshipId: string) => void,
   onRelationshipError?: (data: RelationshipErrorEvent) => void,
-  onRelationshipUpdated?: (relationshipId: string, label: string) => void,
+  onRelationshipUpdated?: (
+    relationshipId: string,
+    patch: RelationshipUpdatePatch,
+  ) => void,
   onBulkPositionUpdate?: (
     positions: Array<{ tableId: string; positionX: number; positionY: number }>,
     areas?: Array<BulkAreaBounds>,
@@ -274,14 +278,16 @@ export function useWhiteboardCollaboration(
   useEffect(() => {
     if (!onRelationshipUpdated) return
 
-    const handleRelationshipUpdated = (data: {
-      relationshipId: string
-      label: string
-      updatedBy: string
-    }) => {
+    const handleRelationshipUpdated = (
+      data: RelationshipUpdatePatch & {
+        relationshipId: string
+        updatedBy: string
+      },
+    ) => {
       // Ignore if we updated it (already applied optimistically)
       if (data.updatedBy === userId) return
-      onRelationshipUpdated(data.relationshipId, data.label)
+      const { relationshipId, updatedBy: _updatedBy, ...patch } = data
+      onRelationshipUpdated(relationshipId, patch)
     }
 
     on('relationship:updated', handleRelationshipUpdated)
@@ -450,10 +456,10 @@ export function useWhiteboardCollaboration(
     [emit],
   )
 
-  // Emit relationship label update to server
+  // Emit a relationship update (label and/or endpoints) to server
   const emitRelationshipUpdate = useCallback(
-    (relationshipId: string, label: string) => {
-      emit('relationship:update', { relationshipId, label })
+    (relationshipId: string, patch: RelationshipUpdatePatch) => {
+      emit('relationship:update', { relationshipId, ...patch })
     },
     [emit],
   )

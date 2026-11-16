@@ -9,6 +9,12 @@
 import { useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import type { RelationshipEdgeType } from '@/lib/react-flow/types'
+import type {
+  ColumnLookup,
+  RelationshipEndpointPatch,
+  RelationshipUpdatePatch,
+} from '@/lib/react-flow/relationship-endpoints'
+import { applyEndpointPatch } from '@/lib/react-flow/relationship-endpoints'
 import { useT } from '@/lib/i18n/use-t'
 import { tError } from '@/lib/i18n/t-error'
 import { NOT_CONNECTED_TOAST_MESSAGE } from '@/lib/react-flow/types'
@@ -18,7 +24,7 @@ type SetEdges = React.Dispatch<
 >
 
 interface PendingRelationshipMutation {
-  type: 'delete' | 'update'
+  type: 'delete' | 'update' | 'reconnect'
   rollback: () => void
 }
 
@@ -34,8 +40,8 @@ export function useRelationshipMutations(
   emitRelationshipDelete: ((relationshipId: string) => void) | null,
   isConnected: boolean,
   emitRelationshipUpdate?:
-    | ((relationshipId: string, label: string) => void)
-    | null,
+    ((relationshipId: string, patch: RelationshipUpdatePatch) => void) | null,
+  findColumn?: ColumnLookup,
 ) {
   /**
    * Track optimistic mutations for rollback on server error.
@@ -124,10 +130,49 @@ export function useRelationshipMutations(
 
       // Emit via WebSocket
       if (emitRelationshipUpdate) {
-        emitRelationshipUpdate(relationshipId, label)
+        emitRelationshipUpdate(relationshipId, { label })
       }
     },
     [isConnected, setEdges, emitRelationshipUpdate, t],
+  )
+
+  /**
+   * Move one or both ends of a relationship to other columns: apply the new
+   * endpoints optimistically, emit only the changed fields, and restore the
+   * whole previous edge if the server rejects the change.
+   */
+  const reconnectRelationship = useCallback(
+    (relationshipId: string, patch: RelationshipEndpointPatch) => {
+      if (!isConnected) {
+        toast.error(tError(t, NOT_CONNECTED_TOAST_MESSAGE))
+        return
+      }
+
+      let previousEdge: RelationshipEdgeType | undefined
+      const lookup: ColumnLookup = findColumn ?? (() => undefined)
+
+      setEdges((prev) => {
+        previousEdge = prev.find((e) => e.id === relationshipId)
+        return prev.map((e) =>
+          e.id === relationshipId ? applyEndpointPatch(e, patch, lookup) : e,
+        )
+      })
+
+      pendingMutations.current.set(relationshipId, {
+        type: 'reconnect',
+        rollback: () => {
+          if (!previousEdge) return
+          setEdges((prev) =>
+            prev.map((e) => (e.id === relationshipId ? previousEdge! : e)),
+          )
+        },
+      })
+
+      if (emitRelationshipUpdate) {
+        emitRelationshipUpdate(relationshipId, patch)
+      }
+    },
+    [isConnected, setEdges, emitRelationshipUpdate, findColumn, t],
   )
 
   /**
@@ -137,8 +182,15 @@ export function useRelationshipMutations(
    */
   const onRelationshipError = useCallback(
     (data: RelationshipErrorEvent) => {
+      const pendingKind = data.relationshipId
+        ? pendingMutations.current.get(data.relationshipId)?.type
+        : undefined
       if (data.event === 'relationship:update') {
-        toast.error(t('hooks.relationship.labelFailed'))
+        toast.error(
+          pendingKind === 'reconnect'
+            ? t('hooks.relationship.reconnectFailed')
+            : t('hooks.relationship.labelFailed'),
+        )
       } else {
         toast.error(t('hooks.relationship.deleteFailed'))
       }
@@ -157,6 +209,7 @@ export function useRelationshipMutations(
   return {
     deleteRelationship,
     updateRelationshipLabel,
+    reconnectRelationship,
     onRelationshipError,
   }
 }

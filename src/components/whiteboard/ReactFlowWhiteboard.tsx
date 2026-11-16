@@ -91,6 +91,10 @@ import type { SchemaExportOptions } from '@/lib/export/schema-export'
 import type { RenderFraming } from '@/lib/render/framing'
 import type { ResolvedTableReference } from '@/data/table-reference'
 import type { JoinQueryPlan, JoinQueryTable } from '@/lib/join-query-generator'
+import type {
+  ColumnLookup,
+  RelationshipUpdatePatch,
+} from '@/lib/react-flow/relationship-endpoints'
 import { buildJoinQueryPlan } from '@/lib/join-query-generator'
 import { DOCK_FIT_PADDING } from '@/lib/react-flow/fit-view-padding'
 import { useWhiteboardShapes } from '@/hooks/use-whiteboard-shapes'
@@ -139,6 +143,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { parseColumnHandleId } from '@/lib/react-flow/edge-routing'
+import {
+  applyRelationshipUpdate,
+  buildReconnectPatch,
+} from '@/lib/react-flow/relationship-endpoints'
 import { filterValidEdges } from '@/lib/react-flow/highlighting'
 import {
   convertReferencesToNodes,
@@ -1369,18 +1377,42 @@ function ReactFlowWhiteboardInner({
     setEdges((prev) => prev.filter((e) => e.id !== relationshipId))
   }, [])
 
-  // Callback for when a remote user updates a relationship label
+  // Column lookup over the board's current table and reference nodes. Reads
+  // refs so it stays stable across renders.
+  const findColumnOnBoard = useCallback<ColumnLookup>((tableId, columnId) => {
+    const tableNode = nodesRef.current.find((n) => n.id === tableId)
+    if (tableNode) {
+      return tableNode.data.table.columns.find((c) => c.id === columnId)
+    }
+    const reference = externalTableNodesRef.current.find(
+      (n) => n.id === tableId,
+    )
+    const refColumn = reference?.data.columns.find((c) => c.id === columnId)
+    if (!refColumn) return undefined
+    return {
+      id: refColumn.id,
+      tableId,
+      name: refColumn.name,
+      dataType: refColumn.dataType,
+      isPrimaryKey: refColumn.isPrimaryKey,
+      isForeignKey: refColumn.isForeignKey,
+    } as unknown as ReturnType<ColumnLookup>
+  }, [])
+
+  // Callback for when a remote user (or the MCP agent) updates a relationship:
+  // a label change, an endpoint move, or both. A field absent from the payload
+  // is left alone — an endpoint-only update must not clear the label.
   const onRelationshipUpdated = useCallback(
-    (relationshipId: string, label: string) => {
+    (relationshipId: string, patch: RelationshipUpdatePatch) => {
       setEdges((prev) =>
         prev.map((e) =>
           e.id === relationshipId
-            ? { ...e, data: { ...e.data!, label: label || undefined } }
+            ? applyRelationshipUpdate(e, patch, findColumnOnBoard)
             : e,
         ),
       )
     },
-    [],
+    [findColumnOnBoard],
   )
 
   // Callback for when a remote user updates a table's comment/note
@@ -1794,6 +1826,7 @@ function ReactFlowWhiteboardInner({
     emitRelationshipDelete,
     connectionState === 'connected',
     emitRelationshipUpdate,
+    findColumnOnBoard,
   )
 
   // Wire onRelationshipError ref now that relationshipMutations is available
@@ -2447,6 +2480,22 @@ function ReactFlowWhiteboardInner({
       setSelectedCardinality('ONE_TO_MANY')
     },
     [canvasLocked, reactFlowInstance, createConnectorMutation],
+  )
+
+  // Drag a relationship end onto another column handle. Gated like
+  // handleConnect. The canvas re-routes every edge's sides from ABSOLUTE node
+  // positions whenever the edges prop changes, so the moved end picks the side
+  // facing its new partner without any routing call here. A drop on empty
+  // canvas or an invalid target never reaches this callback — React Flow snaps
+  // the end back.
+  const handleRelationshipEndReconnect = useCallback(
+    (oldEdge: RelationshipEdgeType, connection: Connection) => {
+      if (canvasLocked || !canEdit) return
+      const patch = buildReconnectPatch(oldEdge, connection)
+      if (!patch || Object.keys(patch).length === 0) return
+      relationshipMutations.reconnectRelationship(oldEdge.id, patch)
+    },
+    [canvasLocked, canEdit, relationshipMutations],
   )
 
   // ── Canvas comments (GH #110) ──────────────────────────────────────────────
@@ -3607,6 +3656,8 @@ function ReactFlowWhiteboardInner({
       targetHandle: SHAPE_HANDLE_IDS.target,
       deletable: canEdit && !canvasLocked,
       selectable: !interactionLocked,
+      // Only relationship lines reconnect; connectors keep their shape ends.
+      reconnectable: false,
       data: { connector },
     }))
   }, [connectors, canEdit, canvasLocked])
@@ -4619,6 +4670,11 @@ function ReactFlowWhiteboardInner({
               onDrawCommit={handleDrawCommit}
               onDrawDisarm={handleDrawDisarm}
               onConnect={handleConnect}
+              onReconnect={
+                canEdit && !isPublic
+                  ? handleRelationshipEndReconnect
+                  : undefined
+              }
               onNodeDragStop={handleNodeDragStop}
               onSelectionChange={handleSqlTableSelectionChange}
               onNodeClick={handleTableNodeClick}

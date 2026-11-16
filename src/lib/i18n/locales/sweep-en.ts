@@ -26,6 +26,7 @@ export const sweepEn = {
     },
     relationship: {
       labelFailed: 'Failed to update relationship label. Please try again.',
+      reconnectFailed: 'Failed to move the relationship end. Please try again.',
       deleteFailed: 'Failed to delete relationship. Please try again.',
     },
     ddl: {

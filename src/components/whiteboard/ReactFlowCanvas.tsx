@@ -38,6 +38,7 @@ import type {
   OnNodeDrag,
   OnNodesChange,
   OnNodesDelete,
+  OnReconnect,
 } from '@xyflow/react'
 import type {
   AreaNodeType,
@@ -456,6 +457,11 @@ export interface ReactFlowCanvasProps {
   onEdgesChange?: OnEdgesChange<RelationshipEdgeType>
   /** Callback when connection is created */
   onConnect?: OnConnect
+  /**
+   * Callback when the end of a relationship line is dragged onto another
+   * handle. Omitted = lines are not reconnectable (focus overlay, share view).
+   */
+  onReconnect?: OnReconnect<RelationshipEdgeType>
   /** Callback when node drag stops (position update) */
   onNodeDragStop?: OnNodeDrag<TableNodeType>
   /** Whether nodes are draggable */
@@ -597,6 +603,7 @@ export function ReactFlowCanvas({
   onSelectionChange,
   onEdgesChange: onEdgesChangeProp,
   onConnect,
+  onReconnect,
   onNodeDragStop: onNodeDragStopProp,
   onNodeClick: onNodeClickProp,
   nodesDraggable = true,
@@ -1918,6 +1925,19 @@ export function ReactFlowCanvas({
     setIsConnectingFromShape(false)
   }, [])
 
+  // Dragging a line's end is a connection drag too: React Flow fires
+  // onConnectStart/onConnectEnd for it, so target handles already reveal as
+  // drop zones. Dragging the SOURCE end drops on source handles instead, which
+  // stay hidden until row hover — this flag reveals them for the drag. React
+  // Flow reports the end that stays put, so 'target' means the source end moves.
+  const [isReconnectingSource, setIsReconnectingSource] = useState(false)
+  const onReconnectStart = useCallback(
+    (_event: unknown, _edge: unknown, handleType: 'source' | 'target') =>
+      setIsReconnectingSource(handleType === 'target'),
+    [],
+  )
+  const onReconnectEnd = useCallback(() => setIsReconnectingSource(false), [])
+
   // Stable callback for MiniMap's nodeColor (GH #121 stable-reference audit)
   // — an inline arrow function literal here is a new identity every render.
   const minimapNodeColor = useCallback(() => 'var(--rf-table-bg)', [])
@@ -1991,7 +2011,7 @@ export function ReactFlowCanvas({
       <CanvasEditContext.Provider value={canvasEditContextValue}>
         <div
           ref={wrapperRef}
-          className={`react-flow-wrapper ${isConnecting ? 'is-connecting' : ''} ${isConnectingFromShape ? 'is-connecting-from-shape' : ''} ${spacePanning ? 'is-space-panning' : ''} ${className}`}
+          className={`react-flow-wrapper ${isConnecting ? 'is-connecting' : ''} ${isConnectingFromShape ? 'is-connecting-from-shape' : ''} ${isReconnectingSource ? 'is-reconnecting-source' : ''} ${spacePanning ? 'is-space-panning' : ''} ${className}`}
           // W1 (Hermes code review): `position: relative` makes this div
           // the containing block for ShapeDrawOverlay's `position:
           // absolute; inset: 0` child, so that child's box shares this
@@ -2066,6 +2086,10 @@ export function ReactFlowCanvas({
             onConnect={onConnect}
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd}
+            edgesReconnectable={!!onReconnect && interactive}
+            onReconnect={onReconnect}
+            onReconnectStart={onReconnectStart}
+            onReconnectEnd={onReconnectEnd}
             isValidConnection={isValidConnection}
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}

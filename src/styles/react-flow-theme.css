@@ -364,6 +364,27 @@
   stroke-width: 2.5;
 }
 
+/* Reconnect grips — React Flow draws a transparent circle at each end of a
+   reconnectable edge. Reveal them on hover/selection so users can see the end
+   can be dragged onto another column handle. */
+.react-flow__edgeupdater {
+  transition:
+    fill 0.15s ease,
+    stroke 0.15s ease;
+}
+
+.react-flow__edge:hover .react-flow__edgeupdater,
+.react-flow__edge.selected .react-flow__edgeupdater {
+  /* Ring only: a filled disc would hide the cardinality marker under it. */
+  fill: transparent;
+  stroke: var(--rf-edge-stroke-selected);
+  stroke-width: 2;
+}
+
+.react-flow__edge .react-flow__edgeupdater:hover {
+  fill: color-mix(in srgb, var(--rf-edge-stroke-selected) 25%, transparent);
+}
+
 /* Invisible interaction target — wider clickable area */
 .react-flow__edge-interaction {
   stroke-width: 20;
@@ -424,6 +445,17 @@
 }
 
 .column-row:hover > .react-flow__handle.source.connectionindicator::before {
+  background: var(--rf-handle-bg);
+  border-color: var(--rf-handle-border);
+}
+
+/* Dragging a relationship's SOURCE end: show every source handle as a drop
+   zone. .is-reconnecting-source is set by onReconnectStart in ReactFlowCanvas. */
+.is-reconnecting-source .react-flow__handle.source.connectionindicator {
+  pointer-events: all;
+}
+
+.is-reconnecting-source .react-flow__handle.source.connectionindicator::before {
   background: var(--rf-handle-bg);
   border-color: var(--rf-handle-border);
 }

@@ -237,3 +237,69 @@ describe('useRelationshipMutations', () => {
     expect(toast.error).toHaveBeenCalled()
   })
 })
+
+describe('useRelationshipMutations — reconnectRelationship', () => {
+  const buildHarness = () => {
+    let edges = [makeEdge('rel-001')]
+    const setEdges = vi.fn((updater: any) => {
+      edges = typeof updater === 'function' ? updater(edges) : updater
+    })
+    const emitUpdate = vi.fn()
+    const { result } = renderHook(() =>
+      useRelationshipMutations(setEdges, vi.fn(), true, emitUpdate),
+    )
+    return { result, emitUpdate, getEdges: () => edges }
+  }
+
+  it('applies endpoints optimistically and emits only the changed fields', () => {
+    const { result, emitUpdate, getEdges } = buildHarness()
+    act(() => {
+      result.current.reconnectRelationship('rel-001', {
+        targetTableId: 'tbl-003',
+        targetColumnId: 'col-x',
+      })
+    })
+    expect(getEdges()[0].target).toBe('tbl-003')
+    expect(emitUpdate).toHaveBeenCalledWith('rel-001', {
+      targetTableId: 'tbl-003',
+      targetColumnId: 'col-x',
+    })
+  })
+
+  it('rollback restores every endpoint and handle, and toasts a reconnect error', () => {
+    const { result, getEdges } = buildHarness()
+    const before = getEdges()[0]
+    act(() => {
+      result.current.reconnectRelationship('rel-001', {
+        sourceTableId: 'tbl-009',
+        sourceColumnId: 'col-s',
+        targetTableId: 'tbl-003',
+        targetColumnId: 'col-x',
+      })
+    })
+    expect(getEdges()[0].source).toBe('tbl-009')
+    act(() => {
+      result.current.onRelationshipError({
+        event: 'relationship:update',
+        relationshipId: 'rel-001',
+      })
+    })
+    expect(getEdges()[0]).toEqual(before)
+    expect(toast.error).toHaveBeenLastCalledWith(
+      'Failed to move the relationship end. Please try again.',
+    )
+  })
+
+  it('refuses and emits nothing when offline', () => {
+    const setEdges = vi.fn()
+    const emitUpdate = vi.fn()
+    const { result } = renderHook(() =>
+      useRelationshipMutations(setEdges, vi.fn(), false, emitUpdate),
+    )
+    act(() => {
+      result.current.reconnectRelationship('rel-001', { targetColumnId: 'c' })
+    })
+    expect(setEdges).not.toHaveBeenCalled()
+    expect(emitUpdate).not.toHaveBeenCalled()
+  })
+})
