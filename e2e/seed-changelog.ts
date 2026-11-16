@@ -273,23 +273,43 @@ for (const name of [
   }
 }
 
-// A restore: three deletes, three creates and the marker naming the version.
+// A restore logs only the net change: one table deleted, one created, one
+// column changed, and the marker naming the version.
 const RESTORE_BATCH = 'e7000000-0000-4000-8000-000000000002'
-for (const action of ['delete', 'create']) {
-  for (const name of ['billing_a', 'billing_b', 'billing_c']) {
-    event({
-      at: dayAt(2),
-      actor: PEER,
-      entityType: 'table',
-      action,
-      entityName: name,
-      tableName: name,
-      ...(action === 'delete' ? { before: { name } } : { after: { name } }),
-      batchId: RESTORE_BATCH,
-      batchKind: 'restore',
-    })
-  }
-}
+event({
+  at: dayAt(2),
+  actor: PEER,
+  entityType: 'table',
+  action: 'delete',
+  entityName: 'billing_c',
+  tableName: 'billing_c',
+  before: { name: 'billing_c' },
+  batchId: RESTORE_BATCH,
+  batchKind: 'restore',
+})
+event({
+  at: dayAt(2),
+  actor: PEER,
+  entityType: 'table',
+  action: 'create',
+  entityName: 'billing_a',
+  tableName: 'billing_a',
+  after: { name: 'billing_a' },
+  batchId: RESTORE_BATCH,
+  batchKind: 'restore',
+})
+event({
+  at: dayAt(2),
+  actor: PEER,
+  entityType: 'column',
+  action: 'update',
+  entityName: 'amount',
+  tableName: 'billing_b',
+  before: { dataType: 'INT' },
+  after: { dataType: 'DECIMAL' },
+  batchId: RESTORE_BATCH,
+  batchKind: 'restore',
+})
 event({
   at: dayAt(2),
   actor: PEER,

@@ -661,7 +661,27 @@ export async function deleteTableReference(
   requireReference(tableId)
   return transaction(() => {
     const existing = readReference(tableId)
-    recordChange(ctx, {
+    const batchCtx = ensureBatch(ctx, 'reference')
+    // The DELETE cascades the stub columns and every relationship on them.
+    const relationships = db
+      .prepare(
+        'SELECT * FROM "Relationship" WHERE "sourceTableId" = ? OR "targetTableId" = ?',
+      )
+      .all(tableId, tableId)
+      .map((r) => mapRelationship(r)!)
+    for (const relationship of relationships) {
+      recordChange(batchCtx, {
+        category: 'schema',
+        entityType: 'relationship',
+        action: 'delete',
+        entityId: relationship.id,
+        entityName: relationshipDisplayName(relationship),
+        tableId,
+        tableName: existing.table.name,
+        before: eventRow(relationship),
+      })
+    }
+    recordChange(batchCtx, {
       category: 'schema',
       entityType: 'reference',
       action: 'delete',

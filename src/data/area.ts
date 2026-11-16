@@ -15,7 +15,7 @@ import {
   tableNameOf,
 } from '@/lib/schema-changelog'
 
-const AREA_EVENT_FIELDS = [
+export const AREA_EVENT_FIELDS = [
   'name',
   'color',
   'positionX',

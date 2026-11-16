@@ -612,7 +612,7 @@ describe('applyLayoutPositions', () => {
 })
 
 describe('restoreWhiteboardFromSnapshot', () => {
-  it('logs every wiped and re-inserted entity under one restore batch', async () => {
+  it('logs only the net change of a restore under one restore batch', async () => {
     const { ctx, whiteboardId } = setup()
     const t = makeTable({ whiteboardId, name: 'Users' })
     makeColumn({ tableId: t.id, name: 'id', order: 0 })
@@ -629,24 +629,87 @@ describe('restoreWhiteboardFromSnapshot', () => {
     const rows = events(whiteboardId).slice(before)
     expect(new Set(rows.map((e) => e.batchId)).size).toBe(1)
     expect(rows.every((e) => e.batchKind === 'restore')).toBe(true)
-    const kinds = rows.map((e) => `${e.entityType}:${e.action}`).sort()
-    expect(kinds).toEqual(
-      [
-        'board:update',
-        'column:create',
-        'column:delete',
-        'table:create',
-        'table:delete',
-        'table:delete',
-      ].sort(),
-    )
-    expect(
-      rows.find((e) => e.entityId === extra.id && e.action === 'delete'),
-    ).toBeTruthy()
+    // Users and its column came back equal: no event. Extra is gone.
+    expect(rows.map((e) => `${e.entityType}:${e.action}`).sort()).toEqual([
+      'board:update',
+      'table:delete',
+    ])
+    expect(rows.find((e) => e.action === 'delete')!.entityId).toBe(extra.id)
     const marker = rows.find((e) => e.entityType === 'board')!
     expect(marker.entityName).toBe('Before launch')
     expect(json(marker.after)).toMatchObject({
       restoredVersion: { snapshotId: 'snap-1', label: 'Before launch' },
+    })
+  })
+
+  it('logs a restore that changed fields as updates, layout apart', async () => {
+    const { ctx, whiteboardId } = setup()
+    const t = makeTable({ whiteboardId, name: 'Users' })
+    const col = makeColumn({ tableId: t.id, name: 'id', order: 0 })
+    const gone = makeColumn({ tableId: t.id, name: 'legacy', order: 1 })
+    const payload = await captureWhiteboardState(whiteboardId)
+    await updateDiagramTable(t.id, { name: 'Members', positionX: 500 }, ctx)
+    await updateColumn(col.id, { name: 'uid' }, ctx)
+    await deleteColumn(gone.id, ctx)
+    const added = await createColumn(
+      { tableId: t.id, name: 'extra', dataType: 'string' },
+      ctx,
+    )
+    const before = events(whiteboardId).length
+
+    await restoreWhiteboardFromSnapshot(whiteboardId, payload, ctx)
+
+    const rows = events(whiteboardId).slice(before)
+    const key = (e: EventRow) =>
+      `${e.entityType}:${e.action}:${e.category}:${e.entityName}`
+    expect(rows.map(key).sort()).toEqual(
+      [
+        `column:delete:schema:extra`,
+        `column:create:schema:legacy`,
+        `table:update:schema:Users`,
+        `table:move:layout:Users`,
+        `column:update:schema:id`,
+      ].sort(),
+    )
+    expect(rows.find((e) => e.entityId === added.id)!.action).toBe('delete')
+    const rename = rows.find(
+      (e) => e.entityType === 'table' && e.category === 'schema',
+    )!
+    expect(json(rename.before)).toEqual({ name: 'Members' })
+    expect(json(rename.after)).toEqual({ name: 'Users' })
+    const move = rows.find((e) => e.category === 'layout')!
+    expect(move.action).toBe('move')
+    expect(json(move.after)).toMatchObject({ positionX: 0 })
+  })
+
+  it('logs a row restored under a fresh id as a create with that id', async () => {
+    const { ctx, whiteboardId } = setup()
+    const projectId = (
+      db
+        .prepare('SELECT "projectId" FROM "Whiteboard" WHERE "id" = ?')
+        .get(whiteboardId) as { projectId: string }
+    ).projectId
+    const other = makeWhiteboard({ projectId })
+    const held = makeTable({ whiteboardId: other.id, name: 'Held' })
+    const payload = await captureWhiteboardState(whiteboardId)
+    const clash = await captureWhiteboardState(other.id)
+    payload.tables = clash.tables.map((tb) => ({ ...tb, name: 'Mine' }))
+    expect(payload.tables[0].id).toBe(held.id)
+
+    await restoreWhiteboardFromSnapshot(whiteboardId, payload, ctx)
+
+    const restored = db
+      .prepare('SELECT "id" FROM "DiagramTable" WHERE "whiteboardId" = ?')
+      .all(whiteboardId) as Array<{ id: string }>
+    expect(restored).toHaveLength(1)
+    expect(restored[0].id).not.toBe(held.id)
+    const rows = events(whiteboardId)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      entityType: 'table',
+      action: 'create',
+      entityId: restored[0].id,
+      entityName: 'Mine',
     })
   })
 
@@ -668,5 +731,111 @@ describe('restoreWhiteboardFromSnapshot', () => {
     const payload = await captureWhiteboardState(whiteboardId)
     await restoreWhiteboardFromSnapshot(whiteboardId, payload, SYSTEM)
     expect(events(whiteboardId)).toHaveLength(0)
+  })
+})
+
+describe('review follow-ups', () => {
+  it('logs the relationships a reference delete cascades, in one reference batch', async () => {
+    const { ctx, whiteboardId } = setup()
+    const projectId = (
+      db
+        .prepare('SELECT "projectId" FROM "Whiteboard" WHERE "id" = ?')
+        .get(whiteboardId) as { projectId: string }
+    ).projectId
+    const source = makeWhiteboard({ projectId, name: 'Billing' })
+    const sourceTable = makeTable({ whiteboardId: source.id, name: 'orders' })
+    const c1 = makeColumn({ tableId: sourceTable.id, name: 'id', order: 0 })
+    const ref = await createTableReference(
+      {
+        whiteboardId,
+        sourceWhiteboardId: source.id,
+        sourceTableId: sourceTable.id,
+        sourceColumnIds: [c1.id],
+      },
+      ctx,
+    )
+    const local = makeTable({ whiteboardId, name: 'invoices' })
+    const localCol = makeColumn({ tableId: local.id, name: 'order_id' })
+    const rel = await createRelationship(
+      {
+        whiteboardId,
+        sourceTableId: local.id,
+        targetTableId: ref.table.id,
+        sourceColumnId: localCol.id,
+        targetColumnId: ref.columns[0].id,
+        cardinality: 'MANY_TO_ONE',
+      },
+      ctx,
+    )
+    const before = events(whiteboardId).length
+    await deleteTableReference(ref.table.id, ctx)
+    const rows = events(whiteboardId).slice(before)
+    expect(rows.map((e) => `${e.entityType}:${e.action}`).sort()).toEqual([
+      'reference:delete',
+      'relationship:delete',
+    ])
+    expect(rows.find((e) => e.entityType === 'relationship')!.entityId).toBe(
+      rel.id,
+    )
+    expect(new Set(rows.map((e) => e.batchId)).size).toBe(1)
+    expect(rows[0].batchId).not.toBeNull()
+    expect(rows.every((e) => e.batchKind === 'reference')).toBe(true)
+  })
+
+  it('logs the siblings a duplicate shifts as reorders in the duplicate batch', async () => {
+    const { ctx, whiteboardId } = setup()
+    const table = await createDiagramTable({ whiteboardId, name: 'T' }, ctx)
+    const a = await createColumn(
+      { tableId: table.id, name: 'a', dataType: 'string', order: 0 },
+      ctx,
+    )
+    const b = await createColumn(
+      { tableId: table.id, name: 'b', dataType: 'string', order: 1 },
+      ctx,
+    )
+    const before = events(whiteboardId).length
+    const copy = await duplicateColumn(a.id, ctx)
+    const rows = events(whiteboardId).slice(before)
+    const reorder = rows.find((e) => e.action === 'reorder')!
+    expect(reorder.entityId).toBe(b.id)
+    expect(json(reorder.before)).toEqual({ order: 1 })
+    expect(json(reorder.after)).toEqual({ order: 2 })
+    expect(rows.find((e) => e.action === 'create')!.entityId).toBe(copy.id)
+    expect(new Set(rows.map((e) => e.batchId)).size).toBe(1)
+    expect(rows[0].batchId).not.toBeNull()
+  })
+
+  it('diffs a relationship update against the row read inside the transaction', async () => {
+    const { ctx, whiteboardId } = setup()
+    const a = makeTable({ whiteboardId, name: 'Orders' })
+    const b = makeTable({ whiteboardId, name: 'Users' })
+    const ac = makeColumn({ tableId: a.id, name: 'user_id' })
+    const bc = makeColumn({ tableId: b.id, name: 'id' })
+    const rel = await createRelationship(
+      {
+        whiteboardId,
+        sourceTableId: a.id,
+        targetTableId: b.id,
+        sourceColumnId: ac.id,
+        targetColumnId: bc.id,
+        cardinality: 'MANY_TO_ONE',
+      },
+      ctx,
+    )
+    // The cardinality changes between the validation step and the write.
+    const pending = updateRelationship(
+      rel.id,
+      { label: 'owner', sourceColumnId: ac.id },
+      ctx,
+    )
+    db.prepare(
+      'UPDATE "Relationship" SET "cardinality" = ? WHERE "id" = ?',
+    ).run('ONE_TO_ONE', rel.id)
+    await pending
+    const update = events(whiteboardId).filter(
+      (e) => e.entityType === 'relationship' && e.action === 'update',
+    )
+    expect(update).toHaveLength(1)
+    expect(json(update[0].before)).toEqual({ label: null })
   })
 })

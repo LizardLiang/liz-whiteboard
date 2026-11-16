@@ -3,7 +3,7 @@
 // Read API of the change log: paging, batch collapse, filters, facets and the
 // VIEWER+ gate. Runs against the in-memory database.
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   getSchemaChangeBatchHandler,
@@ -15,7 +15,7 @@ import type { ActorContext } from './index'
 import type { AuthContext } from '@/lib/auth/middleware'
 import { ForbiddenError } from '@/lib/auth/require-role'
 import { upsertProjectMember } from '@/data/permission'
-import { db } from '@/db'
+import { db, genId } from '@/db'
 import {
   makeProject,
   makeUser,
@@ -212,7 +212,8 @@ describe('listSchemaChangesHandler', () => {
     expect(await run({ from: 150, to: 250 })).toEqual(['total'])
     expect(await run({ q: 'MAIL' })).toEqual(['mail'])
     expect(await run({ q: 'bob' })).toEqual(['total'])
-    expect(await run({ q: 'right' })).toEqual(['mail'])
+    // Text search reads entity, table and person names, not the before/after JSON.
+    expect(await run({ q: 'right' })).toEqual([])
     expect(await run({ q: '100%' })).toEqual([])
   })
 
@@ -344,5 +345,156 @@ describe('listChangeLogFacetsHandler', () => {
     expect(facets.tables).toEqual(['orders', 'users'])
     expect(facets.actors.map((a) => a.name).sort()).toEqual(['alice', 'bob'])
     expect(facets.hasAgentEdits).toBe(true)
+  })
+})
+
+describe('listSchemaChangesHandler on a large log', () => {
+  interface Seeded {
+    rowid: number
+    createdAt: number
+    batchId: string | null
+    id: string
+  }
+
+  /** 5400 events: 40 interleaved batches, a 1500-event batch in one millisecond, singles. */
+  function seedLargeLog(whiteboardId: string, actorUserId: string): number {
+    const insert = db.prepare(
+      'INSERT INTO "SchemaChangeEvent" ("id","whiteboardId","batchId","batchKind","actorUserId","actorName","viaAgent","category","entityType","action","entityId","entityName","tableId","tableName","before","after","createdAt") VALUES (?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?)',
+    )
+    db.exec('BEGIN')
+    let total = 0
+    const add = (batchId: string | null, at: number) => {
+      insert.run(
+        genId(),
+        whiteboardId,
+        batchId,
+        batchId ? 'agent-batch' : null,
+        actorUserId,
+        'alice',
+        'schema',
+        'column',
+        'update',
+        `c${total}`,
+        `col${total}`,
+        't1',
+        'users',
+        '{"a":1}',
+        '{"a":2}',
+        at,
+      )
+      total++
+    }
+    for (let i = 0; i < 2000; i++) add(`b${i % 40}`, 10_000 + i)
+    for (let i = 0; i < 1500; i++) add('big', 50_000)
+    for (let i = 0; i < 1900; i++) add(null, 100_000 + Math.floor(i / 3))
+    db.exec('COMMIT')
+    return total
+  }
+
+  function expectedGroups(whiteboardId: string) {
+    const rows = db
+      .prepare(
+        'SELECT "rowid" AS rowid, "createdAt", "batchId", "id" FROM "SchemaChangeEvent" WHERE "whiteboardId" = ?',
+      )
+      .all(whiteboardId) as unknown as Array<Seeded>
+    const groups = new Map<string, { head: Seeded; n: number }>()
+    for (const r of rows) {
+      const key = r.batchId ?? r.id
+      const g = groups.get(key)
+      const later =
+        !g ||
+        r.createdAt > g.head.createdAt ||
+        (r.createdAt === g.head.createdAt && r.rowid > g.head.rowid)
+      groups.set(key, { head: later ? r : g.head, n: (g?.n ?? 0) + 1 })
+    }
+    return [...groups.entries()]
+      .sort(
+        ([, a], [, b]) =>
+          b.head.createdAt - a.head.createdAt || b.head.rowid - a.head.rowid,
+      )
+      .map(([key, g]) => ({ key, n: g.n }))
+  }
+
+  it('pages a 5400-event log across batch boundaries without gaps or repeats', async () => {
+    const { owner, wb } = setup()
+    expect(seedLargeLog(wb.id, owner.id)).toBe(5400)
+    const expected = expectedGroups(wb.id)
+    expect(expected).toHaveLength(40 + 1 + 1900)
+
+    const seen: Array<{ key: string; n: number }> = []
+    let cursor: string | undefined
+    let pages = 0
+    do {
+      const res = await listSchemaChangesHandler(authFor(owner.id), {
+        whiteboardId: wb.id,
+        limit: 50,
+        includeLayout: false,
+        cursor,
+      })
+      for (const item of res.items) {
+        if (item.kind === 'batch')
+          seen.push({ key: item.batch.batchId, n: item.batch.total })
+        else
+          seen.push({
+            key: item.event.batchId ?? item.event.id,
+            n: 1,
+          })
+      }
+      cursor = res.nextCursor ?? undefined
+      pages++
+    } while (cursor)
+
+    expect(pages).toBe(Math.ceil(expected.length / 50))
+    expect(seen).toEqual(expected)
+  })
+
+  it('runs a bounded number of statements per page, whatever the batch count', async () => {
+    const { owner, wb } = setup()
+    seedLargeLog(wb.id, owner.id)
+    // Skip past the newest groups so the cursor sits inside the interleaved batches.
+    const deep = await listSchemaChangesHandler(authFor(owner.id), {
+      whiteboardId: wb.id,
+      limit: 100,
+      includeLayout: false,
+    })
+    const spy = vi.spyOn(db, 'prepare')
+    try {
+      const page = await listSchemaChangesHandler(authFor(owner.id), {
+        whiteboardId: wb.id,
+        limit: 100,
+        includeLayout: false,
+        cursor: deep.nextCursor ?? undefined,
+      })
+      expect(page.items).toHaveLength(100)
+      const listing = spy.mock.calls.filter(([sql]) =>
+        String(sql).includes('"SchemaChangeEvent"'),
+      )
+      expect(listing.length).toBeLessThanOrEqual(10)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('keeps the batch summary of a page of batches correct under a table filter', async () => {
+    const { owner, wb } = setup()
+    const batch = inBatch(userContext(wb.id, owner.id), 'bf', 'sql-import')
+    log(batch, 100, { tableName: 'a', entityType: 'table', action: 'create' })
+    log(batch, 101, { tableName: 'b', entityType: 'table', action: 'create' })
+    log(batch, 102, { tableName: 'b', entityType: 'column', action: 'create' })
+    const res = await listSchemaChangesHandler(authFor(owner.id), {
+      whiteboardId: wb.id,
+      limit: 10,
+      includeLayout: false,
+      tableName: 'a',
+    })
+    expect(res.items).toHaveLength(1)
+    expect(res.items[0].kind).toBe('event')
+    const both = await listSchemaChangesHandler(authFor(owner.id), {
+      whiteboardId: wb.id,
+      limit: 10,
+      includeLayout: false,
+      tableName: 'b',
+    })
+    expect(both.items[0].kind === 'batch' && both.items[0].batch.total).toBe(2)
   })
 })

@@ -23,6 +23,7 @@ export type ChangeBatchKind =
   | 'table-delete'
   | 'agent-batch'
   | 'reference'
+  | 'column-duplicate'
 
 /** Who made a change, on which whiteboard, and the batch it belongs to. */
 export interface ActorContext {

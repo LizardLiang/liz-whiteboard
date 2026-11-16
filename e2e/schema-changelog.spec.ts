@@ -146,12 +146,16 @@ test.describe('Changes tab, seeded history', () => {
 
     const restore = row(page, 'restored version Before the billing rewrite')
     await restore.getByRole('button', { name: 'Show items' }).click()
-    // 3 deletes and 3 creates; the restore marker is the header, not a row.
+    // The net change: a table deleted, a table created, a column changed.
+    // The restore marker is the header, not a row.
+    await expect(restore).toContainText(
+      /1 table deleted, 1 table created, 1 column changed/,
+    )
     await expect(
       restore
         .getByRole('list', { name: 'Items in this change' })
         .getByTestId('change-event'),
-    ).toHaveCount(6)
+    ).toHaveCount(3)
   })
 
   test('Load more pages to the end of the list', async ({ page }) => {

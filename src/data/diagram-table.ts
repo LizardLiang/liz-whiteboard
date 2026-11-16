@@ -28,7 +28,7 @@ import {
   relationshipDisplayName,
 } from '@/lib/schema-changelog'
 
-const TABLE_EVENT_FIELDS = [
+export const TABLE_EVENT_FIELDS = [
   'name',
   'description',
   'positionX',

@@ -2,12 +2,11 @@
 // TanStack Start server functions for Column CRUD operations
 
 import { createServerFn } from '@tanstack/react-start'
-import { z } from 'zod'
+import { ZodError, z } from 'zod'
 import type { ChangeContext } from '@/lib/schema-changelog'
 import { clientErrorMessage } from '@/lib/client-error'
 import {
   createColumn,
-  createColumns,
   deleteColumn,
   findColumnById,
   findColumnsByTableId,
@@ -16,6 +15,7 @@ import {
   updateColumn,
   updateColumnOrder,
 } from '@/data/column'
+import { createColumnsOnOneBoard } from '@/data/column-batch'
 import { createColumnSchema, updateColumnSchema } from '@/data/schema'
 import { requireAuth } from '@/lib/auth/middleware'
 import { findEffectiveRole } from '@/data/permission'
@@ -33,7 +33,7 @@ import {
 } from '@/lib/auth/require-role'
 import { logSampledError } from '@/lib/auth/log-sample'
 import { clientBatchSchema } from '@/lib/schema-changelog/client-batch'
-import { userContext, withClientBatch } from '@/lib/schema-changelog'
+import { userContext } from '@/lib/schema-changelog'
 
 /** The context for a write on a column's whiteboard. The caller passed a role check on it first. */
 async function columnContext(
@@ -269,33 +269,13 @@ export const createColumnsFn = createServerFn({ method: 'POST' })
         }
       }
 
-      // Step 2: WRITE — only reached when every item passed RBAC.
-      // A batch is written once per whiteboard its tables sit on, so each
-      // event carries its own board. The SQL import sends a single board.
+      // Step 2: WRITE — only reached when every item passed RBAC. The columns
+      // must all sit on one whiteboard; createColumnsOnOneBoard refuses a
+      // request that spans boards before it writes anything.
       try {
-        const groups = new Map<string, Array<number>>()
-        for (const [index, column] of data.entries()) {
-          const whiteboardId = await getTableWhiteboardId(column.tableId)
-          if (!whiteboardId) throw new Error('Table not found')
-          groups.set(whiteboardId, [...(groups.get(whiteboardId) ?? []), index])
-        }
-        const columns: Array<
-          Awaited<ReturnType<typeof createColumns>>[number]
-        > = []
-        for (const [whiteboardId, indexes] of groups) {
-          const { ctx } = withClientBatch(
-            userContext(whiteboardId, user.id),
-            input,
-          )
-          const created = await createColumns(
-            indexes.map((i) => data[i]),
-            ctx,
-          )
-          for (const [n, index] of indexes.entries())
-            columns[index] = created[n]
-        }
-        return columns
+        return await createColumnsOnOneBoard(user.id, input)
       } catch (error) {
+        if (error instanceof ZodError) throw error
         throw new Error(
           `Failed to create columns: ${clientErrorMessage(error, 'Unknown error')}`,
         )

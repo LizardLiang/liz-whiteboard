@@ -119,16 +119,24 @@ function oneSided(row: Row, side: 'before' | 'after'): Array<DiffField> {
 interface Side {
   tableName: Map<string, string>
   columnName: Map<string, string>
+  columnTable: Map<string, string>
+  tableColumns: Map<string, string>
 }
 
 function indexSide(payload: DiffablePayload): Side {
   const tableName = new Map<string, string>()
   const columnName = new Map<string, string>()
+  const columnTable = new Map<string, string>()
+  const tableColumns = new Map<string, string>()
   for (const table of payload.tables) {
     tableName.set(table.id, table.name)
-    for (const column of table.columns) columnName.set(column.id, column.name)
+    tableColumns.set(table.id, table.columns.map((c) => c.name).join(', '))
+    for (const column of table.columns) {
+      columnName.set(column.id, column.name)
+      columnTable.set(column.id, table.id)
+    }
   }
-  return { tableName, columnName }
+  return { tableName, columnName, columnTable, tableColumns }
 }
 
 function tableRow(table: TableLike): Row {
@@ -314,24 +322,19 @@ export function diffBoards(
   const removed: Array<DiffEntry> = []
   const changed: Array<DiffEntry> = []
 
-  const columnNames = (payload: DiffablePayload, tableId: string): string =>
-    payload.tables
-      .find((t) => t.id === tableId)
-      ?.columns.map((c) => c.name)
-      .join(', ') ?? ''
+  const columnNames = (side: Side, tableId: string): string =>
+    side.tableColumns.get(tableId) ?? ''
 
   for (const [key, item] of newItems) {
     const before = oldItems.get(key)
     if (!before) {
       if (item.entityType === 'column') {
-        const tableId = newer.tables.find((t) =>
-          t.columns.some((c) => c.id === item.id),
-        )?.id
+        const tableId = newSide.columnTable.get(item.id)
         if (tableId && !oldTableIds.has(tableId)) continue
       }
       const fields = oneSided(item.row, 'after')
-      if (item.entityType === 'table' && columnNames(newer, item.id))
-        fields.push(tag('columns', null, columnNames(newer, item.id)))
+      if (item.entityType === 'table' && columnNames(newSide, item.id))
+        fields.push(tag('columns', null, columnNames(newSide, item.id)))
       added.push(entry(item, fields))
       continue
     }
@@ -341,14 +344,12 @@ export function diffBoards(
   for (const [key, item] of oldItems) {
     if (newItems.has(key)) continue
     if (item.entityType === 'column') {
-      const tableId = older.tables.find((t) =>
-        t.columns.some((c) => c.id === item.id),
-      )?.id
+      const tableId = oldSide.columnTable.get(item.id)
       if (tableId && !newTableIds.has(tableId)) continue
     }
     const fields = oneSided(item.row, 'before')
-    if (item.entityType === 'table' && columnNames(older, item.id))
-      fields.push(tag('columns', columnNames(older, item.id), null))
+    if (item.entityType === 'table' && columnNames(oldSide, item.id))
+      fields.push(tag('columns', columnNames(oldSide, item.id), null))
     removed.push(entry(item, fields))
   }
 

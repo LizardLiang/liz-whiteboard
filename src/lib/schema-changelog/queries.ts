@@ -109,9 +109,9 @@ function whereClause(
   if (q) {
     const like = likePattern(q)
     parts.push(
-      `("entityName" LIKE ? ESCAPE '\\' OR "tableName" LIKE ? ESCAPE '\\' OR "actorName" LIKE ? ESCAPE '\\' OR "before" LIKE ? ESCAPE '\\' OR "after" LIKE ? ESCAPE '\\')`,
+      `("entityName" LIKE ? ESCAPE '\\' OR "tableName" LIKE ? ESCAPE '\\' OR "actorName" LIKE ? ESCAPE '\\')`,
     )
-    params.push(like, like, like, like, like)
+    params.push(like, like, like)
   }
   return { sql: parts.join(' AND '), params }
 }
@@ -121,16 +121,22 @@ function parseCursor(cursor: string): { ts: number; rid: number } | null {
   return match ? { ts: Number(match[1]), rid: Number(match[2]) } : null
 }
 
-function restoredVersionOf(
-  whiteboardId: string,
-  batchId: string,
-): RestoredVersionDto | null {
-  const marker = db
-    .prepare(
-      `SELECT "after" FROM "SchemaChangeEvent" WHERE "whiteboardId" = ? AND "batchId" = ? AND "entityType" = 'board' ORDER BY "rowid" DESC LIMIT 1`,
-    )
-    .get(whiteboardId, batchId) as { after: unknown } | undefined
-  const restored = asRecord(marker?.after)?.restoredVersion
+/** `?,?,?` for `count` parameters. */
+const placeholders = (count: number): string =>
+  Array.from({ length: count }, () => '?').join(',')
+
+/** A batch's counts, first event, newest time and the rows its title reads. */
+interface BatchFacts {
+  first: EventRowRaw
+  counts: Array<{ entityType: string; action: string; count: number }>
+  total: number
+  lastAt: number
+  restoredVersion: RestoredVersionDto | null
+  subject: string | null
+}
+
+function restoredVersionFrom(after: unknown): RestoredVersionDto | null {
+  const restored = asRecord(after)?.restoredVersion
   if (restored === null || typeof restored !== 'object') return null
   const version = restored as Record<string, unknown>
   if (typeof version.snapshotId !== 'string') return null
@@ -141,74 +147,135 @@ function restoredVersionOf(
   }
 }
 
-/** The table (or area) a table-delete or area-move batch is about. */
-function subjectOf(
-  whiteboardId: string,
-  batchId: string,
-  batchKind: string | null,
-): string | null {
-  const types =
-    batchKind === 'table-delete'
-      ? `('table','reference')`
-      : batchKind === 'area-move'
-        ? `('area')`
-        : null
-  if (types === null) return null
-  const row = db
-    .prepare(
-      `SELECT "entityName" FROM "SchemaChangeEvent" WHERE "whiteboardId" = ? AND "batchId" = ? AND "entityType" IN ${types} ORDER BY "rowid" DESC LIMIT 1`,
-    )
-    .get(whiteboardId, batchId) as { entityName: string | null } | undefined
-  return row?.entityName ?? null
+/** The entity type whose name titles a batch of this kind. */
+function subjectTypes(batchKind: string | null): ReadonlyArray<string> {
+  return batchKind === 'table-delete'
+    ? ['table', 'reference']
+    : batchKind === 'area-move'
+      ? ['area']
+      : []
 }
 
-function summariseBatch(
+/**
+ * The summary facts of every batch in `batchIds`, in four grouped queries
+ * whatever the number of batches: counts, newest time, first event, and the
+ * marker and subject rows.
+ */
+function loadBatchFacts(
   whiteboardId: string,
-  batchId: string,
+  batchIds: ReadonlyArray<string>,
   filters: ChangeFilters,
-): BatchSummaryDto {
+): Map<string, BatchFacts> {
+  const facts = new Map<string, BatchFacts>()
+  if (batchIds.length === 0) return facts
   const where = whereClause(whiteboardId, filters)
-  const counts = db
+  const inList = `"batchId" IN (${placeholders(batchIds.length)})`
+
+  const groups = db
     .prepare(
-      `SELECT "entityType","action",COUNT(*) AS "count" FROM "SchemaChangeEvent" WHERE ${where.sql} AND "batchId" = ? GROUP BY "entityType","action" ORDER BY MIN("rowid")`,
+      `SELECT "batchId","entityType","action",COUNT(*) AS "count",MAX("createdAt") AS "lastAt",MIN("rowid") AS "firstRid" FROM "SchemaChangeEvent" WHERE ${where.sql} AND ${inList} GROUP BY "batchId","entityType","action" ORDER BY "batchId", MIN("rowid")`,
     )
-    .all(...where.params, batchId) as Array<{
+    .all(...where.params, ...batchIds) as unknown as Array<{
+    batchId: string
     entityType: string
     action: string
     count: number
+    lastAt: number
+    firstRid: number
   }>
-  const first = db
-    .prepare(
-      `SELECT ${EVENT_COLUMNS} FROM "SchemaChangeEvent" WHERE ${where.sql} AND "batchId" = ? ORDER BY "rowid" LIMIT 1`,
+  const firstRids = new Map<string, number>()
+  const partial = new Map<
+    string,
+    Pick<BatchFacts, 'counts' | 'total' | 'lastAt'>
+  >()
+  for (const g of groups) {
+    const entry = partial.get(g.batchId) ?? { counts: [], total: 0, lastAt: 0 }
+    entry.counts.push({
+      entityType: g.entityType,
+      action: g.action,
+      count: Number(g.count),
+    })
+    entry.total += Number(g.count)
+    entry.lastAt = Math.max(entry.lastAt, Number(g.lastAt))
+    partial.set(g.batchId, entry)
+    firstRids.set(
+      g.batchId,
+      Math.min(firstRids.get(g.batchId) ?? Infinity, Number(g.firstRid)),
     )
-    .get(...where.params, batchId) as unknown as EventRowRaw
-  const last = db
+  }
+
+  const firstRows = db
     .prepare(
-      `SELECT MAX("createdAt") AS "createdAt" FROM "SchemaChangeEvent" WHERE ${where.sql} AND "batchId" = ?`,
+      `SELECT ${EVENT_COLUMNS} FROM "SchemaChangeEvent" WHERE "rowid" IN (${placeholders(firstRids.size)})`,
     )
-    .get(...where.params, batchId) as { createdAt: number }
+    .all(...firstRids.values()) as unknown as Array<EventRowRaw>
+
+  // Marker and subject rows read the whole batch, not the filtered part of it.
+  const titleRows = db
+    .prepare(
+      `SELECT "batchId","entityType","entityName","after" FROM "SchemaChangeEvent" WHERE "whiteboardId" = ? AND ${inList} AND "entityType" IN ('board','table','reference','area') ORDER BY "rowid"`,
+    )
+    .all(whiteboardId, ...batchIds) as unknown as Array<{
+    batchId: string
+    entityType: string
+    entityName: string | null
+    after: unknown
+  }>
+
+  for (const first of firstRows) {
+    const batchId = first.batchId!
+    const entry = partial.get(batchId)!
+    const types = subjectTypes(first.batchKind)
+    let restoredVersion: RestoredVersionDto | null = null
+    let subject: string | null = null
+    // The last matching row wins, as an ORDER BY "rowid" DESC LIMIT 1 did.
+    for (const row of titleRows) {
+      if (row.batchId !== batchId) continue
+      if (first.batchKind === 'restore' && row.entityType === 'board')
+        restoredVersion = restoredVersionFrom(row.after)
+      if (types.includes(row.entityType)) subject = row.entityName ?? null
+    }
+    facts.set(batchId, { first, ...entry, restoredVersion, subject })
+  }
+  return facts
+}
+
+function summariseBatch(batchId: string, facts: BatchFacts): BatchSummaryDto {
+  const { first } = facts
   return {
     batchId,
     batchKind: first.batchKind,
-    subject: subjectOf(whiteboardId, batchId, first.batchKind),
+    subject: facts.subject,
     actorUserId: first.actorUserId,
     actorName: first.actorName,
     viaAgent: fromDbBool(first.viaAgent),
-    createdAt: Number(last.createdAt),
-    total: counts.reduce((sum, c) => sum + Number(c.count), 0),
-    counts: counts.map((c) => ({ ...c, count: Number(c.count) })),
-    restoredVersion:
-      first.batchKind === 'restore'
-        ? restoredVersionOf(whiteboardId, batchId)
-        : null,
+    createdAt: facts.lastAt,
+    total: facts.total,
+    counts: facts.counts,
+    restoredVersion: facts.restoredVersion,
   }
 }
+
+interface GroupHead {
+  rowid: number
+  createdAt: number
+  batchId: string | null
+}
+
+const SCAN_CHUNK = 400
 
 /**
  * One page of the log. Events that share a batchId collapse into one summary
  * row, positioned by the batch's newest event; a batch with a single matching
  * event shows as that event. The cursor is "<createdAt>:<rowid>" of the last
- * group on the page.
+ * group's newest event.
+ *
+ * The page cost does not depend on the log size. The scan walks events newest
+ * first from the cursor (WHERE, index on whiteboardId and createdAt) and keeps
+ * the first event of each group: that is the group's newest. A group that has
+ * a matching event at or after the cursor belongs to an earlier page, so one
+ * grouped query per chunk drops it. Batch summaries come from grouped queries
+ * over the page's batches only.
  */
 export function listSchemaChanges(
   whiteboardId: string,
@@ -217,39 +284,112 @@ export function listSchemaChanges(
 ): ListSchemaChangesResult {
   const where = whereClause(whiteboardId, filters)
   const cursor = page.cursor ? parseCursor(page.cursor) : null
-  const having = cursor ? 'HAVING ("ts" < ? OR ("ts" = ? AND "rid" < ?))' : ''
-  const cursorParams = cursor ? [cursor.ts, cursor.ts, cursor.rid] : []
-  const groups = db
-    .prepare(
-      `SELECT "batchId", MAX("createdAt") AS "ts", MAX("rowid") AS "rid", COUNT(*) AS "n" FROM "SchemaChangeEvent" WHERE ${where.sql} GROUP BY COALESCE("batchId","id") ${having} ORDER BY "ts" DESC, "rid" DESC LIMIT ?`,
-    )
-    .all(...where.params, ...cursorParams, page.limit + 1) as Array<{
-    batchId: string | null
-    ts: number
-    rid: number
-    n: number
-  }>
+  const heads: Array<GroupHead> = []
+  const taken = new Set<string>()
+  const earlier = new Set<string>()
+  let from = cursor
+  let exhausted = false
 
-  const pageGroups = groups.slice(0, page.limit)
-  const items = pageGroups.map((group) => {
-    if (group.batchId === null || Number(group.n) === 1) {
-      const row = db
-        .prepare(
-          `SELECT ${EVENT_COLUMNS} FROM "SchemaChangeEvent" WHERE "rowid" = ?`,
-        )
-        .get(group.rid) as unknown as EventRowRaw
-      return { kind: 'event' as const, event: toEventDto(row) }
+  while (heads.length <= page.limit && !exhausted) {
+    const rows = db
+      .prepare(
+        `SELECT "rowid" AS "rowid","createdAt","batchId" FROM "SchemaChangeEvent" WHERE ${where.sql}${from ? ' AND ("createdAt" < ? OR ("createdAt" = ? AND "rowid" < ?))' : ''} ORDER BY "createdAt" DESC, "rowid" DESC LIMIT ?`,
+      )
+      .all(
+        ...where.params,
+        ...(from ? [from.ts, from.ts, from.rid] : []),
+        SCAN_CHUNK,
+      ) as unknown as Array<GroupHead>
+    exhausted = rows.length < SCAN_CHUNK
+
+    if (cursor) {
+      const unchecked = [
+        ...new Set(
+          rows.flatMap((r) =>
+            r.batchId !== null &&
+            !taken.has(r.batchId) &&
+            !earlier.has(r.batchId)
+              ? [r.batchId]
+              : [],
+          ),
+        ),
+      ]
+      if (unchecked.length > 0) {
+        const shown = db
+          .prepare(
+            `SELECT DISTINCT "batchId" FROM "SchemaChangeEvent" WHERE ${where.sql} AND "batchId" IN (${placeholders(unchecked.length)}) AND ("createdAt" > ? OR ("createdAt" = ? AND "rowid" >= ?))`,
+          )
+          .all(
+            ...where.params,
+            ...unchecked,
+            cursor.ts,
+            cursor.ts,
+            cursor.rid,
+          ) as Array<{ batchId: string }>
+        for (const row of shown) earlier.add(row.batchId)
+      }
+    }
+
+    for (const row of rows) {
+      if (row.batchId !== null) {
+        if (taken.has(row.batchId) || earlier.has(row.batchId)) continue
+        taken.add(row.batchId)
+      }
+      heads.push({
+        rowid: Number(row.rowid),
+        createdAt: Number(row.createdAt),
+        batchId: row.batchId,
+      })
+      if (heads.length > page.limit) break
+    }
+    const last = rows.at(-1)
+    if (last) from = { ts: Number(last.createdAt), rid: Number(last.rowid) }
+  }
+
+  const pageHeads = heads.slice(0, page.limit)
+  const facts = loadBatchFacts(
+    whiteboardId,
+    pageHeads.flatMap((h) => (h.batchId === null ? [] : [h.batchId])),
+    filters,
+  )
+  const loneRowIds = pageHeads.flatMap((h) =>
+    h.batchId === null || facts.get(h.batchId)?.total === 1 ? [h.rowid] : [],
+  )
+  const loneRows = new Map<number, EventRowRaw>()
+  if (loneRowIds.length > 0) {
+    const rows = db
+      .prepare(
+        `SELECT ${EVENT_COLUMNS} FROM "SchemaChangeEvent" WHERE "rowid" IN (${placeholders(loneRowIds.length)})`,
+      )
+      .all(...loneRowIds) as unknown as Array<EventRowRaw>
+    for (const row of rows) loneRows.set(Number(row.rowid), row)
+  }
+
+  const items = pageHeads.map((head) => {
+    const batchFacts =
+      head.batchId === null ? undefined : facts.get(head.batchId)
+    if (
+      head.batchId === null ||
+      batchFacts === undefined ||
+      batchFacts.total === 1
+    ) {
+      return {
+        kind: 'event' as const,
+        event: toEventDto(loneRows.get(head.rowid)!),
+      }
     }
     return {
       kind: 'batch' as const,
-      batch: summariseBatch(whiteboardId, group.batchId, filters),
+      batch: summariseBatch(head.batchId, batchFacts),
     }
   })
-  const last = pageGroups.at(-1)
+  const last = pageHeads.at(-1)
   return {
     items,
     nextCursor:
-      groups.length > page.limit && last ? `${last.ts}:${last.rid}` : null,
+      heads.length > page.limit && last
+        ? `${last.createdAt}:${last.rowid}`
+        : null,
   }
 }
 

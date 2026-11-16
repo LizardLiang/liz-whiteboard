@@ -11,16 +11,27 @@
 // before ids were tombstoned, see RetiredId in schema-sql.ts): it is restored
 // under a fresh id and every reference to it inside the snapshot is remapped.
 
-import { findDiagramTablesByWhiteboardId } from './diagram-table'
-import { findColumnsByTableId } from './column'
-import { findRelationshipsByWhiteboardId } from './relationship'
-import { findAreasByWhiteboard } from './area'
+import {
+  TABLE_EVENT_FIELDS,
+  findDiagramTablesByWhiteboardId,
+} from './diagram-table'
+import { COLUMN_EVENT_FIELDS, findColumnsByTableId } from './column'
+import {
+  RELATIONSHIP_EVENT_FIELDS,
+  findRelationshipsByWhiteboardId,
+} from './relationship'
+import { AREA_EVENT_FIELDS, findAreasByWhiteboard } from './area'
 import { findShapesByWhiteboard } from './shape'
 import { findConnectorsByWhiteboard } from './connector'
 import { findWhiteboardById } from './whiteboard'
 import type { ChangeContext } from '@/lib/schema-changelog'
+import type { DiffEntityType, DiffEntry } from '@/lib/schema-diff'
 import type {
+  Area,
+  Column,
+  DiagramTable,
   PersistedSnapshotPayload,
+  Relationship,
   SnapshotPayload,
   WhiteboardSnapshot,
 } from './models'
@@ -41,10 +52,12 @@ import {
 } from '@/db'
 import {
   eventRow,
+  isSystemContext,
   recordChange,
-  relationshipDisplayName,
+  recordUpdate,
   withBatch,
 } from '@/lib/schema-changelog'
+import { diffBoards } from '@/lib/schema-diff'
 
 /**
  * Coerce a captured `createdAt` back to the unix-ms storage form expected by
@@ -206,144 +219,255 @@ export interface RestoredVersion {
   createdAt: Date
 }
 
-function tableNameOfRow(
-  tables: Array<{ id: string; name: string }>,
-  id: string,
-): string | null {
-  return tables.find((t) => t.id === id)?.name ?? null
+interface BoardRows {
+  tables: Array<DiagramTable & { columns: Array<Column> }>
+  relationships: Array<Relationship>
+  areas: Array<Area>
 }
 
-/**
- * Log a delete for every table, column, relationship and area the restore is
- * about to wipe. Runs before the wipe, while the rows can still be read.
- */
-function logWipedEntities(whiteboardId: string, ctx: ChangeContext): void {
+/** The rows of a whiteboard, read synchronously so a restore can do it inside its transaction. */
+function readBoardRows(whiteboardId: string): BoardRows {
   const tables = db
     .prepare('SELECT * FROM "DiagramTable" WHERE "whiteboardId" = ?')
     .all(whiteboardId)
     .map((r) => mapDiagramTable(r)!)
-  for (const table of tables) {
-    for (const row of db
-      .prepare('SELECT * FROM "Column" WHERE "tableId" = ?')
-      .all(table.id)) {
-      const column = mapColumn(row)!
-      recordChange(ctx, {
-        category: 'schema',
-        entityType: 'column',
-        action: 'delete',
-        entityId: column.id,
-        entityName: column.name,
-        tableId: table.id,
-        tableName: table.name,
-        before: eventRow(column),
-      })
-    }
-  }
-  for (const row of db
-    .prepare('SELECT * FROM "Relationship" WHERE "whiteboardId" = ?')
-    .all(whiteboardId)) {
-    const relationship = mapRelationship(row)!
-    recordChange(ctx, {
-      category: 'schema',
-      entityType: 'relationship',
-      action: 'delete',
-      entityId: relationship.id,
-      entityName: relationshipDisplayName(relationship),
-      tableId: relationship.sourceTableId,
-      tableName: tableNameOfRow(tables, relationship.sourceTableId),
-      before: eventRow(relationship),
-    })
-  }
-  for (const table of tables) {
-    recordChange(ctx, {
-      category: 'schema',
-      entityType: table.sourceTableId ? 'reference' : 'table',
-      action: 'delete',
-      entityId: table.id,
-      entityName: table.name,
-      tableId: table.id,
-      tableName: table.name,
-      before: eventRow(table),
-    })
-  }
-  for (const row of db
-    .prepare('SELECT * FROM "Area" WHERE "whiteboardId" = ?')
-    .all(whiteboardId)) {
-    const area = mapArea(row)!
-    recordChange(ctx, {
-      category: 'schema',
-      entityType: 'area',
-      action: 'delete',
-      entityId: area.id,
-      entityName: area.name,
-      before: eventRow(area),
-    })
+  return {
+    tables: tables.map((table) => ({
+      ...table,
+      columns: db
+        .prepare('SELECT * FROM "Column" WHERE "tableId" = ? ORDER BY "order"')
+        .all(table.id)
+        .map((r) => mapColumn(r)!),
+    })),
+    relationships: db
+      .prepare('SELECT * FROM "Relationship" WHERE "whiteboardId" = ?')
+      .all(whiteboardId)
+      .map((r) => mapRelationship(r)!),
+    areas: db
+      .prepare('SELECT * FROM "Area" WHERE "whiteboardId" = ?')
+      .all(whiteboardId)
+      .map((r) => mapArea(r)!),
   }
 }
 
+function indexRows(rows: BoardRows) {
+  const columns = new Map<string, { column: Column; table: DiagramTable }>()
+  for (const table of rows.tables)
+    for (const column of table.columns)
+      columns.set(column.id, { column, table })
+  return {
+    tables: new Map(rows.tables.map((t) => [t.id, t])),
+    columns,
+    relationships: new Map(rows.relationships.map((r) => [r.id, r])),
+    areas: new Map(rows.areas.map((a) => [a.id, a])),
+  }
+}
+
+const tableEntityType = (table: DiagramTable) =>
+  table.sourceTableId ? ('reference' as const) : ('table' as const)
+
 /**
- * Log a create for every row the restore inserted, read back from the
- * database so the event carries the id each row ended up with.
+ * Log what a restore changed, not what it rewrote: `diffBoards` compares the
+ * board as it was with the board as restored (both read from the database, so
+ * a row that got a fresh id from `idFor` shows under that id). Rows that came
+ * back equal log nothing. Deletes come first (columns, relationships, tables,
+ * areas), then creates, then updates; a position, size or edge-path change is
+ * a layout event.
+ *
+ * A remapped id has no counterpart in the board as it was, so its old row
+ * logs as a delete and the restored row as a create.
  */
-function logRestoredEntities(whiteboardId: string, ctx: ChangeContext): void {
-  const tables = db
-    .prepare('SELECT * FROM "DiagramTable" WHERE "whiteboardId" = ?')
-    .all(whiteboardId)
-    .map((r) => mapDiagramTable(r)!)
-  for (const table of tables) {
-    recordChange(ctx, {
-      category: 'schema',
-      entityType: table.sourceTableId ? 'reference' : 'table',
-      action: 'create',
-      entityId: table.id,
-      entityName: table.name,
-      tableId: table.id,
-      tableName: table.name,
-      after: eventRow(table),
-    })
-    for (const row of db
-      .prepare('SELECT * FROM "Column" WHERE "tableId" = ?')
-      .all(table.id)) {
-      const column = mapColumn(row)!
+function logRestoreChanges(
+  before: BoardRows,
+  after: BoardRows,
+  ctx: ChangeContext,
+): void {
+  const diff = diffBoards(before, after)
+  const was = indexRows(before)
+  const now = indexRows(after)
+  const tableNameIn = (rows: ReturnType<typeof indexRows>, id: string) =>
+    rows.tables.get(id)?.name ?? null
+  const ofType = (entries: Array<DiffEntry>, type: DiffEntityType) =>
+    entries.filter((e) => e.entityType === type)
+
+  const logColumns = (
+    table: DiagramTable & { columns: Array<Column> },
+    action: 'create' | 'delete',
+  ) => {
+    for (const column of table.columns) {
       recordChange(ctx, {
         category: 'schema',
         entityType: 'column',
-        action: 'create',
+        action,
         entityId: column.id,
         entityName: column.name,
         tableId: table.id,
         tableName: table.name,
-        after: eventRow(column),
+        [action === 'create' ? 'after' : 'before']: eventRow(column),
       })
     }
   }
-  for (const row of db
-    .prepare('SELECT * FROM "Relationship" WHERE "whiteboardId" = ?')
-    .all(whiteboardId)) {
-    const relationship = mapRelationship(row)!
+  const logTable = (table: DiagramTable, action: 'create' | 'delete') =>
+    recordChange(ctx, {
+      category: 'schema',
+      entityType: tableEntityType(table),
+      action,
+      entityId: table.id,
+      entityName: table.name,
+      tableId: table.id,
+      tableName: table.name,
+      [action === 'create' ? 'after' : 'before']: eventRow(table),
+    })
+  const logRelationship = (
+    entry: DiffEntry,
+    relationship: Relationship,
+    rows: ReturnType<typeof indexRows>,
+    action: 'create' | 'delete',
+  ) =>
     recordChange(ctx, {
       category: 'schema',
       entityType: 'relationship',
-      action: 'create',
+      action,
       entityId: relationship.id,
-      entityName: relationshipDisplayName(relationship),
+      entityName: entry.name,
       tableId: relationship.sourceTableId,
-      tableName: tableNameOfRow(tables, relationship.sourceTableId),
-      after: eventRow(relationship),
+      tableName: tableNameIn(rows, relationship.sourceTableId),
+      [action === 'create' ? 'after' : 'before']: eventRow(relationship),
     })
-  }
-  for (const row of db
-    .prepare('SELECT * FROM "Area" WHERE "whiteboardId" = ?')
-    .all(whiteboardId)) {
-    const area = mapArea(row)!
+  const logArea = (area: Area, action: 'create' | 'delete') =>
     recordChange(ctx, {
       category: 'schema',
       entityType: 'area',
-      action: 'create',
+      action,
       entityId: area.id,
       entityName: area.name,
-      after: eventRow(area),
+      [action === 'create' ? 'after' : 'before']: eventRow(area),
     })
+
+  // Deletes.
+  const removedTables = ofType(diff.removed, 'table')
+  for (const entry of removedTables)
+    logColumns(was.tables.get(entry.entityId)!, 'delete')
+  for (const entry of ofType(diff.removed, 'column')) {
+    const old = was.columns.get(entry.entityId)!
+    recordChange(ctx, {
+      category: 'schema',
+      entityType: 'column',
+      action: 'delete',
+      entityId: old.column.id,
+      entityName: old.column.name,
+      tableId: old.table.id,
+      tableName: old.table.name,
+      before: eventRow(old.column),
+    })
+  }
+  for (const entry of ofType(diff.removed, 'relationship'))
+    logRelationship(
+      entry,
+      was.relationships.get(entry.entityId)!,
+      was,
+      'delete',
+    )
+  for (const entry of removedTables)
+    logTable(was.tables.get(entry.entityId)!, 'delete')
+  for (const entry of ofType(diff.removed, 'area'))
+    logArea(was.areas.get(entry.entityId)!, 'delete')
+
+  // Creates.
+  for (const entry of ofType(diff.added, 'table')) {
+    const table = now.tables.get(entry.entityId)!
+    logTable(table, 'create')
+    logColumns(table, 'create')
+  }
+  for (const entry of ofType(diff.added, 'column')) {
+    const added = now.columns.get(entry.entityId)!
+    recordChange(ctx, {
+      category: 'schema',
+      entityType: 'column',
+      action: 'create',
+      entityId: added.column.id,
+      entityName: added.column.name,
+      tableId: added.table.id,
+      tableName: added.table.name,
+      after: eventRow(added.column),
+    })
+  }
+  for (const entry of ofType(diff.added, 'relationship'))
+    logRelationship(
+      entry,
+      now.relationships.get(entry.entityId)!,
+      now,
+      'create',
+    )
+  for (const entry of ofType(diff.added, 'area'))
+    logArea(now.areas.get(entry.entityId)!, 'create')
+
+  // Updates.
+  for (const entry of ofType(diff.changed, 'table')) {
+    const old = was.tables.get(entry.entityId)!
+    const table = now.tables.get(entry.entityId)!
+    recordUpdate(
+      ctx,
+      {
+        entityType: tableEntityType(table),
+        entityId: table.id,
+        entityName: table.name,
+        tableId: table.id,
+        tableName: table.name,
+      },
+      old,
+      table,
+      TABLE_EVENT_FIELDS,
+    )
+  }
+  for (const entry of ofType(diff.changed, 'column')) {
+    const old = was.columns.get(entry.entityId)!
+    const next = now.columns.get(entry.entityId)!
+    recordUpdate(
+      ctx,
+      {
+        entityType: 'column',
+        entityId: next.column.id,
+        entityName: next.column.name,
+        tableId: next.table.id,
+        tableName: next.table.name,
+      },
+      old.column,
+      next.column,
+      COLUMN_EVENT_FIELDS,
+    )
+  }
+  for (const entry of ofType(diff.changed, 'relationship')) {
+    const old = was.relationships.get(entry.entityId)!
+    const relationship = now.relationships.get(entry.entityId)!
+    recordUpdate(
+      ctx,
+      {
+        entityType: 'relationship',
+        entityId: relationship.id,
+        entityName: entry.name,
+        tableId: relationship.sourceTableId,
+        tableName: tableNameIn(now, relationship.sourceTableId),
+      },
+      old,
+      relationship,
+      RELATIONSHIP_EVENT_FIELDS,
+    )
+  }
+  for (const entry of ofType(diff.changed, 'area')) {
+    const old = was.areas.get(entry.entityId)!
+    const area = now.areas.get(entry.entityId)!
+    recordUpdate(
+      ctx,
+      {
+        entityType: 'area',
+        entityId: area.id,
+        entityName: area.name,
+      },
+      old,
+      area,
+      AREA_EVENT_FIELDS,
+    )
   }
 }
 
@@ -407,7 +531,8 @@ export async function restoreWhiteboardFromSnapshot(
 ): Promise<void> {
   transaction(() => {
     const batchCtx = withBatch(ctx, genId(), 'restore')
-    logWipedEntities(whiteboardId, batchCtx)
+    const logging = !isSystemContext(ctx)
+    const rowsBefore = logging ? readBoardRows(whiteboardId) : null
 
     // FR-035/FR-035a: the snapshot system enumerates entities in three
     // places (capture above, this wipe, and the re-insert below). A table
@@ -562,7 +687,8 @@ export async function restoreWhiteboardFromSnapshot(
       updatedAt: ts,
     })
 
-    logRestoredEntities(whiteboardId, batchCtx)
+    if (rowsBefore)
+      logRestoreChanges(rowsBefore, readBoardRows(whiteboardId), batchCtx)
     if (version) logRestoreMarker(whiteboardId, batchCtx, version)
   })
 }

@@ -23,13 +23,14 @@ import {
   update,
 } from '@/db'
 import {
+  ensureBatch,
   eventRow,
   recordChange,
   recordUpdate,
   tableNameOf,
 } from '@/lib/schema-changelog'
 
-const COLUMN_EVENT_FIELDS = [
+export const COLUMN_EVENT_FIELDS = [
   'name',
   'dataType',
   'isPrimaryKey',
@@ -386,20 +387,40 @@ export async function duplicateColumn(
   columnId: string,
   ctx: ChangeContext,
 ): Promise<Column> {
-  const source = mapColumn(
-    db.prepare('SELECT * FROM "Column" WHERE "id" = ?').get(columnId),
-  )
-  if (!source) {
-    throw new Error(`Column not found: ${columnId}`)
-  }
-
   return transaction(() => {
+    const source = readColumn(columnId)
+    if (!source) {
+      throw new Error(`Column not found: ${columnId}`)
+    }
+    const batchCtx = ensureBatch(ctx, 'column-duplicate')
     const newOrder = source.order + 1
 
     // Shift all sibling columns with order >= newOrder down by 1 to make room
+    const shifted = db
+      .prepare(
+        'SELECT * FROM "Column" WHERE "tableId" = ? AND "order" >= ? ORDER BY "order"',
+      )
+      .all(source.tableId, newOrder)
+      .map((r) => mapColumn(r)!)
     db.prepare(
       'UPDATE "Column" SET "order" = "order" + 1 WHERE "tableId" = ? AND "order" >= ?',
     ).run(source.tableId, newOrder)
+    for (const sibling of shifted) {
+      recordUpdate(
+        batchCtx,
+        {
+          entityType: 'column',
+          entityId: sibling.id,
+          entityName: sibling.name,
+          tableId: sibling.tableId,
+          tableName: tableNameOf(sibling.tableId),
+        },
+        sibling,
+        { ...sibling, order: sibling.order + 1 },
+        COLUMN_EVENT_FIELDS,
+        'reorder',
+      )
+    }
 
     // Build a unique name (try _copy, then _copy2, _copy3, …)
     const baseName = `${source.name}_copy`
@@ -427,7 +448,7 @@ export async function duplicateColumn(
         description: source.description ?? undefined,
         order: newOrder,
       },
-      ctx,
+      batchCtx,
     )
   })
 }

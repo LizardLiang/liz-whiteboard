@@ -13,7 +13,9 @@ import {
   acceptBatchId,
   batchIdSchema,
   ensureBatch,
+  isSystemContext,
   userContext,
+  withBatch,
 } from '@/lib/schema-changelog'
 import {
   createCollaborationSession,
@@ -773,6 +775,7 @@ export function setupCollaborationEventHandlers(
         //               DB value without broadcasting, so all clients converge.
         const isInit = Boolean(data.isInit)
         if (isInit) {
+          // SYSTEM context: the first-position write is the server placing a new table, so it logs no event.
           const { changes, row } = await initDiagramTablePosition(
             data.tableId,
             data.positionX,
@@ -1109,7 +1112,12 @@ export function setupCollaborationEventHandlers(
         const affectedCommentIds = await findCommentIdsByTableId(tableId)
 
         // Delete table from database (cascade deletes columns and relationships)
-        const deleteCtx = ensureBatch(ctxFor(data), 'table-delete')
+        // A client batchId keeps its id; the kind is always table-delete.
+        const accepted = ctxFor(data)
+        const deleteCtx =
+          !isSystemContext(accepted) && accepted.batchId
+            ? withBatch(accepted, accepted.batchId, 'table-delete')
+            : ensureBatch(accepted, 'table-delete')
         await deleteDiagramTable(tableId, deleteCtx)
 
         // GH #106: drop the deleted table from any subject area's membership so

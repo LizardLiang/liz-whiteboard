@@ -25,7 +25,7 @@ import {
   tableNameOf,
 } from '@/lib/schema-changelog'
 
-const RELATIONSHIP_EVENT_FIELDS = [
+export const RELATIONSHIP_EVENT_FIELDS = [
   'sourceTableId',
   'targetTableId',
   'sourceColumnId',
@@ -392,12 +392,14 @@ export async function updateRelationship(
     if (validated.routingPoints !== undefined)
       values.routingPoints = toDbJson(validated.routingPoints)
     return transaction(() => {
+      const beforeRow = readRelationship(id)
+      if (!beforeRow) throw new Error(`Relationship ${id} not found.`)
       update('Relationship', id, values)
       const after = readRelationship(id)!
       recordUpdate(
         ctx,
         relationshipEventBase(after),
-        current,
+        beforeRow,
         after,
         RELATIONSHIP_EVENT_FIELDS,
       )

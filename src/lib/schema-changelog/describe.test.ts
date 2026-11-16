@@ -198,6 +198,26 @@ describe('describeBatch', () => {
     expect(describeBatch(batch({}), t, 'en').counts).toContain(', ')
   })
 
+  it('summarises a restore by its net change, not by every restored row', () => {
+    const { title, counts } = describeBatch(
+      batch({
+        batchKind: 'restore',
+        restoredVersion: { snapshotId: 's', label: 'v1', createdAt: '' },
+        total: 4,
+        counts: [
+          { entityType: 'table', action: 'delete', count: 1 },
+          { entityType: 'column', action: 'update', count: 2 },
+          { entityType: 'table', action: 'move', count: 1 },
+          { entityType: 'board', action: 'update', count: 1 },
+        ],
+      }),
+      t,
+      'en',
+    )
+    expect(stripMarks(title)).toBe('restored version v1')
+    expect(counts).toBe('1 table deleted, 2 columns changed, 1 table moved')
+  })
+
   it('reads the restored version label from the marker', () => {
     expect(
       stripMarks(
