@@ -22,6 +22,7 @@ import { FieldsGrid } from './FieldsGrid'
 import type { FieldsGridTable } from './FieldsGrid'
 import type {
   CSSProperties,
+  DragEvent as ReactDragEvent,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
   RefObject,
@@ -192,6 +193,9 @@ function useViewportMove(options: {
       onPointerMove,
       onPointerUp: (e: ReactPointerEvent<HTMLElement>) => finish(e, false),
       onPointerCancel: (e: ReactPointerEvent<HTMLElement>) => finish(e, true),
+      // With header text selected, Chrome starts a native drag of that
+      // selection on press; the drag then cancels the pointer and the move.
+      onDragStart: (e: ReactDragEvent<HTMLElement>) => e.preventDefault(),
       onKeyDown,
     },
   }
@@ -396,7 +400,11 @@ export function FieldWindow(props: FieldWindowProps) {
             id="table-fields-drawer-title"
             className="min-w-[10rem] flex-1 text-lg font-semibold [overflow-wrap:anywhere]"
           >
-            {t('whiteboard.fieldsDrawer.title', { name: active.table.name })}
+            {/* The text span opts out of the drag so its text can be
+                selected; the rest of the header still moves the window. */}
+            <span data-no-drag className="cursor-text select-text">
+              {t('whiteboard.fieldsDrawer.title', { name: active.table.name })}
+            </span>
           </h2>
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
             <div
@@ -474,7 +482,10 @@ export function FieldWindow(props: FieldWindowProps) {
           </div>
         </div>
         <p className="mt-1 text-sm break-words text-muted-foreground">
-          {active.table.description || t('whiteboard.fieldsDrawer.description')}
+          <span data-no-drag className="cursor-text select-text">
+            {active.table.description ||
+              t('whiteboard.fieldsDrawer.description')}
+          </span>
         </p>
       </header>
       {count > 1 && (

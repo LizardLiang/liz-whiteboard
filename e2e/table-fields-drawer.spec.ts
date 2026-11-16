@@ -38,6 +38,15 @@ async function clickTable(
 
 const drawer = (page: Page) => page.getByTestId('table-fields-drawer')
 
+// A window-header point above the title text: it drags the window (the title
+// and description text are selectable, so they do not drag). The top strip
+// stays visible when the next cascaded window covers the rest.
+async function headerGrip(header: Locator) {
+  const b = await header.boundingBox()
+  expect(b).not.toBeNull()
+  return { x: b!.x + 24, y: b!.y + 5 }
+}
+
 test.describe('Table fields drawer', () => {
   test('click opens, switches, and closes', async ({ page }) => {
     await openWhiteboard(page)
@@ -262,11 +271,10 @@ test.describe('Table fields drawer - complex data', () => {
       return b!
     }
 
-    // Drag the window by its title (not a button) with real pointer moves.
+    // Drag the window by the header's top padding with real pointer moves.
+    // The title and description text do not drag: they are selectable.
     async function dragHeader(page: Page, dx: number, dy: number) {
-      const b = await box(header(page).getByRole('heading'))
-      const x = b.x + 20
-      const y = b.y + b.height / 2
+      const { x, y } = await headerGrip(header(page))
       await page.mouse.move(x, y)
       await page.mouse.down()
       await page.mouse.move(x + dx / 2, y + dy / 2, { steps: 6 })
@@ -367,6 +375,70 @@ test.describe('Table fields drawer - complex data', () => {
       await expect(
         drawer(page).getByRole('heading', { name: 'Fields of customers' }),
       ).toBeVisible()
+    })
+
+    test('Ctrl-click window: title, description and cells select by mouse; header padding drags', async ({
+      page,
+    }) => {
+      await openComplexBoard(page)
+      await clickTable(page, 'customers', ['Control'])
+      await expect(drawer(page)).toBeVisible()
+      const d = drawer(page)
+
+      // Drag from the top-left to the bottom-right of a text box, as a user
+      // selects with the mouse; return the selected text. The window must
+      // not move.
+      const dragSelect = async (target: Locator) => {
+        await page.evaluate(() => window.getSelection()?.removeAllRanges())
+        const before = await box(d)
+        const t = await box(target)
+        await page.mouse.move(t.x + 2, t.y + 2)
+        await page.mouse.down()
+        await page.mouse.move(t.x + t.width - 2, t.y + t.height - 2, {
+          steps: 8,
+        })
+        await page.mouse.up()
+        const after = await box(d)
+        expect(after.x).toBeCloseTo(before.x, 0)
+        expect(after.y).toBeCloseTo(before.y, 0)
+        return page.evaluate(() => window.getSelection()?.toString() ?? '')
+      }
+
+      // The header title and description (the drag handle) and a grid cell.
+      const title = d.getByRole('heading').locator('span')
+      expect(await dragSelect(title)).toContain('Fields of customers')
+      const description = d.locator('header p span')
+      expect(await dragSelect(description)).toContain(
+        'People and companies that can place orders.',
+      )
+      const comment = d.getByTestId('fields-drawer-comment').first()
+      expect(await dragSelect(comment)).toContain('Surrogate key.')
+
+      // The selection reaches the clipboard through the native copy event.
+      await dragSelect(title)
+      const copied = await page.evaluate(
+        () =>
+          new Promise<string>((resolve) => {
+            document.addEventListener(
+              'copy',
+              () => resolve(window.getSelection()?.toString() ?? ''),
+              { once: true },
+            )
+            document.execCommand('copy')
+          }),
+      )
+      expect(copied).toContain('Fields of customers')
+
+      // The header area outside the text still drags the window.
+      const before = await box(d)
+      const grip = await headerGrip(header(page))
+      await page.mouse.move(grip.x, grip.y)
+      await page.mouse.down()
+      await page.mouse.move(grip.x - 200, grip.y + 100, { steps: 10 })
+      await page.mouse.up()
+      const after = await box(d)
+      expect(after.x).toBeLessThan(before.x - 150)
+      expect(after.y).toBeGreaterThan(before.y + 50)
     })
 
     test('minimize shows a named block; clicking it restores in place', async ({
@@ -692,15 +764,13 @@ test.describe('Table fields drawer - complex data', () => {
       await expect(blocks(page)).toContainText('companies')
       await expect(windows(page)).toHaveCount(2)
 
-      const head = winFor(page, 'customers')
-        .getByTestId('table-fields-header')
-        .getByRole('heading')
-      const h = await box(head)
+      const h = await headerGrip(
+        winFor(page, 'customers').getByTestId('table-fields-header'),
+      )
       const before = await box(winFor(page, 'customers'))
-      // Grab the top of the title: the lower part sits under the next window.
-      await page.mouse.move(h.x + 20, h.y + 4)
+      await page.mouse.move(h.x, h.y)
       await page.mouse.down()
-      await page.mouse.move(h.x - 180, h.y + 100, { steps: 12 })
+      await page.mouse.move(h.x - 200, h.y + 100, { steps: 12 })
       await page.mouse.up()
       const after = await box(winFor(page, 'customers'))
       expect(after.x).toBeLessThan(before.x - 100)
@@ -718,11 +788,10 @@ test.describe('Table fields drawer - complex data', () => {
       page,
     }) => {
       await openThreeWindows(page)
-      const head = winFor(page, 'customer_orders')
-        .getByTestId('table-fields-header')
-        .getByRole('heading')
-      const h = await box(head)
-      await page.mouse.move(h.x + 20, h.y + h.height / 2)
+      const h = await headerGrip(
+        winFor(page, 'customer_orders').getByTestId('table-fields-header'),
+      )
+      await page.mouse.move(h.x, h.y)
       await page.mouse.down()
       await page.mouse.move(1590, 990, { steps: 12 })
       await page.mouse.up()
