@@ -56,6 +56,75 @@ export function buildReconnectPatch(
   return patch
 }
 
+/** The Socket.IO ack the server returns for a `relationship:update`. */
+export interface RelationshipUpdateAck {
+  ok: boolean
+  code?: string
+  message?: string
+}
+
+/**
+ * True when applying the patch would give the relationship the same
+ * (sourceColumnId, targetColumnId) pair as another relationship — the database
+ * holds a UNIQUE index on that pair, so the server would reject the update.
+ */
+export function wouldDuplicateEndpointPair(
+  edges: ReadonlyArray<RelationshipEdgeType>,
+  oldEdge: RelationshipEdgeType,
+  patch: RelationshipEndpointPatch,
+): boolean {
+  const relationship = oldEdge.data?.relationship
+  if (!relationship) return false
+  const sourceColumnId = patch.sourceColumnId ?? relationship.sourceColumnId
+  const targetColumnId = patch.targetColumnId ?? relationship.targetColumnId
+  return edges.some((e) => {
+    const other = e.data?.relationship
+    return (
+      e.id !== oldEdge.id &&
+      !!other &&
+      other.sourceColumnId === sourceColumnId &&
+      other.targetColumnId === targetColumnId
+    )
+  })
+}
+
+/**
+ * Undo a rejected endpoint patch on the CURRENT edge: restore only the fields
+ * the patch changed, from the edge as it was before the patch. Everything else
+ * on the edge (a peer's concurrent label change, for one) is left as it is now.
+ */
+export function rollbackEndpointPatch(
+  current: RelationshipEdgeType,
+  previous: RelationshipEdgeType,
+  patch: RelationshipEndpointPatch,
+  findColumn: ColumnLookup,
+): RelationshipEdgeType {
+  const before = previous.data?.relationship
+  if (!before) return current
+  const inverse: RelationshipEndpointPatch = {}
+  if (patch.sourceTableId !== undefined) {
+    inverse.sourceTableId = before.sourceTableId
+  }
+  if (patch.sourceColumnId !== undefined) {
+    inverse.sourceColumnId = before.sourceColumnId
+  }
+  if (patch.targetTableId !== undefined) {
+    inverse.targetTableId = before.targetTableId
+  }
+  if (patch.targetColumnId !== undefined) {
+    inverse.targetColumnId = before.targetColumnId
+  }
+  return applyEndpointPatch(
+    current,
+    inverse,
+    (tableId, columnId) =>
+      findColumn(tableId, columnId) ??
+      [before.sourceColumn, before.targetColumn].find(
+        (c) => c.id === columnId,
+      ),
+  )
+}
+
 /**
  * Apply endpoint fields to an edge: node ids, handle ids, and the embedded
  * relationship. Handle sides are kept; side routing re-picks them afterwards.

@@ -24,6 +24,7 @@ const IDS = {
   users: `${P}000000000011`,
   orders: `${P}000000000012`,
   accounts: `${P}000000000013`,
+  regions: `${P}000000000014`,
   usersId: `${P}000000000021`,
   usersEmail: `${P}000000000022`,
   usersName: `${P}000000000023`,
@@ -37,7 +38,12 @@ const IDS = {
   accountsOwner: `${P}000000000042`,
   accountsPlan: `${P}000000000043`,
   accountsRegion: `${P}000000000044`,
+  regionsId: `${P}000000000061`,
+  regionsCode: `${P}000000000062`,
+  regionsName: `${P}000000000063`,
+  regionsTz: `${P}000000000064`,
   relationship: `${P}000000000051`,
+  extraRelationship: `${P}000000000052`,
 }
 
 const SEED_SCRIPT = `
@@ -59,6 +65,7 @@ const table = db.query('INSERT INTO "DiagramTable" (id, whiteboardId, name, desc
 table.run(I.orders, I.whiteboard, 'orders', null, 0, 100, null, null, now, now)
 table.run(I.users, I.whiteboard, 'users', null, 700, 0, null, null, now, now)
 table.run(I.accounts, I.whiteboard, 'accounts', null, 700, 420, null, null, now, now)
+table.run(I.regions, I.whiteboard, 'regions', null, -700, 100, null, null, now, now)
 const col = db.query('INSERT INTO "Column" (id, tableId, name, dataType, isPrimaryKey, isForeignKey, isUnique, isNullable, "order", createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
 const cols = [
   [I.usersId, I.users, 'id', 'UUID', 1, 0],
@@ -74,6 +81,10 @@ const cols = [
   [I.accountsOwner, I.accounts, 'owner_name', 'VARCHAR', 0, 0],
   [I.accountsPlan, I.accounts, 'plan', 'VARCHAR', 0, 0],
   [I.accountsRegion, I.accounts, 'region', 'VARCHAR', 0, 0],
+  [I.regionsId, I.regions, 'id', 'UUID', 1, 0],
+  [I.regionsCode, I.regions, 'code', 'VARCHAR', 0, 0],
+  [I.regionsName, I.regions, 'name', 'VARCHAR', 0, 0],
+  [I.regionsTz, I.regions, 'timezone', 'VARCHAR', 0, 0],
 ]
 const orderOf = {}
 for (const [id, tableId, name, type, pk, fk] of cols) {
@@ -84,6 +95,25 @@ db.query('INSERT INTO "Relationship" (id, whiteboardId, sourceTableId, targetTab
   .run(I.relationship, I.whiteboard, I.orders, I.users, I.ordersUserId, I.usersId, 'MANY_TO_ONE', 'places', null, now, now)
 console.log('[e2e relationship-reconnect] seeded')
 `
+
+const EXTRA_SCRIPT = `
+import { Database } from 'bun:sqlite'
+const db = new Database(process.env.E2E_DB_PATH ?? 'data/app.db')
+db.exec('PRAGMA foreign_keys = ON')
+db.exec('PRAGMA busy_timeout = 30000')
+const I = JSON.parse(process.env.SEED_IDS)
+const now = Date.now()
+db.query('INSERT INTO "Relationship" (id, whiteboardId, sourceTableId, targetTableId, sourceColumnId, targetColumnId, cardinality, label, routingPoints, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+  .run(I.extraRelationship, I.whiteboard, I.orders, I.accounts, I.ordersUserId, I.accountsId, 'MANY_TO_ONE', null, null, now, now)
+`
+
+/** A second line orders.user_id -> accounts.id: dragging line 1's target end
+ *  onto accounts.id would then duplicate the (source, target) column pair. */
+function seedDuplicateTarget() {
+  execFileSync('bun', ['-e', EXTRA_SCRIPT], {
+    env: { ...process.env, SEED_IDS: JSON.stringify(IDS) },
+  })
+}
 
 const READ_SCRIPT = `
 import { Database } from 'bun:sqlite'
@@ -152,7 +182,7 @@ console.log(JSON.stringify({ owner: owner.id, viewer: viewer.id }))`,
 async function openBoard(page: Page) {
   trackAcks(page)
   await page.goto(`/whiteboard/${IDS.whiteboard}`)
-  for (const name of ['orders', 'users', 'accounts']) {
+  for (const name of ['orders', 'users', 'accounts', 'regions']) {
     await expect(tableNode(page, name).first()).toBeVisible()
   }
   await expect(
@@ -164,6 +194,17 @@ async function openBoard(page: Page) {
 
 const edge = (page: Page) =>
   page.locator(`.react-flow__edge[data-id="${IDS.relationship}"]`)
+
+/** First and last point of line 1's path, in flow coordinates. */
+async function pathEnds(page: Page) {
+  return page
+    .locator(`path.react-flow__edge-path[id="${IDS.relationship}"]`)
+    .evaluate((el: SVGPathElement) => {
+      const a = el.getPointAtLength(0)
+      const b = el.getPointAtLength(el.getTotalLength())
+      return { startX: a.x, startY: a.y, endX: b.x, endY: b.y }
+    })
+}
 
 /** Drag one end of the relationship line onto a column handle, in steps. */
 async function dragEnd(
@@ -241,6 +282,7 @@ test('releasing an end on empty canvas snaps back and saves nothing', async ({
   page,
 }) => {
   await openBoard(page)
+  const endsBefore = await pathEnds(page)
   await edge(page).locator('path.react-flow__edge-path').hover({ force: true })
   const grip = await edge(page)
     .locator('.react-flow__edgeupdater-target')
@@ -253,6 +295,9 @@ test('releasing an end on empty canvas snaps back and saves nothing', async ({
   await settle(page)
 
   await expect(edge(page)).toHaveCount(1)
+  const endsAfter = await pathEnds(page)
+  expect(Math.abs(endsAfter.endX - endsBefore.endX)).toBeLessThan(2)
+  expect(Math.abs(endsAfter.endY - endsBefore.endY)).toBeLessThan(2)
   expect(readRelationship()).toEqual(ORIGINAL)
   await page.reload()
   await expect(edge(page)).toHaveCount(1)
@@ -263,6 +308,96 @@ test('a viewer cannot move a line end', async ({ browser }) => {
   const page = await openViewerPage(browser)
   await openBoard(page)
   // No grips are offered at all, and nothing is saved.
+  await expect(edge(page).locator('.react-flow__edgeupdater')).toHaveCount(0)
+  expect(readRelationship()).toEqual(ORIGINAL)
+})
+
+test('a drop that would duplicate an existing column pair is refused with a toast', async ({
+  page,
+}) => {
+  seedDuplicateTarget()
+  await openBoard(page)
+  const endsBefore = await pathEnds(page)
+
+  await dragEnd(
+    page,
+    'target',
+    `${IDS.accounts}__${IDS.accountsId}__left__target`,
+  )
+  await expect(
+    page.getByText(
+      'That relationship already exists between those two columns.',
+    ),
+  ).toBeVisible()
+  await settle(page)
+
+  // Back on its old column on screen, and nothing was saved.
+  const endsAfter = await pathEnds(page)
+  expect(Math.abs(endsAfter.endX - endsBefore.endX)).toBeLessThan(2)
+  expect(Math.abs(endsAfter.endY - endsBefore.endY)).toBeLessThan(2)
+  expect(readRelationship()).toEqual(ORIGINAL)
+  await page.reload()
+  await expect(edge(page)).toHaveCount(1)
+  expect(readRelationship()).toEqual(ORIGINAL)
+})
+
+test('a duplicate the client cannot see is rejected by the server and the line rolls back', async ({
+  page,
+}) => {
+  await openBoard(page)
+  const endsBefore = await pathEnds(page)
+  // Another collaborator's line appears in the database only after this page
+  // loaded, so the client-side duplicate check has nothing to match.
+  seedDuplicateTarget()
+
+  await dragEnd(
+    page,
+    'target',
+    `${IDS.accounts}__${IDS.accountsId}__left__target`,
+  )
+  await expect(
+    page.getByText('Failed to move the relationship end. Please try again.'),
+  ).toBeVisible()
+  await settle(page)
+
+  const endsAfter = await pathEnds(page)
+  expect(Math.abs(endsAfter.endX - endsBefore.endX)).toBeLessThan(2)
+  expect(Math.abs(endsAfter.endY - endsBefore.endY)).toBeLessThan(2)
+  expect(readRelationship()).toEqual(ORIGINAL)
+  await page.reload()
+  await expect(edge(page)).toHaveCount(1)
+  expect(readRelationship()).toEqual(ORIGINAL)
+})
+
+test('the line enters the new table on the side facing its partner', async ({
+  page,
+}) => {
+  await openBoard(page)
+  const before = await pathEnds(page)
+  // Seed sanity: the original target (users) sits right of orders.
+  expect(before.endX).toBeGreaterThan(400)
+
+  // regions sits LEFT of orders (x = -700), so the moved end must arrive on
+  // regions' right side: left of orders, but clear of regions' own left edge.
+  await dragEnd(
+    page,
+    'target',
+    `${IDS.regions}__${IDS.regionsId}__right__target`,
+  )
+  await settle(page)
+
+  expect(readRelationship().targetTableId).toBe(IDS.regions)
+  const after = await pathEnds(page)
+  expect(after.endX).toBeLessThan(0)
+  expect(after.endX).toBeGreaterThan(-650)
+})
+
+test('with the canvas locked no grip is offered and nothing changes', async ({
+  page,
+}) => {
+  await openBoard(page)
+  await page.getByTestId('zoom-menu-trigger').click()
+  await page.getByRole('menuitem', { name: 'Lock canvas' }).click()
   await expect(edge(page).locator('.react-flow__edgeupdater')).toHaveCount(0)
   expect(readRelationship()).toEqual(ORIGINAL)
 })

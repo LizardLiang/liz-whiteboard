@@ -28,6 +28,7 @@ export const sweepZhTW: DeepStringRecord<typeof sweepEn> = {
     relationship: {
       labelFailed: '無法更新關聯標籤，請再試一次。',
       reconnectFailed: '無法移動關聯端點，請再試一次。',
+      reconnectDuplicate: '這兩個欄位之間已存在相同的關聯。',
       deleteFailed: '無法刪除關聯，請再試一次。',
     },
     ddl: {

@@ -146,6 +146,7 @@ import { parseColumnHandleId } from '@/lib/react-flow/edge-routing'
 import {
   applyRelationshipUpdate,
   buildReconnectPatch,
+  wouldDuplicateEndpointPair,
 } from '@/lib/react-flow/relationship-endpoints'
 import { filterValidEdges } from '@/lib/react-flow/highlighting'
 import {
@@ -1874,7 +1875,7 @@ function ReactFlowWhiteboardInner({
   )
 
   // Stable ref for the deleteRelationship callback — prevents stale closures in edge data
-  const { deleteRelationship } = relationshipMutations
+  const { deleteRelationship, reconnectRelationship } = relationshipMutations
   const deleteRelationshipUnlocked = useCallback<typeof deleteRelationship>(
     (...args) => {
       if (canvasLocked) return
@@ -2493,9 +2494,16 @@ function ReactFlowWhiteboardInner({
       if (canvasLocked || !canEdit) return
       const patch = buildReconnectPatch(oldEdge, connection)
       if (!patch || Object.keys(patch).length === 0) return
-      relationshipMutations.reconnectRelationship(oldEdge.id, patch)
+      // The database holds a UNIQUE (sourceColumnId, targetColumnId) pair:
+      // refuse a duplicate here so nothing is sent. The server's ack rollback
+      // stays as the backstop for pairs this client cannot see.
+      if (wouldDuplicateEndpointPair(edgesRef.current, oldEdge, patch)) {
+        toast.error(t('hooks.relationship.reconnectDuplicate'))
+        return
+      }
+      reconnectRelationship(oldEdge.id, patch)
     },
-    [canvasLocked, canEdit, relationshipMutations],
+    [canvasLocked, canEdit, reconnectRelationship, t],
   )
 
   // ── Canvas comments (GH #110) ──────────────────────────────────────────────

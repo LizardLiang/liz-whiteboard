@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { useRelationshipMutations } from './use-relationship-mutations'
 import type { Mock } from 'vitest'
 import type { RelationshipEdgeType } from '@/lib/react-flow/types'
+import { wouldDuplicateEndpointPair } from '@/lib/react-flow/relationship-endpoints'
 
 vi.mock('sonner', () => ({
   toast: {
@@ -239,6 +240,10 @@ describe('useRelationshipMutations', () => {
 })
 
 describe('useRelationshipMutations — reconnectRelationship', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   const buildHarness = () => {
     let edges = [makeEdge('rel-001')]
     const setEdges = vi.fn((updater: any) => {
@@ -260,33 +265,101 @@ describe('useRelationshipMutations — reconnectRelationship', () => {
       })
     })
     expect(getEdges()[0].target).toBe('tbl-003')
-    expect(emitUpdate).toHaveBeenCalledWith('rel-001', {
-      targetTableId: 'tbl-003',
-      targetColumnId: 'col-x',
-    })
+    expect(emitUpdate).toHaveBeenCalledWith(
+      'rel-001',
+      { targetTableId: 'tbl-003', targetColumnId: 'col-x' },
+      expect.any(Function),
+    )
   })
 
-  it('rollback restores every endpoint and handle, and toasts a reconnect error', () => {
-    const { result, getEdges } = buildHarness()
-    const before = getEdges()[0]
+  it('an ack ok:false rolls back only the endpoint fields and keeps a newer label', () => {
+    let ack: ((res: any) => void) | undefined
+    let edges = [makeEdge('rel-001')]
+    const setEdges = vi.fn((updater: any) => {
+      edges = typeof updater === 'function' ? updater(edges) : updater
+    })
+    const emitUpdate = vi.fn((_id, _patch, cb) => {
+      ack = cb
+    })
+    const { result } = renderHook(() =>
+      useRelationshipMutations(setEdges, vi.fn(), true, emitUpdate),
+    )
+    const before = edges[0]
     act(() => {
       result.current.reconnectRelationship('rel-001', {
-        sourceTableId: 'tbl-009',
-        sourceColumnId: 'col-s',
         targetTableId: 'tbl-003',
         targetColumnId: 'col-x',
       })
     })
-    expect(getEdges()[0].source).toBe('tbl-009')
-    act(() => {
-      result.current.onRelationshipError({
-        event: 'relationship:update',
-        relationshipId: 'rel-001',
-      })
-    })
-    expect(getEdges()[0]).toEqual(before)
+    expect(edges[0].target).toBe('tbl-003')
+
+    // A peer relabels the line while the reconnect is in flight.
+    edges = edges.map((e) => ({ ...e, data: { ...e.data!, label: 'newer' } }))
+
+    act(() => ack!({ ok: false, code: 'VALIDATION_ERROR' }))
+
+    expect(edges[0].target).toBe(before.target)
+    expect(edges[0].targetHandle).toBe(
+      before.targetHandle ?? edges[0].targetHandle,
+    )
+    expect(edges[0].data!.relationship.targetTableId).toBe('tbl-002')
+    expect(edges[0].data!.relationship.targetColumnId).toBe('col-pk')
+    expect(edges[0].data!.relationship.sourceTableId).toBe('tbl-001')
+    expect(edges[0].data!.label).toBe('newer')
     expect(toast.error).toHaveBeenLastCalledWith(
       'Failed to move the relationship end. Please try again.',
+    )
+  })
+
+  it('an ack ok:true keeps the new endpoints and shows no toast', () => {
+    let ack: ((res: any) => void) | undefined
+    let edges = [makeEdge('rel-001')]
+    const setEdges = vi.fn((updater: any) => {
+      edges = typeof updater === 'function' ? updater(edges) : updater
+    })
+    const { result } = renderHook(() =>
+      useRelationshipMutations(
+        setEdges,
+        vi.fn(),
+        true,
+        vi.fn((_id, _patch, cb) => {
+          ack = cb
+        }),
+      ),
+    )
+    act(() => {
+      result.current.reconnectRelationship('rel-001', { targetColumnId: 'c' })
+    })
+    act(() => ack!({ ok: true }))
+    expect(edges[0].data!.relationship.targetColumnId).toBe('c')
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it('a failed label edit rolls back the label and toasts the label error', () => {
+    let ack: ((res: any) => void) | undefined
+    let edges = [makeEdge('rel-001')]
+    edges[0] = { ...edges[0], data: { ...edges[0].data!, label: 'old' } }
+    const setEdges = vi.fn((updater: any) => {
+      edges = typeof updater === 'function' ? updater(edges) : updater
+    })
+    const { result } = renderHook(() =>
+      useRelationshipMutations(
+        setEdges,
+        vi.fn(),
+        true,
+        vi.fn((_id, _patch, cb) => {
+          ack = cb
+        }),
+      ),
+    )
+    act(() => {
+      result.current.updateRelationshipLabel('rel-001', 'new')
+    })
+    expect(edges[0].data!.label).toBe('new')
+    act(() => ack!({ ok: false }))
+    expect(edges[0].data!.label).toBe('old')
+    expect(toast.error).toHaveBeenLastCalledWith(
+      'Failed to update relationship label. Please try again.',
     )
   })
 
@@ -301,5 +374,32 @@ describe('useRelationshipMutations — reconnectRelationship', () => {
     })
     expect(setEdges).not.toHaveBeenCalled()
     expect(emitUpdate).not.toHaveBeenCalled()
+  })
+})
+
+describe('wouldDuplicateEndpointPair', () => {
+  const other = makeEdge('rel-002')
+  other.data!.relationship = {
+    ...other.data!.relationship,
+    sourceColumnId: 'col-fk2',
+    targetColumnId: 'col-pk2',
+  }
+
+  it('is true when the merged pair equals another relationship', () => {
+    const mine = makeEdge('rel-001')
+    expect(
+      wouldDuplicateEndpointPair([mine, other], mine, {
+        sourceColumnId: 'col-fk2',
+        targetColumnId: 'col-pk2',
+      }),
+    ).toBe(true)
+  })
+
+  it('is false for a free pair and ignores the edge itself', () => {
+    const mine = makeEdge('rel-001')
+    expect(
+      wouldDuplicateEndpointPair([mine, other], mine, { targetColumnId: 'z' }),
+    ).toBe(false)
+    expect(wouldDuplicateEndpointPair([mine, other], mine, {})).toBe(false)
   })
 })

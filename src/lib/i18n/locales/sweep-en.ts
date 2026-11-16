@@ -27,6 +27,8 @@ export const sweepEn = {
     relationship: {
       labelFailed: 'Failed to update relationship label. Please try again.',
       reconnectFailed: 'Failed to move the relationship end. Please try again.',
+      reconnectDuplicate:
+        'That relationship already exists between those two columns.',
       deleteFailed: 'Failed to delete relationship. Please try again.',
     },
     ddl: {

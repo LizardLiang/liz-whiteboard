@@ -7,7 +7,10 @@ import { toast } from 'sonner'
 import { useCollaboration } from './use-collaboration'
 import type { TableErrorEvent } from './use-table-mutations'
 import type { RelationshipErrorEvent } from './use-relationship-mutations'
-import type { RelationshipUpdatePatch } from '@/lib/react-flow/relationship-endpoints'
+import type {
+  RelationshipUpdateAck,
+  RelationshipUpdatePatch,
+} from '@/lib/react-flow/relationship-endpoints'
 import type { DiagramTable } from '@/data/models'
 import type { AreaBounds } from '@/data/schema'
 import { useT } from '@/lib/i18n/use-t'
@@ -284,8 +287,9 @@ export function useWhiteboardCollaboration(
         updatedBy: string
       },
     ) => {
-      // Ignore if we updated it (already applied optimistically)
-      if (data.updatedBy === userId) return
+      // No self-filter: the server broadcasts with socket.broadcast, which
+      // already skips the sending socket. A matching updatedBy is the same
+      // user's other tab or the MCP agent, and must be applied.
       const { relationshipId, updatedBy: _updatedBy, ...patch } = data
       onRelationshipUpdated(relationshipId, patch)
     }
@@ -294,7 +298,7 @@ export function useWhiteboardCollaboration(
     return () => {
       off('relationship:updated', handleRelationshipUpdated)
     }
-  }, [on, off, userId, onRelationshipUpdated])
+  }, [on, off, onRelationshipUpdated])
 
   // Listen for table update events from other users (table-comment: currently
   // only the `description` field is emitted, but the payload is generic per
@@ -458,8 +462,12 @@ export function useWhiteboardCollaboration(
 
   // Emit a relationship update (label and/or endpoints) to server
   const emitRelationshipUpdate = useCallback(
-    (relationshipId: string, patch: RelationshipUpdatePatch) => {
-      emit('relationship:update', { relationshipId, ...patch })
+    (
+      relationshipId: string,
+      patch: RelationshipUpdatePatch,
+      ack?: (res: RelationshipUpdateAck) => void,
+    ) => {
+      emit('relationship:update', { relationshipId, ...patch }, ack)
     },
     [emit],
   )

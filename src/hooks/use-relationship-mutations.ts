@@ -12,9 +12,13 @@ import type { RelationshipEdgeType } from '@/lib/react-flow/types'
 import type {
   ColumnLookup,
   RelationshipEndpointPatch,
+  RelationshipUpdateAck,
   RelationshipUpdatePatch,
 } from '@/lib/react-flow/relationship-endpoints'
-import { applyEndpointPatch } from '@/lib/react-flow/relationship-endpoints'
+import {
+  applyEndpointPatch,
+  rollbackEndpointPatch,
+} from '@/lib/react-flow/relationship-endpoints'
 import { useT } from '@/lib/i18n/use-t'
 import { tError } from '@/lib/i18n/t-error'
 import { NOT_CONNECTED_TOAST_MESSAGE } from '@/lib/react-flow/types'
@@ -24,7 +28,7 @@ type SetEdges = React.Dispatch<
 >
 
 interface PendingRelationshipMutation {
-  type: 'delete' | 'update' | 'reconnect'
+  type: 'delete'
   rollback: () => void
 }
 
@@ -40,7 +44,12 @@ export function useRelationshipMutations(
   emitRelationshipDelete: ((relationshipId: string) => void) | null,
   isConnected: boolean,
   emitRelationshipUpdate?:
-    ((relationshipId: string, patch: RelationshipUpdatePatch) => void) | null,
+    | ((
+        relationshipId: string,
+        patch: RelationshipUpdatePatch,
+        ack?: (res: RelationshipUpdateAck) => void,
+      ) => void)
+    | null,
   findColumn?: ColumnLookup,
 ) {
   /**
@@ -114,10 +123,11 @@ export function useRelationshipMutations(
         )
       })
 
-      // Store rollback closure that restores the previous label value
-      pendingMutations.current.set(relationshipId, {
-        type: 'update',
-        rollback: () => {
+      // The ack ties a failure to THIS request, so a failed label edit can
+      // never roll back a later change to the same relationship.
+      if (emitRelationshipUpdate) {
+        emitRelationshipUpdate(relationshipId, { label }, (res) => {
+          if (res.ok) return
           setEdges((prev) =>
             prev.map((e) =>
               e.id === relationshipId
@@ -125,12 +135,8 @@ export function useRelationshipMutations(
                 : e,
             ),
           )
-        },
-      })
-
-      // Emit via WebSocket
-      if (emitRelationshipUpdate) {
-        emitRelationshipUpdate(relationshipId, { label })
+          toast.error(t('hooks.relationship.labelFailed'))
+        })
       }
     },
     [isConnected, setEdges, emitRelationshipUpdate, t],
@@ -138,8 +144,8 @@ export function useRelationshipMutations(
 
   /**
    * Move one or both ends of a relationship to other columns: apply the new
-   * endpoints optimistically, emit only the changed fields, and restore the
-   * whole previous edge if the server rejects the change.
+   * endpoints optimistically, emit only the changed fields, and — if the
+   * server rejects the change — undo just those endpoint fields.
    */
   const reconnectRelationship = useCallback(
     (relationshipId: string, patch: RelationshipEndpointPatch) => {
@@ -158,42 +164,32 @@ export function useRelationshipMutations(
         )
       })
 
-      pendingMutations.current.set(relationshipId, {
-        type: 'reconnect',
-        rollback: () => {
-          if (!previousEdge) return
-          setEdges((prev) =>
-            prev.map((e) => (e.id === relationshipId ? previousEdge! : e)),
-          )
-        },
-      })
-
       if (emitRelationshipUpdate) {
-        emitRelationshipUpdate(relationshipId, patch)
+        emitRelationshipUpdate(relationshipId, patch, (res) => {
+          if (res.ok || !previousEdge) return
+          const before = previousEdge
+          setEdges((prev) =>
+            prev.map((e) =>
+              e.id === relationshipId
+                ? rollbackEndpointPatch(e, before, patch, lookup)
+                : e,
+            ),
+          )
+          toast.error(t('hooks.relationship.reconnectFailed'))
+        })
       }
     },
     [isConnected, setEdges, emitRelationshipUpdate, findColumn, t],
   )
 
   /**
-   * Called by useWhiteboardCollaboration when server sends an error event for
-   * relationship:delete or relationship:update.
-   * Finds the pending mutation and invokes its rollback.
+   * Called by useWhiteboardCollaboration when the server sends an error event
+   * for relationship:delete. Finds the pending mutation and invokes its
+   * rollback. (relationship:update failures come back on the request's own ack.)
    */
   const onRelationshipError = useCallback(
     (data: RelationshipErrorEvent) => {
-      const pendingKind = data.relationshipId
-        ? pendingMutations.current.get(data.relationshipId)?.type
-        : undefined
-      if (data.event === 'relationship:update') {
-        toast.error(
-          pendingKind === 'reconnect'
-            ? t('hooks.relationship.reconnectFailed')
-            : t('hooks.relationship.labelFailed'),
-        )
-      } else {
-        toast.error(t('hooks.relationship.deleteFailed'))
-      }
+      toast.error(t('hooks.relationship.deleteFailed'))
 
       if (data.relationshipId) {
         const pending = pendingMutations.current.get(data.relationshipId)
