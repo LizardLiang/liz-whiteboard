@@ -28,6 +28,7 @@ import {
 import { _resetKeyPairForTests, getSigningKeyPair } from '@/lib/oauth/keys'
 import { upsertProjectMember } from '@/data/permission'
 import { listTableReferences } from '@/data/table-reference'
+import { db } from '@/db'
 import {
   makeColumn,
   makeProject,
@@ -209,7 +210,9 @@ describe('/api/table-references operations', () => {
 
     const first = await handleTableReferenceRequest(post(body, token))
     expect(first.status).toBe(200)
-    const payload = (await first.json()) as { reference: { table: { id: string } } }
+    const payload = (await first.json()) as {
+      reference: { table: { id: string } }
+    }
     expect(payload.reference.table.id).toBe(id)
 
     const again = await handleTableReferenceRequest(post(body, token))
@@ -368,6 +371,51 @@ describe('/api/table-references operations', () => {
 
     expect(res.status).toBe(200)
     expect(await listTableReferences(local.id)).toHaveLength(0)
+  })
+
+  it('records a create, a re-target and a delete as events marked as the AI agent', async () => {
+    const { owner, local, source, sourceTable, idCol } = await setup()
+    const nameCol = makeColumn({
+      tableId: sourceTable.id,
+      name: 'name',
+      order: 1,
+    })
+    const token = await mintCollabToken(owner.id)
+    const call = async (body: unknown) =>
+      (await (await handleTableReferenceRequest(post(body, token))).json()) as {
+        reference: { table: { id: string } }
+      }
+
+    const created = await call({
+      op: 'create',
+      whiteboardId: local.id,
+      sourceWhiteboardId: source.id,
+      sourceTableId: sourceTable.id,
+      sourceColumnIds: [idCol.id],
+    })
+    await call({
+      op: 'update',
+      tableId: created.reference.table.id,
+      sourceColumnIds: [nameCol.id],
+    })
+    await call({ op: 'delete', tableId: created.reference.table.id })
+
+    const rows = db
+      .prepare(
+        'SELECT "action","whiteboardId","actorUserId","viaAgent" FROM "SchemaChangeEvent" WHERE "entityType" = \'reference\' ORDER BY "createdAt","rowid"',
+      )
+      .all() as Array<{
+      action: string
+      whiteboardId: string
+      actorUserId: string
+      viaAgent: number
+    }>
+    expect(rows.map((r) => r.action)).toEqual(['create', 'update', 'delete'])
+    for (const row of rows) {
+      expect(row.whiteboardId).toBe(local.id)
+      expect(row.actorUserId).toBe(owner.id)
+      expect(row.viaAgent).toBe(1)
+    }
   })
 })
 

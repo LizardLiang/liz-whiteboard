@@ -237,7 +237,7 @@ export async function handleTableReferenceRequest(
           positionX: body.positionX,
           positionY: body.positionY,
         },
-        userContext(body.whiteboardId, userId),
+        userContext(body.whiteboardId, userId, { viaAgent: true }),
       )
       return jsonOk({ reference })
     }
@@ -259,7 +259,7 @@ export async function handleTableReferenceRequest(
             ? { sourceColumnIds: body.sourceColumnIds }
             : {}),
         },
-        userContext(whiteboardId, userId),
+        userContext(whiteboardId, userId, { viaAgent: true }),
       )
       return jsonOk({
         reference: result.reference,
@@ -273,7 +273,7 @@ export async function handleTableReferenceRequest(
       }
       const reference = await deleteTableReference(
         body.tableId,
-        userContext(whiteboardId, userId),
+        userContext(whiteboardId, userId, { viaAgent: true }),
       )
       return jsonOk({ reference })
     }
