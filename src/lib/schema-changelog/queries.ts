@@ -50,7 +50,7 @@ const EVENT_COLUMNS =
 function asRecord(value: unknown): ChangeFieldsDto | null {
   const parsed = fromDbJson(value)
   return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
-    ? (parsed)
+    ? parsed
     : null
 }
 
@@ -141,6 +141,27 @@ function restoredVersionOf(
   }
 }
 
+/** The table (or area) a table-delete or area-move batch is about. */
+function subjectOf(
+  whiteboardId: string,
+  batchId: string,
+  batchKind: string | null,
+): string | null {
+  const types =
+    batchKind === 'table-delete'
+      ? `('table','reference')`
+      : batchKind === 'area-move'
+        ? `('area')`
+        : null
+  if (types === null) return null
+  const row = db
+    .prepare(
+      `SELECT "entityName" FROM "SchemaChangeEvent" WHERE "whiteboardId" = ? AND "batchId" = ? AND "entityType" IN ${types} ORDER BY "rowid" DESC LIMIT 1`,
+    )
+    .get(whiteboardId, batchId) as { entityName: string | null } | undefined
+  return row?.entityName ?? null
+}
+
 function summariseBatch(
   whiteboardId: string,
   batchId: string,
@@ -169,6 +190,7 @@ function summariseBatch(
   return {
     batchId,
     batchKind: first.batchKind,
+    subject: subjectOf(whiteboardId, batchId, first.batchKind),
     actorUserId: first.actorUserId,
     actorName: first.actorName,
     viaAgent: fromDbBool(first.viaAgent),

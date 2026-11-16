@@ -51,6 +51,8 @@ export interface BatchSummaryDto {
   total: number
   counts: Array<BatchCountDto>
   restoredVersion: RestoredVersionDto | null
+  /** Name of the table or area a table-delete or area-move batch acted on. */
+  subject: string | null
 }
 
 export type ChangeListItem =

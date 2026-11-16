@@ -82,7 +82,7 @@ function events(): Array<EventRow> {
     .all() as unknown as Array<EventRow>
 }
 
-async function setup() {
+function setup() {
   const user = makeUser({ username: 'sf_editor' })
   const project = makeProject({ ownerId: user.id })
   const wb = makeWhiteboard({ projectId: project.id })
@@ -109,7 +109,7 @@ beforeEach(() => {
 
 describe('column server functions record an event as the session user', () => {
   it('createColumnFn', async () => {
-    const { user, wb, table } = await setup()
+    const { user, wb, table } = setup()
     await createColumnFn({
       data: { tableId: table.id, name: 'phone', dataType: 'string', order: 1 },
     })
@@ -128,7 +128,7 @@ describe('column server functions record an event as the session user', () => {
   })
 
   it('createColumnsFn logs one event per column, in the client batch', async () => {
-    const { wb, table } = await setup()
+    const { wb, table } = setup()
     await createColumnsFn({
       data: {
         batchId: 'import-batch-1',
@@ -147,7 +147,7 @@ describe('column server functions record an event as the session user', () => {
   })
 
   it('updateColumnFn', async () => {
-    const { column } = await setup()
+    const { column } = setup()
     await updateColumnFn({
       data: { id: column.id, data: { name: 'email' } },
     })
@@ -163,7 +163,7 @@ describe('column server functions record an event as the session user', () => {
   })
 
   it('updateColumnOrderFn', async () => {
-    const { column } = await setup()
+    const { column } = setup()
     await updateColumnOrderFn({ data: { id: column.id, order: 5 } })
     expect(events()).toMatchObject([
       { entityType: 'column', action: 'reorder', actorName: 'sf_editor' },
@@ -171,7 +171,7 @@ describe('column server functions record an event as the session user', () => {
   })
 
   it('deleteColumnFn', async () => {
-    const { column } = await setup()
+    const { column } = setup()
     await deleteColumnFn({ data: column.id })
     expect(events()).toMatchObject([
       {
@@ -187,7 +187,7 @@ describe('column server functions record an event as the session user', () => {
 
 describe('position server functions record layout events', () => {
   it('updateTablePosition', async () => {
-    const { table, wb } = await setup()
+    const { table, wb } = setup()
     await updateTablePosition({
       data: { id: table.id, positionX: 120, positionY: 80 },
     })
@@ -204,7 +204,7 @@ describe('position server functions record layout events', () => {
   })
 
   it('updateTablePositionsBulk shares one batch of the caller kind', async () => {
-    const { table, wb } = await setup()
+    const { table, wb } = setup()
     const second = makeTable({ whiteboardId: wb.id, name: 'orders' })
     await updateTablePositionsBulk({
       data: {
@@ -227,7 +227,7 @@ describe('position server functions record layout events', () => {
 
 describe('table reference server functions record events', () => {
   it('create, update and delete', async () => {
-    const { wb, other, table, column } = await setup()
+    const { wb, other, table, column } = setup()
     const idCol = makeColumn({ tableId: table.id, name: 'id', order: 2 })
 
     const created = (await createTableReferenceFn({
