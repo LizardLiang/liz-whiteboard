@@ -79,7 +79,7 @@ interface EventRow {
 function events(): Array<EventRow> {
   return db
     .prepare('SELECT * FROM "SchemaChangeEvent" ORDER BY "createdAt", "rowid"')
-    .all() as Array<EventRow>
+    .all() as unknown as Array<EventRow>
 }
 
 async function setup() {

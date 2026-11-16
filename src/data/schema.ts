@@ -727,6 +727,48 @@ export const getSnapshotSchema = z.object({
   snapshotId: z.string().uuid(),
 })
 
+/**
+ * Filters shared by the change-log list and its batch expansion. `from`/`to`
+ * are epoch milliseconds; `viaAgent: true` keeps only AI-agent edits.
+ */
+const changeFilterShape = {
+  tableName: z.string().min(1).max(255).optional(),
+  actorUserId: z.string().uuid().optional(),
+  viaAgent: z.boolean().optional(),
+  from: z.number().int().nonnegative().optional(),
+  to: z.number().int().nonnegative().optional(),
+  q: z.string().max(200).optional(),
+  includeLayout: z.boolean().default(false),
+}
+
+/** Schema for listing a whiteboard's schema changes, newest first. */
+export const listSchemaChangesSchema = z.object({
+  whiteboardId: z.string().uuid(),
+  /** Opaque cursor from the previous page's `nextCursor`. */
+  cursor: z.string().max(64).optional(),
+  limit: z.number().int().min(1).max(100).default(50),
+  ...changeFilterShape,
+})
+
+/** Schema for loading the items of one batch (cursor pages by rowid). */
+export const getSchemaChangeBatchSchema = z.object({
+  whiteboardId: z.string().uuid(),
+  batchId: z.string().min(1).max(64),
+  cursor: z.number().int().nonnegative().optional(),
+  limit: z.number().int().min(1).max(200).default(100),
+  tableName: changeFilterShape.tableName,
+  includeLayout: changeFilterShape.includeLayout,
+})
+
+/** Schema for the filter pickers of the Changes tab. */
+export const listChangeLogFacetsSchema = z.object({
+  whiteboardId: z.string().uuid(),
+})
+
+export type ListSchemaChanges = z.infer<typeof listSchemaChangesSchema>
+export type GetSchemaChangeBatch = z.infer<typeof getSchemaChangeBatchSchema>
+export type ListChangeLogFacets = z.infer<typeof listChangeLogFacetsSchema>
+
 export type SaveSnapshot = z.infer<typeof saveSnapshotSchema>
 export type RestoreSnapshot = z.infer<typeof restoreSnapshotSchema>
 export type ListSnapshots = z.infer<typeof listSnapshotsSchema>
