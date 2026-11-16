@@ -45,6 +45,7 @@ import {
   ForbiddenError,
   requireServerFnRole,
 } from '@/lib/auth/require-role'
+// eslint-disable-next-line import/first
 import { SYSTEM } from '@/lib/schema-changelog'
 
 const mockGetTableProjectId = vi.mocked(getTableProjectId)

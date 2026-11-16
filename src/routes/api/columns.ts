@@ -3,6 +3,7 @@
 
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
+import type { ChangeContext } from '@/lib/schema-changelog'
 import { clientErrorMessage } from '@/lib/client-error'
 import {
   createColumn,
@@ -33,7 +34,6 @@ import {
 import { logSampledError } from '@/lib/auth/log-sample'
 import { clientBatchSchema } from '@/lib/schema-changelog/client-batch'
 import { userContext, withClientBatch } from '@/lib/schema-changelog'
-import type { ChangeContext } from '@/lib/schema-changelog'
 
 /** The context for a write on a column's whiteboard. The caller passed a role check on it first. */
 async function columnContext(
