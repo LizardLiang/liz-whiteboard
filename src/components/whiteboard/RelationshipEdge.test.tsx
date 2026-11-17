@@ -254,9 +254,7 @@ describe('RelationshipEdge delete button', () => {
 
   it('TC-RD-02-14: delete button still renders (and still deletes the line, not the label) on an edge that HAS a label — #52 point 3', () => {
     const onDelete = vi.fn()
-    renderEdge(
-      makeEdgeProps({ selected: true, label: 'belongs to', onDelete }),
-    )
+    renderEdge(makeEdgeProps({ selected: true, label: 'belongs to', onDelete }))
 
     // The label pill is present...
     expect(screen.getByText('belongs to')).toBeDefined()
@@ -267,5 +265,49 @@ describe('RelationshipEdge delete button', () => {
     fireEvent.click(button)
     expect(onDelete).toHaveBeenCalledOnce()
     expect(onDelete).toHaveBeenCalledWith(VALID_RELATIONSHIP_ID)
+  })
+})
+
+describe('RelationshipEdge routed path', () => {
+  beforeEach(() => {
+    cleanup()
+  })
+
+  // Endpoints sit at (0,0) and (100,100); markers shorten the path ends.
+  const ROUTE = [
+    { x: 0, y: 0 },
+    { x: 16, y: 0 },
+    { x: 16, y: 50 },
+    { x: 84, y: 50 },
+    { x: 84, y: 100 },
+    { x: 100, y: 100 },
+  ]
+
+  it('draws the router path instead of the smooth-step path when the route ends match the handles', () => {
+    const props = makeEdgeProps()
+    props.data.route = ROUTE
+    const { container } = renderEdge(props)
+    const d = container
+      .querySelector('path.react-flow__edge-path')!
+      .getAttribute('d')!
+    expect(d).toMatch(/^M /)
+    expect(d).toContain('Q ')
+    expect(d).not.toBe('M 0 0 L 100 100')
+  })
+
+  it('falls back to the smooth-step path when the route is stale', () => {
+    const props = makeEdgeProps()
+    props.data.route = ROUTE.map((p) => ({ x: p.x + 40, y: p.y }))
+    const { container } = renderEdge(props)
+    expect(
+      container.querySelector('path.react-flow__edge-path')!.getAttribute('d'),
+    ).toBe('M 0 0 L 100 100')
+  })
+
+  it('draws the smooth-step path when there is no route', () => {
+    const { container } = renderEdge(makeEdgeProps())
+    expect(
+      container.querySelector('path.react-flow__edge-path')!.getAttribute('d'),
+    ).toBe('M 0 0 L 100 100')
   })
 })

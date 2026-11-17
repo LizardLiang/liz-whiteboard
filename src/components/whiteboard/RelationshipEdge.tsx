@@ -24,6 +24,10 @@ import {
   nodeObstacleRect,
   placeEdgeLabel,
 } from '@/lib/react-flow/edge-label-placement'
+import {
+  buildRoundedOrthogonalPath,
+  pathMidpoint,
+} from '@/lib/react-flow/orthogonal-path'
 import { useT } from '@/lib/i18n/use-t'
 
 // ── Layout constants ──
@@ -289,6 +293,47 @@ function indicatorExtent(isMany: boolean): number {
   return multExt + OPT_GAP + CIRCLE_R
 }
 
+/** How close (px) a route end must be to the live handle for the route to count as fresh. */
+const ROUTE_END_TOLERANCE = 1
+
+/**
+ * The route to draw: the cached route when both ends still sit on the live
+ * handles, shortened at each end to stop before the cardinality icon. Null
+ * when there is no route or it is stale.
+ */
+function freshRoutePoints(
+  route: ReadonlyArray<{ x: number; y: number }> | undefined,
+  source: { x: number; y: number },
+  target: { x: number; y: number },
+  srcExt: number,
+  tgtExt: number,
+): Array<{ x: number; y: number }> | null {
+  if (!route || route.length < 2) return null
+  const first = route[0]
+  const last = route[route.length - 1]
+  if (
+    Math.abs(first.x - source.x) > ROUTE_END_TOLERANCE ||
+    Math.abs(first.y - source.y) > ROUTE_END_TOLERANCE ||
+    Math.abs(last.x - target.x) > ROUTE_END_TOLERANCE ||
+    Math.abs(last.y - target.y) > ROUTE_END_TOLERANCE
+  ) {
+    return null
+  }
+  const pts = route.map((p) => ({ ...p }))
+  const shorten = (from: number, toward: number, by: number) => {
+    const a = pts[from]
+    const b = pts[toward]
+    const len = Math.hypot(b.x - a.x, b.y - a.y)
+    if (len === 0) return
+    const d = Math.min(by, len / 2)
+    a.x += ((b.x - a.x) / len) * d
+    a.y += ((b.y - a.y) / len) * d
+  }
+  shorten(0, 1, srcExt)
+  shorten(pts.length - 1, pts.length - 2, tgtExt)
+  return pts
+}
+
 // Label box = pill + flex gap (4) + delete button slot (24, always in the DOM).
 const LABEL_BUTTON_SLOT = 28
 const LABEL_BUTTON_SIZE = 24
@@ -443,16 +488,55 @@ export const RelationshipEdge = memo(
     const defaultCenterX = (adjSourceX + adjTargetX) / 2
     const bundledCenterX = defaultCenterX + bundleXOff
 
-    const [edgePath, labelX, labelY] = getSmoothStepPath({
-      sourceX: adjSourceX,
-      sourceY: bundledSourceY,
+    // A router path replaces the smooth-step one while its ends still sit on
+    // the live handles. A stale route (a table moved and the pass has not run
+    // yet) or no route at all draws the smooth-step path below.
+    const routedPoints = useMemo(
+      () =>
+        freshRoutePoints(
+          data?.route,
+          { x: sourceX, y: sourceY + bundleYOff },
+          { x: targetX, y: targetY + bundleYOff },
+          srcExt,
+          tgtExt,
+        ),
+      [
+        data?.route,
+        sourceX,
+        sourceY,
+        targetX,
+        targetY,
+        bundleYOff,
+        srcExt,
+        tgtExt,
+      ],
+    )
+
+    const [edgePath, labelX, labelY] = useMemo(() => {
+      if (routedPoints) {
+        const mid = pathMidpoint(routedPoints)
+        return [buildRoundedOrthogonalPath(routedPoints), mid.x, mid.y] as const
+      }
+      return getSmoothStepPath({
+        sourceX: adjSourceX,
+        sourceY: bundledSourceY,
+        sourcePosition,
+        targetX: adjTargetX,
+        targetY: bundledTargetY,
+        targetPosition,
+        borderRadius: 16,
+        centerX: bundledCenterX,
+      })
+    }, [
+      routedPoints,
+      adjSourceX,
+      bundledSourceY,
       sourcePosition,
-      targetX: adjTargetX,
-      targetY: bundledTargetY,
+      adjTargetX,
+      bundledTargetY,
       targetPosition,
-      borderRadius: 16,
-      centerX: bundledCenterX,
-    })
+      bundledCenterX,
+    ])
 
     // Clamp the label's X position so the pill doesn't overlap either endpoint
     // table body. getSmoothStepPath returns the geometric path midpoint; for
@@ -460,15 +544,18 @@ export const RelationshipEdge = memo(
     // can extend back over the source table. The clamp ensures:
     //   right→right: pill left edge ≥ max(sourceX, targetX) + margin
     //   left→left:   pill right edge ≤ min(sourceX, targetX) − margin
+    // A router path already clears the tables, so it skips the clamp.
     const labelPillWidth = computeLabelPillWidth(label ?? '')
-    const displayLabelX = clampSameSideLabelX(
-      labelX,
-      labelPillWidth,
-      sourceX,
-      sourcePosition,
-      targetX,
-      targetPosition,
-    )
+    const displayLabelX = routedPoints
+      ? labelX
+      : clampSameSideLabelX(
+          labelX,
+          labelPillWidth,
+          sourceX,
+          sourcePosition,
+          targetX,
+          targetPosition,
+        )
 
     // Slide the label along its own line to the nearest point no table covers.
     // The canvas layer paints tables above edge labels, so a covered label is

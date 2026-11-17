@@ -296,6 +296,31 @@ export interface RelationshipEdgeData extends Record<string, unknown> {
    * edge is not in a bundle.
    */
   bundleCenterXOffset?: number
+
+  /**
+   * Orthogonal route, port to port, in absolute flow coordinates, computed by
+   * recalculateEdgeRouting() (edge-bundles.ts) so the line clears every table.
+   * RelationshipEdge.tsx draws it with rounded corners when its end points
+   * still match the live handles; otherwise (or when absent) it draws
+   * getSmoothStepPath. Already nudged apart from parallel lines.
+   */
+  route?: Array<{ x: number; y: number }>
+
+  /**
+   * The router output before parallel lines are nudged apart. The nudge reads
+   * every edge's base route, so it is kept to re-run the nudge without
+   * re-routing. Set and cleared together with `route`.
+   */
+  routeBase?: Array<{ x: number; y: number }>
+
+  /**
+   * Cache key of the inputs the route was computed from (endpoint rects,
+   * ports, current sides, and the obstacles in the routing window, or all
+   * obstacles when the key starts with `X|`). Equal key means the route is
+   * unchanged. Kept without `route` when routing found nothing, so a failed
+   * search is not repeated every pass.
+   */
+  routeKey?: string
 }
 
 /**

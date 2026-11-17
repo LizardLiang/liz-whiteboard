@@ -16,6 +16,7 @@ import {
   useNodesInitialized,
   useNodesState,
   useReactFlow,
+  useStoreApi,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import '@/styles/react-flow-theme.css'
@@ -55,6 +56,8 @@ import type {
   AffordanceRequest,
   InitialEditingField,
 } from '@/lib/react-flow/canvas-mode'
+import type { RouteGeometry } from '@/lib/react-flow/edge-route-pass'
+import type { Rect } from '@/lib/react-flow/edge-label-placement'
 import { isDrawGestureTool } from '@/lib/react-flow/tool-mode'
 import { useSpaceHeld } from '@/hooks/use-space-held'
 import {
@@ -68,8 +71,13 @@ import {
   CanvasModeContext,
   DOUBLE_PRESS_WINDOW_MS,
 } from '@/lib/react-flow/canvas-mode'
-import { parseColumnHandleId } from '@/lib/react-flow/edge-routing'
+import {
+  createColumnHandleId,
+  parseColumnHandleId,
+} from '@/lib/react-flow/edge-routing'
 import { recalculateEdgeRouting } from '@/lib/react-flow/edge-bundles'
+import { nodeObstacleRect } from '@/lib/react-flow/edge-label-placement'
+import { carryRoutes } from '@/lib/react-flow/edge-route-pass'
 import { perfTracker } from '@/lib/perf/perf-tracker'
 import { edgeTypes, nodeTypes } from '@/lib/react-flow/node-types'
 import { REFERENCE_DRAG_MIME } from '@/components/whiteboard/Toolbar'
@@ -1019,6 +1027,7 @@ export function ReactFlowCanvas({
   // pan/zoom the viewport (shares the store with the container's instance).
   const { fitView, setCenter, getZoom, screenToFlowPosition, getInternalNode } =
     useReactFlow()
+  const reactFlowStore = useStoreApi()
 
   // Edge side routing needs each table's RENDERED width. Node objects from
   // props never carry it, and `nodes` state loses it whenever it is replaced
@@ -1030,6 +1039,40 @@ export function ReactFlowCanvas({
       return measured?.width ? { ...n, measured } : n
     },
     [getInternalNode],
+  )
+
+  // Handle geometry for the orthogonal edge router. Handle centres come from
+  // the store's measured `handleBounds` as offsets from the node's top-left,
+  // so the pass adds them to the (possibly mid-drag) absolute positions it
+  // already holds. Reference nodes that the drag callbacks do not carry are
+  // read from the store as extra obstacles.
+  const routeGeometry = useMemo<RouteGeometry>(
+    () => ({
+      getPortOffsets: (nodeId, columnId, type) => {
+        const bounds = getInternalNode(nodeId)?.internals.handleBounds?.[type]
+        const left = bounds?.find(
+          (h) => h.id === createColumnHandleId(nodeId, columnId, 'left', type),
+        )
+        const right = bounds?.find(
+          (h) => h.id === createColumnHandleId(nodeId, columnId, 'right', type),
+        )
+        if (!left || !right) return null
+        return {
+          left: { x: left.x, y: left.y + left.height / 2 },
+          right: { x: right.x + right.width, y: right.y + right.height / 2 },
+        }
+      },
+      getExtraObstacles: (excludeIds) => {
+        const out: Array<Rect> = []
+        for (const n of reactFlowStore.getState().nodeLookup.values()) {
+          if (excludeIds.has(n.id)) continue
+          const r = nodeObstacleRect(n)
+          if (r) out.push(r)
+        }
+        return out
+      },
+    }),
+    [getInternalNode, reactFlowStore],
   )
 
   // GH #138 / LizMeter #83 — the shared "landing cue": persistent
@@ -1314,12 +1357,14 @@ export function ReactFlowCanvas({
     const allNodeIds = new Set(routableNodes.map((n) => n.id))
     // Handle sides and bundle offsets both derive from the node positions, so
     // page load, peer re-sync and Auto Layout all land on the same fan-out.
-    const recalculated = recalculateEdgeRouting(
-      validEdges,
-      routableNodes,
-      allNodeIds,
+    setEdges((prevEdges) =>
+      recalculateEdgeRouting(
+        carryRoutes(validEdges, prevEdges),
+        routableNodes,
+        allNodeIds,
+        routeGeometry,
+      ),
     )
-    setEdges(recalculated)
   }, [
     initialEdges,
     initialNodes,
@@ -1327,6 +1372,7 @@ export function ReactFlowCanvas({
     externalColumnIds,
     setEdges,
     withMeasured,
+    routeGeometry,
   ])
 
   // Forget the last routed widths whenever the node set changes (drag stop,
@@ -1387,9 +1433,9 @@ export function ReactFlowCanvas({
         ...(liveExternal as unknown as typeof liveNodes),
       ]
       const allIds = new Set(measured.map((n) => n.id))
-      return recalculateEdgeRouting(prevEdges, measured, allIds)
+      return recalculateEdgeRouting(prevEdges, measured, allIds, routeGeometry)
     })
-  }, [nodesInitialized, measuredWidthKey, parentIndex, setEdges])
+  }, [nodesInitialized, measuredWidthKey, parentIndex, setEdges, routeGeometry])
 
   // Apply NODE highlighting when selection/relations-preview changes (GH
   // #121 perf, opt #1). Deliberately keyed on [activeTableId,
@@ -1577,11 +1623,12 @@ export function ReactFlowCanvas({
             prevEdges,
             pending.currentNodes,
             pending.draggedIds,
+            routeGeometry,
           ),
         )
       })
     },
-    [setEdges],
+    [setEdges, routeGeometry],
   )
 
   // Cancel any in-flight rAF on unmount so it never calls setEdges after the
@@ -1743,7 +1790,12 @@ export function ReactFlowCanvas({
       draggedIds.add(node.id)
       const currentNodes = mergeCurrentPositions(node, draggedNodes)
       setEdges((prevEdges) =>
-        recalculateEdgeRouting(prevEdges, currentNodes, draggedIds),
+        recalculateEdgeRouting(
+          prevEdges,
+          currentNodes,
+          draggedIds,
+          routeGeometry,
+        ),
       )
       // OUTBOUND coordinate boundary: React Flow reports a nested member's
       // position relative to its area, but everything past this callback —
@@ -1774,6 +1826,7 @@ export function ReactFlowCanvas({
       onNodeDragStopProp,
       mergeCurrentPositions,
       setEdges,
+      routeGeometry,
     ],
   )
 

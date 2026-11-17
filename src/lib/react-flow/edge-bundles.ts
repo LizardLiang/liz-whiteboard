@@ -7,11 +7,13 @@
  * handle side recomputes them through recalculateEdgeRouting.
  */
 
+import { applyEdgeRoutes } from './edge-route-pass'
 import {
   parseColumnHandleId,
   recalculateEdgesForDraggedNodes,
 } from './edge-routing'
 import type { Node } from '@xyflow/react'
+import type { RouteGeometry } from './edge-route-pass'
 import type { RelationshipEdgeType, TableNodeData } from './types'
 import { EDGE_SEP } from '@/lib/auto-layout/d3-force-layout'
 
@@ -123,33 +125,48 @@ export function computeEdgeBundleOffsetsFromPositions(
 }
 
 /**
- * Recalculate handle sides for edges touching the moved nodes, then recompute
- * the bundle offsets for ALL edges and write them into edge data. Returns the
- * same array when nothing changed.
+ * Recalculate handle sides for edges touching the moved nodes, route every
+ * edge around the tables when `geometry` is given, then recompute the bundle
+ * offsets for ALL edges and write them into edge data. Returns the same array
+ * when nothing changed.
+ *
+ * With `geometry`, each edge's side pair comes from the router, and routed
+ * edges drop `bundleCenterXOffset` (the nudge in edge-route-pass.ts spreads
+ * their segments instead). Without it, or for an edge whose handles are not
+ * measured yet, the old side rule and fan-out apply.
  */
 export function recalculateEdgeRouting(
   edges: Array<RelationshipEdgeType>,
   nodes: Array<Node<TableNodeData>>,
   movedIds: Set<string>,
+  geometry?: RouteGeometry,
 ): Array<RelationshipEdgeType> {
-  const routed = recalculateEdgesForDraggedNodes(edges, nodes, movedIds)
-  const offsets = computeEdgeBundleOffsetsFromPositions(
-    routed,
-    new Map(nodes.map((n) => [n.id, n])),
+  const sided = recalculateEdgesForDraggedNodes(edges, nodes, movedIds)
+  const nodesById = new Map(nodes.map((n) => [n.id, n]))
+  // handleYOffset depends only on the table pair, so it is the same before
+  // and after routing and the router can use it for the port y.
+  const yOffsets = computeEdgeBundleOffsetsFromPositions(sided, nodesById)
+  const routed = geometry
+    ? applyEdgeRoutes(edges, sided, nodes, yOffsets, geometry)
+    : sided
+  const xOffsets = computeEdgeBundleOffsetsFromPositions(
+    routed.filter((e) => !e.data?.route),
+    nodesById,
   )
 
   const updated = routed.map((edge) => {
-    const off = offsets.get(edge.id)!
+    const offY = yOffsets.get(edge.id)?.handleYOffset ?? 0
+    const offX = xOffsets.get(edge.id)?.centerXOffset ?? 0
     const curY = edge.data?.bundleHandleYOffset ?? 0
     const curX = edge.data?.bundleCenterXOffset ?? 0
-    if (curY === off.handleYOffset && curX === off.centerXOffset) return edge
+    if (curY === offY && curX === offX) return edge
     if (!edge.data) return edge
     return {
       ...edge,
       data: {
         ...edge.data,
-        bundleHandleYOffset: off.handleYOffset,
-        bundleCenterXOffset: off.centerXOffset,
+        bundleHandleYOffset: offY,
+        bundleCenterXOffset: offX,
       },
     }
   })
