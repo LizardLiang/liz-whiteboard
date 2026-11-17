@@ -32,6 +32,8 @@ const CORRIDOR_BUCKET = 8
 export const NUDGE_MAX = 2 * EDGE_SEP
 /** Resolution (px) at which a nudge shift is pulled back until it clears the tables. */
 const NUDGE_STEP = 0.5
+type EndStubs = { source: number; target: number }
+const DEFAULT_STUBS: EndStubs = { source: ROUTE_STUB, target: ROUTE_STUB }
 /** Prefix of a `routeKey` computed over the whole board instead of the routing window. */
 const FULL_KEY_PREFIX = 'X|'
 
@@ -143,6 +145,8 @@ export function applyEdgeRoutes(
     }
 
     const dy = handleYOffsets.get(orig.id)?.handleYOffset ?? 0
+    // `ports()` (here) and the drawn border x (RelationshipEdge) come from two
+    // sources; the 1 px ROUTE_END_TOLERANCE covers any drift between them.
     const ports = (rect: Rect, off: PortOffsets) => ({
       left: { x: rect.x, y: rect.y + off.y + dy },
       right: { x: rect.x + rect.width, y: rect.y + off.y + dy },
@@ -224,7 +228,15 @@ export function applyEdgeRoutes(
 
   const routes = nudgeRoutes(
     stages.flatMap((s, i) =>
-      s.base ? [{ id: original[i].id, base: s.base }] : [],
+      s.base
+        ? [
+            {
+              id: original[i].id,
+              base: s.base,
+              minStubs: endMinStubs(original[i].data?.relationship.cardinality),
+            },
+          ]
+        : [],
     ),
     obstacles,
   )
@@ -257,6 +269,7 @@ function shiftRange(
   pts: ReadonlyArray<Point>,
   k: number,
   horizontal: boolean,
+  minStubs: EndStubs = DEFAULT_STUBS,
 ): [number, number] {
   let lo = -NUDGE_MAX
   let hi = NUDGE_MAX
@@ -271,8 +284,10 @@ function shiftRange(
     const oc = horizontal ? other.y : other.x
     const len = Math.abs(sc - oc)
     const sign = sc >= oc ? 1 : -1
-    // A stub keeps its full length; a movable neighbour may shrink to half.
-    const minLen = j === 0 || j === last ? Math.min(len, ROUTE_STUB) : len / 2
+    // An end segment keeps at least that end's marker stub (the router's own
+    // floor); a movable neighbour may shrink to half.
+    const endStub = j === 0 ? minStubs.source : minStubs.target
+    const minLen = j === 0 || j === last ? Math.min(len, endStub) : len / 2
     // New length = len + sign * d, and it must stay >= minLen.
     if (sign > 0) lo = Math.max(lo, minLen - len)
     else hi = Math.min(hi, len - minLen)
@@ -287,7 +302,11 @@ function shiftRange(
  * stubs). Returns the nudged route per edge id.
  */
 export function nudgeRoutes(
-  items: ReadonlyArray<{ id: string; base: ReadonlyArray<Point> }>,
+  items: ReadonlyArray<{
+    id: string
+    base: ReadonlyArray<Point>
+    minStubs?: EndStubs
+  }>,
   obstacles: ReadonlyArray<Rect> = [],
 ): Map<string, Array<Point>> {
   const out = new Map<string, Array<Point>>()
@@ -330,6 +349,7 @@ export function nudgeRoutes(
   }
 
   const baseOf = new Map(items.map((it) => [it.id, it.base]))
+  const stubsOf = new Map(items.map((it) => [it.id, it.minStubs]))
   const bucketKeys = [...buckets.keys()].sort()
   for (const key of bucketKeys) {
     const segs = buckets.get(key)!
@@ -338,7 +358,8 @@ export function nudgeRoutes(
     let cluster: Array<Seg> = []
     let clusterHi = -Infinity
     const flush = () => {
-      if (cluster.length >= 2) spreadCluster(cluster, baseOf, out, obstacles)
+      if (cluster.length >= 2)
+        spreadCluster(cluster, baseOf, stubsOf, out, obstacles)
       cluster = []
       clusterHi = -Infinity
     }
@@ -372,6 +393,7 @@ function shiftClears(
 function spreadCluster(
   cluster: Array<Seg>,
   baseOf: Map<string, ReadonlyArray<Point>>,
+  stubsOf: Map<string, EndStubs | undefined>,
   out: Map<string, Array<Point>>,
   obstacles: ReadonlyArray<Rect>,
 ): void {
@@ -382,7 +404,12 @@ function spreadCluster(
   for (let i = 0; i < n; i++) {
     const s = sorted[i]
     const wanted = (i - (n - 1) / 2) * EDGE_SEP
-    const [lo, hi] = shiftRange(baseOf.get(s.id)!, s.k, s.horizontal)
+    const [lo, hi] = shiftRange(
+      baseOf.get(s.id)!,
+      s.k,
+      s.horizontal,
+      stubsOf.get(s.id),
+    )
     const pts = out.get(s.id)!
     let d = Math.min(Math.max(wanted, lo), hi)
     // Pull the shift back until the moved segment and its two neighbours still

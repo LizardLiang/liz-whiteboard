@@ -221,7 +221,12 @@ function borderXOf(
   return width ? x + width : undefined
 }
 
-/** How close (px) a route end must be to the live table border for the route to count as fresh. */
+/**
+ * How close (px) a route end must be to the live table border for the route to
+ * count as fresh. The route's ends come from the pass's `ports()` (node
+ * position + measured size) and the drawn border x from the store lookup
+ * (`borderXOf`): two sources, and this 1 px covers any drift between them.
+ */
 const ROUTE_END_TOLERANCE = 1
 
 /**
@@ -253,7 +258,9 @@ function freshRoutePoints(
     const b = pts[toward]
     const len = Math.hypot(b.x - a.x, b.y - a.y)
     if (len === 0) return
-    const d = Math.min(by, len / 2)
+    // A two-point route shares its one segment between both ends; otherwise
+    // the segment's far end is a bend and the marker may take the full extent.
+    const d = Math.min(by, pts.length === 2 ? len / 2 : len)
     a.x += ((b.x - a.x) / len) * d
     a.y += ((b.y - a.y) / len) * d
   }

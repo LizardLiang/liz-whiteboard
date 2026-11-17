@@ -8,6 +8,7 @@ import { Position, ReactFlowProvider } from '@xyflow/react'
 import { RelationshipEdge } from './RelationshipEdge'
 import type * as ReactFlowModule from '@xyflow/react'
 import type { RelationshipEdgeData } from '@/lib/react-flow/types'
+import { markerExtent } from '@/lib/react-flow/cardinality-marker'
 
 // Mock getSmoothStepPath to return deterministic values
 vi.mock('@xyflow/react', async (importOriginal) => {
@@ -309,5 +310,97 @@ describe('RelationshipEdge routed path', () => {
     expect(
       container.querySelector('path.react-flow__edge-path')!.getAttribute('d'),
     ).toBe('M 0 0 L 100 100')
+  })
+})
+
+describe('RelationshipEdge border anchor', () => {
+  // Source table spans x 0..200, target table x 400..600. React Flow reports
+  // each end at its connect dot, 24 px outside the border.
+  const node = (id: string, x: number) =>
+    ({
+      id,
+      type: 'table',
+      position: { x, y: 0 },
+      data: {},
+      width: 200,
+      height: 200,
+      measured: { width: 200, height: 200 },
+    }) as any
+
+  function renderAnchored(
+    cardinality: string,
+    route: Array<{ x: number; y: number }> = [
+      { x: 200, y: 50 },
+      { x: 300, y: 50 },
+      { x: 300, y: 150 },
+      { x: 400, y: 150 },
+    ],
+  ) {
+    const props = makeEdgeProps({ cardinality })
+    props.sourceX = 224
+    props.sourceY = 50
+    props.targetX = 376
+    props.targetY = 150
+    props.data.route = route
+    return render(
+      <ReactFlowProvider
+        initialNodes={[node('tbl-001', 0), node('tbl-002', 400)]}
+        initialWidth={1000}
+        initialHeight={600}
+      >
+        <svg>
+          <RelationshipEdge {...props} />
+        </svg>
+      </ReactFlowProvider>,
+    )
+  }
+
+  const numbers = (d: string) => (d.match(/-?\d+(\.\d+)?/g) ?? []).map(Number)
+
+  it('starts the line at the table border, one marker extent in', () => {
+    renderAnchored('ZERO_OR_MANY_TO_ONE')
+    const main = document.querySelector('path.react-flow__edge-path')!
+    const nums = numbers(main.getAttribute('d')!)
+    const srcExt = markerExtent(true, true)
+    const tgtExt = markerExtent(false, false)
+    expect(nums[0]).toBeCloseTo(200 + srcExt, 5)
+    expect(nums[1]).toBeCloseTo(50, 5)
+    expect(nums[nums.length - 2]).toBeCloseTo(400 - tgtExt, 5)
+  })
+
+  it('keeps the marker extent when the end segment is only the minimum stub', () => {
+    // MANY_TO_ONE: the many end has extent 18 and a 21 px minimum stub. A
+    // half-segment clamp would start the line 10.5 px out, inside the crow's foot.
+    renderAnchored('MANY_TO_ONE', [
+      { x: 200, y: 50 },
+      { x: 221, y: 50 },
+      { x: 221, y: 150 },
+      { x: 400, y: 150 },
+    ])
+    const main = document.querySelector('path.react-flow__edge-path')!
+    expect(numbers(main.getAttribute('d')!)[0]).toBeCloseTo(
+      200 + markerExtent(true, false),
+      5,
+    )
+  })
+
+  it('draws the source marker between the border and its extent', () => {
+    renderAnchored('ZERO_OR_MANY_TO_ONE')
+    const srcExt = markerExtent(true, true)
+    // The first indicator group is the source one; collect its x coordinates.
+    const groups = Array.from(document.querySelectorAll('svg > g'))
+    const xs: Array<number> = []
+    for (const el of Array.from(groups[0].querySelectorAll('circle'))) {
+      const cx = Number(el.getAttribute('cx'))
+      const r = Number(el.getAttribute('r'))
+      xs.push(cx - r, cx + r)
+    }
+    for (const el of Array.from(groups[0].querySelectorAll('line'))) {
+      xs.push(Number(el.getAttribute('x1')), Number(el.getAttribute('x2')))
+    }
+    expect(xs.length).toBeGreaterThan(0)
+    // Nothing inside the table (less a 1 px stroke) and nothing past the extent.
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(200 - 3)
+    expect(Math.max(...xs)).toBeLessThanOrEqual(200 + srcExt + 1e-6)
   })
 })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { recalculateEdgeRouting } from './edge-bundles'
+import { endMinStubs } from './cardinality-marker'
 import { carryRoutes, nudgeRoutes } from './edge-route-pass'
 import { createColumnHandleId, parseColumnHandleId } from './edge-routing'
 import { routeClearsRects, segmentHitsRect } from './orthogonal-router'
@@ -173,6 +174,52 @@ describe('recalculateEdgeRouting with geometry', () => {
   })
 })
 
+describe('end stubs after the nudge', () => {
+  it('keeps every line outside its marker in a gap at the router floor', () => {
+    const cardinality = 'ZERO_OR_MANY_TO_ZERO_OR_MANY'
+    const { source: minSrc, target: minTgt } = endMinStubs(cardinality)
+    // A 60 px gap between the tables, four edges with different rows.
+    // Target rows run opposite to the source rows, so every route needs a
+    // vertical jog in the gap and the jogs share one corridor.
+    const geo: RouteGeometry = {
+      getPortOffsets: (_n, colId) => {
+        const i = Number(colId.slice(1))
+        return { y: colId.startsWith('c') ? 20 + i * 20 : 80 - i * 20 }
+      },
+    }
+    const edges = [0, 1, 2, 3].map((i) => {
+      const e = edge(`e${i}`, 'A', 'B')
+      return {
+        ...e,
+        sourceHandle: createColumnHandleId('A', `c${i}`, 'right', 'source'),
+        targetHandle: createColumnHandleId('B', `p${i}`, 'left', 'target'),
+        data: {
+          relationship: {
+            sourceColumnId: `c${i}`,
+            targetColumnId: `p${i}`,
+            cardinality,
+          },
+        },
+      } as unknown as RelationshipEdgeType
+    })
+    const out = recalculateEdgeRouting(
+      edges,
+      [table('A', 0, 0), table('B', W + 60, 0)],
+      new Set(['A']),
+      geo,
+    )
+    for (const e of out) {
+      const r = e.data!.route!
+      expect(r.length).toBeGreaterThanOrEqual(2)
+      expect(Math.abs(r[1].x - r[0].x)).toBeGreaterThanOrEqual(minSrc - 1e-6)
+      const n = r.length
+      expect(Math.abs(r[n - 1].x - r[n - 2].x)).toBeGreaterThanOrEqual(
+        minTgt - 1e-6,
+      )
+    }
+  })
+})
+
 describe('failed-route keys', () => {
   const a = table('A', 0, 0)
   const b = table('B', 600, 300)
@@ -278,6 +325,30 @@ describe('nudgeRoutes', () => {
     for (const r of out.values()) expect(routeClearsRects(r, [wall])).toBe(true)
     const ys = [...out.values()].map((r) => r[2].y)
     expect(new Set(ys).size).toBeGreaterThan(1)
+  })
+
+  it("keeps each end segment at that end's minimum stub", () => {
+    // Four routes cross a 60 px gap with 30 px end segments; the end's minimum
+    // stub is 28, so a segment may move at most 2 px before an end segment
+    // would drop below it.
+    const gapRoute = (i: number): Array<Point> => [
+      { x: 0, y: 10 + i * 10 },
+      { x: 30, y: 10 + i * 10 },
+      { x: 30, y: 110 + i * 10 },
+      { x: 60, y: 110 + i * 10 },
+    ]
+    const items = [0, 1, 2, 3].map((i) => ({
+      id: `e${i}`,
+      base: gapRoute(i),
+      minStubs: { source: 28, target: 28 },
+    }))
+    const out = nudgeRoutes(items)
+    const xs = [...out.values()].map((r) => r[1].x)
+    expect(new Set(xs).size).toBeGreaterThan(1)
+    for (const r of out.values()) {
+      expect(r[1].x - r[0].x).toBeGreaterThanOrEqual(28)
+      expect(r[3].x - r[2].x).toBeGreaterThanOrEqual(28)
+    }
   })
 
   it('leaves a lone route untouched', () => {

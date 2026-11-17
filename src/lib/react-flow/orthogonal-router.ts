@@ -52,8 +52,13 @@ export const MAX_EXPANSIONS = 12000
  * cost in one drag frame.
  */
 export const MAX_GRID_CELLS = 160_000
-/** Scratch (A* states) kept between searches; a bigger buffer is released after the route. */
-const SCRATCH_KEEP_STATES = 65_536
+/**
+ * Most A* states the scratch buffers ever hold: 4 directions per cell of the
+ * largest grid. The buffers stay allocated between routes (at most about 10 MB,
+ * reached only on a very dense board), so a drag does not reallocate typed
+ * arrays on every route.
+ */
+export const MAX_SCRATCH_STATES = MAX_GRID_CELLS * 4
 
 export interface PortPair {
   left: Point
@@ -408,16 +413,6 @@ let parentScratch = new Int32Array(0)
 let stampScratch = new Uint32Array(0)
 let searchNumber = 0
 
-/** Drop A* scratch that an oversized search grew, so one dense board does not pin memory. */
-function releaseOversizedScratch(): void {
-  if (gScratch.length <= SCRATCH_KEEP_STATES) return
-  gScratch = new Float64Array(0)
-  parentScratch = new Int32Array(0)
-  stampScratch = new Uint32Array(0)
-  searchNumber = 0
-  heap.clear()
-}
-
 /** A* states the scratch buffers hold right now. */
 export function scratchStates(): number {
   return gScratch.length
@@ -695,14 +690,6 @@ function endHasRoom(
  * first clearance that has a route wins; every route clears the unpadded tables.
  */
 export function routeEdge(input: RouteInput): RouteResult | null {
-  try {
-    return routeEdgeUnguarded(input)
-  } finally {
-    releaseOversizedScratch()
-  }
-}
-
-function routeEdgeUnguarded(input: RouteInput): RouteResult | null {
   if (!inputIsFinite(input)) return null
   const { source, target } = input
   if (

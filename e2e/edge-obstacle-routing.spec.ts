@@ -19,6 +19,7 @@
 // seed resets only its own boards, so it is safe to run before every test.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
+import { markerExtent } from '../src/lib/react-flow/cardinality-marker'
 import {
   tableNode,
   zoomAboveLodThreshold,
@@ -487,7 +488,14 @@ test('case 7: a line starts on the table border, not at the connect dot', async 
   // The drawn path stops short of the border by the cardinality marker (18 px
   // for the seeded many source, 8 px for the one target); the connect dot sits
   // 24 px out, so a line that began there would be 24 + marker px from the
-  // border.
-  expect(fromBorder(pts[0], src)).toBeLessThanOrEqual(19)
-  expect(fromBorder(pts[pts.length - 1], tgt)).toBeLessThanOrEqual(9)
+  // border. A line that began INSIDE the marker would be closer than the
+  // marker extent, so each end is bounded on both sides (1 px of slack).
+  const srcExt = markerExtent(true, false)
+  const tgtExt = markerExtent(false, false)
+  const srcFrom = fromBorder(pts[0], src)
+  const tgtFrom = fromBorder(pts[pts.length - 1], tgt)
+  expect(srcFrom).toBeGreaterThanOrEqual(srcExt - 1)
+  expect(srcFrom).toBeLessThanOrEqual(srcExt + 1)
+  expect(tgtFrom).toBeGreaterThanOrEqual(tgtExt - 1)
+  expect(tgtFrom).toBeLessThanOrEqual(tgtExt + 1)
 })

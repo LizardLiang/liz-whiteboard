@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  MAX_GRID_CELLS,
+  MAX_SCRATCH_STATES,
   ROUTE_MARGIN,
   routeClearsRects,
   routeEdge,
@@ -390,39 +390,38 @@ describe('routeEdge grid cap and scratch', () => {
   }
 
   it('returns null above the grid cap and routes below it', () => {
-    const big = field(500)
-    const a = big[0]
-    const c = big[11]
-    expect(
+    // field(100) builds a 148 757-cell grid (under MAX_GRID_CELLS = 160 000);
+    // field(110) builds 165 347 cells, just over the cap.
+    const under = field(100)
+    const over = field(110)
+    const route = (t: Array<Rect>) =>
       routeEdge({
-        source: end(a),
-        target: end(c),
-        obstacles: big,
+        source: end(t[0]),
+        target: end(t[11]),
+        obstacles: t,
         windowExpand: Infinity,
-      }),
-    ).toBeNull()
-    const small = field(20)
-    expect(
-      routeEdge({
-        source: end(small[0]),
-        target: end(small[11]),
-        obstacles: small,
-        windowExpand: Infinity,
-      }),
-    ).not.toBeNull()
-    expect(MAX_GRID_CELLS).toBeGreaterThan(0)
+      })
+    expect(route(under)).not.toBeNull()
+    expect(route(over)).toBeNull()
+    // The same two endpoints with fewer tables route, so the null is the cap.
+    expect(route(over.slice(0, 100))).not.toBeNull()
   })
 
-  it('releases the scratch an oversized search grew', () => {
+  it('keeps one scratch allocation within the cap across routes', () => {
     const t = field(100)
-    const r = routeEdge({
-      source: end(t[0]),
-      target: end(t[11]),
-      obstacles: t,
-      windowExpand: Infinity,
-    })
-    expect(r).not.toBeNull()
-    expect(scratchStates()).toBe(0)
+    const run = () =>
+      routeEdge({
+        source: end(t[0]),
+        target: end(t[11]),
+        obstacles: t,
+        windowExpand: Infinity,
+      })
+    expect(run()).not.toBeNull()
+    const grown = scratchStates()
+    expect(grown).toBeGreaterThan(0)
+    expect(grown).toBeLessThanOrEqual(MAX_SCRATCH_STATES)
+    expect(run()).not.toBeNull()
+    expect(scratchStates()).toBe(grown)
   })
 })
 
