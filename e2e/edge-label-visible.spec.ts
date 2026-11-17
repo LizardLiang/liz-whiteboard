@@ -235,8 +235,11 @@ test('a label whose midpoint sits on a third table slides clear of every table',
   seed(SLIDE)
   await openBoard(page, SLIDE.id, SLIDE_TABLES)
 
-  // Sanity: the edge really is the right->right C-curve whose midpoint falls
-  // on order_line_items (so this test fails without the slide).
+  // Router decision (obstacle routing): the line now bends around
+  // order_line_items instead of running through it, so its midpoint no longer
+  // lands on that table. The label must still end up clear of every table, so
+  // the checks below stay; the slide itself is covered by the covered-label
+  // test and edge-label-placement unit tests.
   const items = (await tableBoxes(page, ['order_line_items']))[0]
   const edge = page.locator(
     `path.react-flow__edge-path[id="${SLIDE.id.slice(0, -3)}3${SLIDE.id.slice(-1)}1"]`,
@@ -247,10 +250,12 @@ test('a label whose midpoint sits on a third table slides clear of every table',
     if (!ctm) throw new Error('no CTM')
     return { x: m.x * ctm.a + ctm.e, y: m.y * ctm.d + ctm.f }
   })
-  expect(mid.x).toBeGreaterThan(items.x)
-  expect(mid.x).toBeLessThan(items.x + items.width)
-  expect(mid.y).toBeGreaterThan(items.y)
-  expect(mid.y).toBeLessThan(items.y + items.height)
+  const midInsideItems =
+    mid.x > items.x &&
+    mid.x < items.x + items.width &&
+    mid.y > items.y &&
+    mid.y < items.y + items.height
+  expect(midInsideItems).toBe(false)
 
   await expectPillClearOfTables(page, SLIDE_TABLES)
 
