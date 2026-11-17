@@ -239,6 +239,30 @@ async function readLine(page: Page, id: string) {
     })
 }
 
+/**
+ * Wait until the line's path stops changing: the same `d` on 6 polls 100 ms
+ * apart. Every measure and re-route pass runs inside that time, so it replaces
+ * a fixed sleep with a check on what the user sees.
+ */
+async function settleLine(page: Page, id: string) {
+  let last = ''
+  let stable = 0
+  await expect
+    .poll(
+      async () => {
+        const d =
+          (await page
+            .locator(`path.react-flow__edge-path[id="${id}"]`)
+            .getAttribute('d')) ?? ''
+        stable = d !== '' && d === last ? stable + 1 : 0
+        last = d
+        return stable
+      },
+      { intervals: [100], timeout: 15_000 },
+    )
+    .toBeGreaterThanOrEqual(6)
+}
+
 /** A table's box in flow coordinates. */
 async function flowBox(
   page: Page,
@@ -284,11 +308,12 @@ async function openBoard(page: Page, b: BoardSeed) {
     page.locator(`path.react-flow__edge-path[id="${relId(b, 0)}"]`),
   ).toHaveCount(1)
   // Let every measure and re-route pass settle, then read once.
-  await page.waitForTimeout(1500)
+  await settleLine(page, relId(b, 0))
 }
 
 async function dragTable(
   page: Page,
+  lineId: string,
   name: string,
   dxScreen: number,
   dyScreen: number,
@@ -302,7 +327,7 @@ async function dragTable(
   await page.mouse.move(sx + dxScreen / 2, sy + dyScreen / 2, { steps: 8 })
   await page.mouse.move(sx + dxScreen, sy + dyScreen, { steps: 8 })
   await page.mouse.up()
-  await page.waitForTimeout(1500)
+  await settleLine(page, lineId)
 }
 
 test('case 1: a table on the old straight path is routed around', async ({
@@ -330,7 +355,7 @@ test('case 2: dragging a table onto a line re-routes it, and it survives a reloa
   const a0 = await flowBox(page, 'accounts_receivable', before.ctm)
   // Move the middle table up so it spans the A-C line's height (A's port rows).
   const dyFlow = a0.y - 40 - b0.y
-  await dragTable(page, longName, 0, dyFlow * before.ctm.d)
+  await dragTable(page, id, longName, 0, dyFlow * before.ctm.d)
   await expectLineClearsTables(page, id, [longName])
   // The table really moved onto the old line's height.
   const after = await readLine(page, id)
@@ -341,7 +366,7 @@ test('case 2: dragging a table onto a line re-routes it, and it survives a reloa
   await expect(
     page.locator(`path.react-flow__edge-path[id="${id}"]`),
   ).toHaveCount(1)
-  await page.waitForTimeout(1500)
+  await settleLine(page, id)
   await expectLineClearsTables(page, id, [longName])
 })
 
@@ -359,7 +384,7 @@ test('case 3: a blocked right side makes the line leave from the left', async ({
   // Park the middle table 20 px right of A: its padded box covers A's stub.
   const mid = await flowBox(page, longName, start.ctm)
   const dxFlow = a.x + a.width + 20 - mid.x
-  await dragTable(page, longName, dxFlow * start.ctm.d, 0)
+  await dragTable(page, id, longName, dxFlow * start.ctm.d, 0)
 
   const moved = await readLine(page, id)
   const a2 = await flowBox(page, 'accounts_receivable', moved.ctm)
@@ -402,9 +427,9 @@ test('case 5: a table that grows back to full height after a low-zoom collapse i
   // tall) and the router sees tiny obstacles; zooming back in restores the
   // full height, and the lines must be re-routed around the full boxes.
   await zoomBelowLodThreshold(page)
-  await page.waitForTimeout(1000)
+  await settleLine(page, relId(BETWEEN, 0))
   await zoomAboveLodThreshold(page)
-  await page.waitForTimeout(1500)
+  await settleLine(page, relId(BETWEEN, 0))
   await expectLineClearsTables(page, relId(BETWEEN, 0), [
     longName,
     'orphan_lookup_table',

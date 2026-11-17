@@ -5,7 +5,11 @@
 // side of each end by scoring all four side pairs.
 //
 // No React, no xyflow: only plain geometry in, a polyline out. The same input
-// always gives the same output, so every collaborator draws the same route.
+// always gives the same output. Peers draw the same route for the same
+// geometry as long as they route the edge from scratch; once an edge re-routes
+// during a drag, `currentSides` (the side pair that peer last drew) adds the
+// STICKY bonus, so two peers with different histories can pick different sides
+// when two side pairs cost within STICKY px of each other.
 
 import type { Point, Rect } from './edge-label-placement'
 
@@ -37,6 +41,17 @@ export const STICKY = 24
 export const WINDOW_EXPAND = 200
 /** Hard cap on A* expansions per side pair. */
 export const MAX_EXPANSIONS = 12000
+/**
+ * Largest grid (columns x rows) the router builds; a bigger one returns null
+ * and the edge draws the smooth-step fallback. The A* state arrays hold 4
+ * directions per cell and 16 bytes per state, so 160 000 cells is about 10 MB
+ * of scratch. Building and filling the grid also grows with the cell count, so
+ * the cap bounds the worst case a full-board retry on a very dense board can
+ * cost in one drag frame.
+ */
+export const MAX_GRID_CELLS = 160_000
+/** Scratch (A* states) kept between searches; a bigger buffer is released after the route. */
+const SCRATCH_KEEP_STATES = 65_536
 
 export interface PortPair {
   left: Point
@@ -115,6 +130,35 @@ function rectsOverlap(a: Rect, b: Rect): boolean {
   )
 }
 
+/**
+ * True when the axis-aligned segment a-b passes through the open interior of
+ * the rect. Touching the border is not a hit.
+ */
+export function segmentHitsRect(a: Point, b: Point, r: Rect): boolean {
+  const x0 = Math.min(a.x, b.x)
+  const x1 = Math.max(a.x, b.x)
+  const y0 = Math.min(a.y, b.y)
+  const y1 = Math.max(a.y, b.y)
+  return x0 < r.x + r.width && x1 > r.x && y0 < r.y + r.height && y1 > r.y
+}
+
+/**
+ * True when no segment of the polyline passes through the interior of any
+ * rect. The one definition of "stays clear of unpadded tables" the router, the
+ * parallel-line nudge and the tests share.
+ */
+export function routeClearsRects(
+  points: ReadonlyArray<Point>,
+  rects: ReadonlyArray<Rect>,
+): boolean {
+  for (let i = 0; i + 1 < points.length; i++) {
+    for (const r of rects) {
+      if (segmentHitsRect(points[i], points[i + 1], r)) return false
+    }
+  }
+  return true
+}
+
 function inputIsFinite(input: RouteInput): boolean {
   const { source, target } = input
   return (
@@ -173,17 +217,31 @@ export function windowObstacles(input: RouteInput): Array<Rect> {
  * every obstacle in the routing window. Equal keys mean the route is unchanged.
  */
 export function routeKeyFor(input: RouteInput): string {
+  const obs = windowObstacles(input).map(keyRect).sort().join(';')
+  return `${routeKeyHead(input)}#${obs}`
+}
+
+function keyRect(q: Rect): string {
   const r = Math.round
-  const rect = (q: Rect) => `${r(q.x)},${r(q.y)},${r(q.width)},${r(q.height)}`
+  return `${r(q.x)},${r(q.y)},${r(q.width)},${r(q.height)}`
+}
+
+/** The obstacle part of a whole-board key; build it once per pass, not per edge. */
+export function boardKeyFor(obstacles: ReadonlyArray<Rect>): string {
+  return obstacles.map(keyRect).sort().join(';')
+}
+
+/** The endpoint rects, ports and current sides of a route key. */
+export function routeKeyHead(input: RouteInput): string {
+  const r = Math.round
   const pt = (p: Point) => `${r(p.x)},${r(p.y)}`
   const ends = [input.source, input.target]
-    .map((e) => `${rect(e.rect)}|${pt(e.ports.left)}|${pt(e.ports.right)}`)
+    .map((e) => `${keyRect(e.rect)}|${pt(e.ports.left)}|${pt(e.ports.right)}`)
     .join(';')
   const sides = input.currentSides
     ? `${input.currentSides.source[0]}${input.currentSides.target[0]}`
     : '-'
-  const obs = windowObstacles(input).map(rect).sort().join(';')
-  return `${ends}#${sides}#${obs}`
+  return `${ends}#${sides}`
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +272,7 @@ function buildGrid(
   padded: ReadonlyArray<PRect>,
   extraXs: ReadonlyArray<number>,
   extraYs: ReadonlyArray<number>,
-): Grid {
+): Grid | null {
   const xv: Array<number> = [...extraXs]
   const yv: Array<number> = [...extraYs]
   for (const p of padded) {
@@ -235,6 +293,7 @@ function buildGrid(
   const ys = sortedUnique(yv)
   const nx = xs.length
   const ny = ys.length
+  if (nx * ny > MAX_GRID_CELLS) return null
   const xi = new Map<number, number>()
   const yi = new Map<number, number>()
   xs.forEach((v, i) => xi.set(v, i))
@@ -338,6 +397,21 @@ let parentScratch = new Int32Array(0)
 // number, so a search never clears the whole scratch array.
 let stampScratch = new Uint32Array(0)
 let searchNumber = 0
+
+/** Drop A* scratch that an oversized search grew, so one dense board does not pin memory. */
+function releaseOversizedScratch(): void {
+  if (gScratch.length <= SCRATCH_KEEP_STATES) return
+  gScratch = new Float64Array(0)
+  parentScratch = new Int32Array(0)
+  stampScratch = new Uint32Array(0)
+  searchNumber = 0
+  heap.clear()
+}
+
+/** A* states the scratch buffers hold right now. */
+export function scratchStates(): number {
+  return gScratch.length
+}
 
 interface SearchResult {
   nodes: Array<Point>
@@ -513,6 +587,7 @@ function routeInWindow(
     (sStub.left.x + sStub.right.x + tStub.left.x + tStub.right.x) / 4,
   )
   const grid = buildGrid(padded, extraXs, extraYs)
+  if (!grid) return null
   const midX = extraXs[extraXs.length - 1]
 
   type PairResult = { pair: number; cost: number; nodes: Array<Point> }
@@ -562,8 +637,17 @@ function routeAtClearance(input: RouteInput): RouteResult | null {
   const { source, target } = input
   const local = windowObstacles(input)
   const inWindow = routeInWindow(input, local)
-  if (inWindow) return { ...inWindow, expanded: false }
-  if (local.length >= input.obstacles.length) return null
+  // The window grid is built from the padded extents of the tables that touch
+  // the window, so a line can run past the window edge through a table left
+  // out of `local`. Accept a windowed route only when it clears every table.
+  const covered = local.length >= input.obstacles.length
+  if (
+    inWindow &&
+    (covered || routeClearsRects(inWindow.points, input.obstacles))
+  ) {
+    return { ...inWindow, expanded: false }
+  }
+  if (covered) return null
   const all = [...input.obstacles]
   if (!all.some((o) => sameRect(o, source.rect))) all.push(source.rect)
   if (!all.some((o) => sameRect(o, target.rect))) all.push(target.rect)
@@ -595,6 +679,14 @@ function endHasRoom(
  * first clearance that has a route wins; every route clears the unpadded tables.
  */
 export function routeEdge(input: RouteInput): RouteResult | null {
+  try {
+    return routeEdgeUnguarded(input)
+  } finally {
+    releaseOversizedScratch()
+  }
+}
+
+function routeEdgeUnguarded(input: RouteInput): RouteResult | null {
   if (!inputIsFinite(input)) return null
   const { source, target } = input
   if (

@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { ROUTE_MARGIN, routeEdge, routeKeyFor } from './orthogonal-router'
+import {
+  MAX_GRID_CELLS,
+  ROUTE_MARGIN,
+  routeClearsRects,
+  routeEdge,
+  routeKeyFor,
+  scratchStates,
+  segmentHitsRect,
+} from './orthogonal-router'
+import { recalculateEdgeRouting } from './edge-bundles'
+import { createColumnHandleId } from './edge-routing'
+import type { Node } from '@xyflow/react'
 import type { Point, Rect } from './edge-label-placement'
+import type { RouteGeometry } from './edge-route-pass'
+import type { RelationshipEdgeType, TableNodeData } from './types'
 import type { RouteEnd, RouteInput } from './orthogonal-router'
 
 const W = 250
@@ -33,15 +46,6 @@ function input(
     obstacles: [source, target, ...others],
     ...extra,
   }
-}
-
-/** True when the axis-aligned segment passes through the open interior of the rect. */
-function segmentHitsRect(a: Point, b: Point, r: Rect): boolean {
-  const x0 = Math.min(a.x, b.x)
-  const x1 = Math.max(a.x, b.x)
-  const y0 = Math.min(a.y, b.y)
-  const y1 = Math.max(a.y, b.y)
-  return x0 < r.x + r.width && x1 > r.x && y0 < r.y + r.height && y1 > r.y
 }
 
 function padRect(r: Rect, m: number): Rect {
@@ -309,6 +313,75 @@ describe('routeEdge in tight gaps', () => {
   })
 })
 
+describe('routeEdge window validation', () => {
+  it('does not accept a windowed route that runs through a table beyond the window', () => {
+    const a = table(0, 0)
+    const c = table(700, 0)
+    // A wall between the endpoints, taller than the routing window: the cheap
+    // way round runs far past the window edge, where `blocker` sits.
+    const wall = table(400, -3000, 50, 6000)
+    const blocker = table(150, 1000, 240, 100)
+    const obstacles = [a, c, wall, blocker]
+    const r = routeEdge({ source: end(a), target: end(c), obstacles })
+    expect(r).not.toBeNull()
+    expect(routeClearsRects(r!.points, obstacles)).toBe(true)
+  })
+})
+
+describe('routeEdge grid cap and scratch', () => {
+  /** Jittered columns so every table adds its own grid lines. */
+  function field(n: number): Array<Rect> {
+    const out: Array<Rect> = []
+    for (let i = 0; i < n; i++) {
+      out.push(
+        table(
+          (i % 12) * 310 + (i % 7) * 3,
+          Math.floor(i / 12) * 190 + (i % 5) * 2,
+          250 + (i % 3),
+          120 + (i % 4),
+        ),
+      )
+    }
+    return out
+  }
+
+  it('returns null above the grid cap and routes below it', () => {
+    const big = field(500)
+    const a = big[0]
+    const c = big[11]
+    expect(
+      routeEdge({
+        source: end(a),
+        target: end(c),
+        obstacles: big,
+        windowExpand: Infinity,
+      }),
+    ).toBeNull()
+    const small = field(20)
+    expect(
+      routeEdge({
+        source: end(small[0]),
+        target: end(small[11]),
+        obstacles: small,
+        windowExpand: Infinity,
+      }),
+    ).not.toBeNull()
+    expect(MAX_GRID_CELLS).toBeGreaterThan(0)
+  })
+
+  it('releases the scratch an oversized search grew', () => {
+    const t = field(100)
+    const r = routeEdge({
+      source: end(t[0]),
+      target: end(t[11]),
+      obstacles: t,
+      windowExpand: Infinity,
+    })
+    expect(r).not.toBeNull()
+    expect(scratchStates()).toBe(0)
+  })
+})
+
 describe('routeKeyFor', () => {
   it('changes when an obstacle in the window moves and not when a far one does', () => {
     const a = table(0, 0)
@@ -347,20 +420,49 @@ describe('perf: 150 tables, 200 edges', () => {
     if (t !== s) pairs.push([s, t])
   }
 
-  type Cache = Map<number, { key: string }>
-  function pass(rects: Array<Rect>, cache: Cache): number {
-    let routed = 0
-    pairs.forEach(([s, t], idx) => {
-      const inp = input(rects[s], rects[t], rects)
-      inp.obstacles = rects
-      const key = routeKeyFor(inp)
-      if (cache.get(idx)?.key === key) return
-      routeEdge(inp)
-      cache.set(idx, { key })
-      routed++
-    })
-    return routed
+  const nodesOf = (rects: Array<Rect>): Array<Node<TableNodeData>> =>
+    rects.map((r, i) => ({
+      id: `t${i}`,
+      type: 'table',
+      position: { x: r.x, y: r.y },
+      measured: { width: r.width, height: r.height },
+      data: {} as TableNodeData,
+    }))
+  const freshEdges = (): Array<RelationshipEdgeType> =>
+    pairs.map(
+      ([s, t], i) =>
+        ({
+          id: `e${i}`,
+          type: 'relationship',
+          source: `t${s}`,
+          target: `t${t}`,
+          sourceHandle: createColumnHandleId(
+            `t${s}`,
+            `c${i}`,
+            'right',
+            'source',
+          ),
+          targetHandle: createColumnHandleId(
+            `t${t}`,
+            `p${i}`,
+            'left',
+            'target',
+          ),
+          data: {
+            relationship: { sourceColumnId: `c${i}`, targetColumnId: `p${i}` },
+          },
+        }) as unknown as RelationshipEdgeType,
+    )
+  const geometry: RouteGeometry = {
+    getPortOffsets: () => ({ left: { x: 0, y: 40 }, right: { x: 250, y: 40 } }),
   }
+  // The pass as the canvas wires it: side pass, router, route cache, nudge.
+  const wired = (
+    edges: Array<RelationshipEdgeType>,
+    rects: Array<Rect>,
+    moved: Set<string>,
+  ) => recalculateEdgeRouting(edges, nodesOf(rects), moved, geometry)
+  const allIds = new Set(tables.map((_, i) => `t${i}`))
 
   const median = (xs: Array<number>) =>
     [...xs].sort((a, b) => a - b)[xs.length >> 1]
@@ -374,15 +476,14 @@ describe('perf: 150 tables, 200 edges', () => {
   }
 
   function measure() {
-    const cache: Cache = new Map()
     const cold = cpuMs()
-    pass(tables, cache)
+    const warm = wired(freshEdges(), tables, allIds)
     const coldMs = cpuMs() - cold
 
     const full: Array<number> = []
     for (let i = 0; i < 20; i++) {
       const t0 = cpuMs()
-      pass(tables, cache)
+      wired(warm, tables, allIds)
       full.push(cpuMs() - t0)
     }
 
@@ -396,10 +497,10 @@ describe('perf: 150 tables, 200 edges', () => {
         x: rects[victim].x + 30 + i,
         y: rects[victim].y + 20,
       }
-      const warm: Cache = new Map(cache)
       const t0 = cpuMs()
-      reRouted = pass(rects, warm)
+      const out = wired(warm, rects, new Set([`t${victim}`]))
       moved.push(cpuMs() - t0)
+      reRouted = out.filter((e, k) => e !== warm[k]).length
     }
     return {
       coldMs,

@@ -10,7 +10,15 @@
  */
 
 import { createColumnHandleId, parseColumnHandleId } from './edge-routing'
-import { ROUTE_STUB, routeEdge, routeKeyFor } from './orthogonal-router'
+import {
+  ROUTE_STUB,
+  boardKeyFor,
+  routeClearsRects,
+  routeEdge,
+  routeKeyFor,
+  routeKeyHead,
+  windowObstacles,
+} from './orthogonal-router'
 import type { Node } from '@xyflow/react'
 import type { Point, Rect } from './edge-label-placement'
 import type { RouteInput, RouteSide } from './orthogonal-router'
@@ -21,6 +29,8 @@ import { EDGE_SEP } from '@/lib/auto-layout/d3-force-layout'
 const CORRIDOR_BUCKET = 8
 /** Largest shift (px) a segment moves when parallel lines are spread. 5 lines at EDGE_SEP fit. */
 export const NUDGE_MAX = 2 * EDGE_SEP
+/** Resolution (px) at which a nudge shift is pulled back until it clears the tables. */
+const NUDGE_STEP = 0.5
 /** Prefix of a `routeKey` computed over the whole board instead of the routing window. */
 const FULL_KEY_PREFIX = 'X|'
 
@@ -100,6 +110,11 @@ export function applyEdgeRoutes(
     obstacles.push(...geometry.getExtraObstacles(new Set(nodesById.keys())))
   }
 
+  // The whole-board key part is the same for every edge, so build it lazily once.
+  let boardKey: string | undefined
+  const fullKeyOf = (input: RouteInput): string =>
+    `${FULL_KEY_PREFIX}${routeKeyHead(input)}#${(boardKey ??= boardKeyFor(obstacles))}`
+
   const stages: Array<Stage> = original.map((orig, i) => {
     const fb = fallback[i]
     const rel = orig.data?.relationship
@@ -132,12 +147,14 @@ export function applyEdgeRoutes(
       source: { rect: srcRect, ports: ports(srcRect, srcOff) },
       target: { rect: tgtRect, ports: ports(tgtRect, tgtOff) },
       obstacles,
-      currentSides: sidesOf(orig),
+      // An edge with no route history is routed from scratch with no side
+      // preference, so the same geometry gives every peer the same first route.
+      currentSides: orig.data.routeKey ? sidesOf(orig) : undefined,
     }
 
     const stored = orig.data.routeKey
     const current = stored?.startsWith(FULL_KEY_PREFIX)
-      ? FULL_KEY_PREFIX + routeKeyFor({ ...input, windowExpand: Infinity })
+      ? fullKeyOf(input)
       : routeKeyFor(input)
     if (stored === current) {
       // A cached failure keeps today's fallback sides; a cached route keeps its own.
@@ -149,25 +166,24 @@ export function applyEdgeRoutes(
     const result = routeEdge(input)
     if (!result) {
       const { route: _r, routeBase: _b, ...rest } = fb.data ?? orig.data
+      const failed = { ...input, currentSides: sidesOf(fb) }
+      // A failure that searched the whole board (tables outside the window)
+      // can end when any table moves, so it keys on the whole board.
+      const involvedBoard = windowObstacles(failed).length < obstacles.length
       return {
         edge: {
           ...fb,
           data: {
             ...rest,
-            routeKey: routeKeyFor({ ...input, currentSides: sidesOf(fb) }),
+            routeKey: involvedBoard ? fullKeyOf(failed) : routeKeyFor(failed),
           },
         },
         base: undefined,
       }
     }
     const sides = { source: result.sourceSide, target: result.targetSide }
-    const key =
-      (result.expanded ? FULL_KEY_PREFIX : '') +
-      routeKeyFor({
-        ...input,
-        currentSides: sides,
-        windowExpand: result.expanded ? Infinity : undefined,
-      })
+    const routed = { ...input, currentSides: sides }
+    const key = result.expanded ? fullKeyOf(routed) : routeKeyFor(routed)
     return {
       edge: {
         ...fb,
@@ -197,6 +213,7 @@ export function applyEdgeRoutes(
     stages.flatMap((s, i) =>
       s.base ? [{ id: original[i].id, base: s.base }] : [],
     ),
+    obstacles,
   )
 
   return stages.map((s, i) => {
@@ -258,6 +275,7 @@ function shiftRange(
  */
 export function nudgeRoutes(
   items: ReadonlyArray<{ id: string; base: ReadonlyArray<Point> }>,
+  obstacles: ReadonlyArray<Rect> = [],
 ): Map<string, Array<Point>> {
   const out = new Map<string, Array<Point>>()
   for (const it of items)
@@ -307,7 +325,7 @@ export function nudgeRoutes(
     let cluster: Array<Seg> = []
     let clusterHi = -Infinity
     const flush = () => {
-      if (cluster.length >= 2) spreadCluster(cluster, baseOf, out)
+      if (cluster.length >= 2) spreadCluster(cluster, baseOf, out, obstacles)
       cluster = []
       clusterHi = -Infinity
     }
@@ -321,10 +339,28 @@ export function nudgeRoutes(
   return out
 }
 
+/** True when shifting segment k by d keeps it and its neighbours clear of the tables. */
+function shiftClears(
+  pts: ReadonlyArray<Point>,
+  k: number,
+  horizontal: boolean,
+  d: number,
+  obstacles: ReadonlyArray<Rect>,
+): boolean {
+  if (obstacles.length === 0) return true
+  const part = pts.slice(k - 1, k + 3).map((p) => ({ ...p }))
+  for (const i of [1, 2]) {
+    if (horizontal) part[i].y += d
+    else part[i].x += d
+  }
+  return routeClearsRects(part, obstacles)
+}
+
 function spreadCluster(
   cluster: Array<Seg>,
   baseOf: Map<string, ReadonlyArray<Point>>,
   out: Map<string, Array<Point>>,
+  obstacles: ReadonlyArray<Rect>,
 ): void {
   const sorted = [...cluster].sort((a, b) =>
     a.id < b.id ? -1 : a.id > b.id ? 1 : a.k - b.k,
@@ -334,9 +370,17 @@ function spreadCluster(
     const s = sorted[i]
     const wanted = (i - (n - 1) / 2) * EDGE_SEP
     const [lo, hi] = shiftRange(baseOf.get(s.id)!, s.k, s.horizontal)
-    const d = Math.min(Math.max(wanted, lo), hi)
-    if (d === 0) continue
     const pts = out.get(s.id)!
+    let d = Math.min(Math.max(wanted, lo), hi)
+    // Pull the shift back until the moved segment and its two neighbours still
+    // clear every table: a route found at a reduced clearance may have less
+    // room than the shift needs.
+    const dir = Math.sign(d)
+    while (d !== 0 && !shiftClears(pts, s.k, s.horizontal, d, obstacles)) {
+      d -= dir * NUDGE_STEP
+      if (d * dir <= 0) d = 0
+    }
+    if (d === 0) continue
     if (s.horizontal) {
       pts[s.k].y += d
       pts[s.k + 1].y += d

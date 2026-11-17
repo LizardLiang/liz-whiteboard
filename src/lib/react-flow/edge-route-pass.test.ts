@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { recalculateEdgeRouting } from './edge-bundles'
 import { carryRoutes, nudgeRoutes } from './edge-route-pass'
 import { createColumnHandleId, parseColumnHandleId } from './edge-routing'
+import { routeClearsRects, segmentHitsRect } from './orthogonal-router'
 import type { Node } from '@xyflow/react'
 import type { RouteGeometry } from './edge-route-pass'
 import type { RelationshipEdgeType, TableNodeData } from './types'
@@ -41,14 +42,6 @@ function edge(
 
 const geometry: RouteGeometry = {
   getPortOffsets: () => ({ left: { x: 0, y: 40 }, right: { x: W, y: 40 } }),
-}
-
-function segmentHitsRect(a: Point, b: Point, r: Rect): boolean {
-  const x0 = Math.min(a.x, b.x)
-  const x1 = Math.max(a.x, b.x)
-  const y0 = Math.min(a.y, b.y)
-  const y1 = Math.max(a.y, b.y)
-  return x0 < r.x + r.width && x1 > r.x && y0 < r.y + r.height && y1 > r.y
 }
 
 function rectOf(n: Node): Rect {
@@ -180,6 +173,55 @@ describe('recalculateEdgeRouting with geometry', () => {
   })
 })
 
+describe('failed-route keys', () => {
+  const a = table('A', 0, 0)
+  const b = table('B', 600, 300)
+  // Neighbours 5 px from A on both sides leave no room for a stub: no route.
+  const left = table('L', -205, 0)
+  const right = table('R', 205, 0)
+
+  it('keys a failure that searched the whole board on the whole board', () => {
+    const far = table('F', 5000, 5000)
+    const nodes = [a, b, left, right, far]
+    const first = recalculateEdgeRouting(
+      [edge('e1', 'A', 'B')],
+      nodes,
+      new Set(['A']),
+      geometry,
+    )
+    expect(first[0].data!.route).toBeUndefined()
+    const key = first[0].data!.routeKey!
+    expect(key.startsWith('X|')).toBe(true)
+    // Nothing moved: no new search, same edges back.
+    const same = recalculateEdgeRouting(first, nodes, new Set(), geometry)
+    expect(same).toBe(first)
+    // A far table moved: the whole-board failure is searched again.
+    const moved = recalculateEdgeRouting(
+      first,
+      [a, b, left, right, table('F', 5100, 5000)],
+      new Set(['F']),
+      geometry,
+    )
+    expect(moved[0].data!.routeKey).not.toBe(key)
+  })
+})
+
+describe('routes of an edge with no history', () => {
+  it('does not depend on the side the edge handle names', () => {
+    const a = table('A', 0, 0)
+    const b = table('B', 0, 400)
+    const withSides = (s: 'left' | 'right') => {
+      const e = edge('e1', 'A', 'B')
+      e.sourceHandle = createColumnHandleId('A', 'c-e1', s, 'source')
+      e.targetHandle = createColumnHandleId('B', 'p-e1', s, 'target')
+      return recalculateEdgeRouting([e], [a, b], new Set(['A']), geometry)[0]
+    }
+    expect(withSides('left').data!.route).toEqual(
+      withSides('right').data!.route,
+    )
+  })
+})
+
 describe('nudgeRoutes', () => {
   // Two routes with the same interior vertical segment at x = 300.
   const mk = (y0: number, y1: number): Array<Point> => [
@@ -214,6 +256,28 @@ describe('nudgeRoutes', () => {
     expect(r[r.length - 1]).toEqual(base[base.length - 1])
     expect(r[0].y).toBe(r[1].y)
     expect(r[r.length - 2].y).toBe(r[r.length - 1].y)
+  })
+
+  it('keeps three routes in a 3 px channel clear of the table', () => {
+    // Three routes share y = 100; a table's top edge sits at y = 103.
+    const route = (): Array<Point> => [
+      { x: 0, y: 40 },
+      { x: 16, y: 40 },
+      { x: 16, y: 100 },
+      { x: 600, y: 100 },
+      { x: 600, y: 40 },
+      { x: 616, y: 40 },
+    ]
+    const wall: Rect = { x: 100, y: 103, width: 300, height: 200 }
+    const items = ['a', 'b', 'c'].map((id) => ({ id, base: route() }))
+    const free = nudgeRoutes(items)
+    expect([...free.values()].some((r) => !routeClearsRects(r, [wall]))).toBe(
+      true,
+    )
+    const out = nudgeRoutes(items, [wall])
+    for (const r of out.values()) expect(routeClearsRects(r, [wall])).toBe(true)
+    const ys = [...out.values()].map((r) => r[2].y)
+    expect(new Set(ys).size).toBeGreaterThan(1)
   })
 
   it('leaves a lone route untouched', () => {

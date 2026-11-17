@@ -590,20 +590,25 @@ export interface ReactFlowCanvasProps {
  * ```
  */
 /**
- * One string over every table's rendered size, read from the store so it
- * follows a resize the `nodes` state has not caught up with. Null while any
- * table is unmeasured.
+ * One number over every table's rendered size, read from the store so it
+ * follows a resize the `nodes` state has not caught up with. The store notifies
+ * on every drag frame, so this builds no string: it folds the table count and
+ * each width and height into one 32-bit hash. Null while any table is
+ * unmeasured.
  */
-function selectTableSizeKey(s: ReactFlowState): string | null {
-  let key = ''
+function selectTableSizeKey(s: ReactFlowState): number | null {
+  let hash = 2166136261
+  let count = 0
   for (const n of s.nodeLookup.values()) {
     if (n.type !== 'table' && n.type !== 'externalTable') continue
     if (n.hidden) continue
     const { width, height } = n.measured
     if (!width || !height) return null
-    key += `${n.id}:${width}x${height}|`
+    hash = Math.imul(hash ^ Math.round(width * 4), 16777619)
+    hash = Math.imul(hash ^ Math.round(height * 4), 16777619)
+    count++
   }
-  return key
+  return Math.imul(hash ^ count, 16777619) >>> 0
 }
 
 export function ReactFlowCanvas({
@@ -1154,7 +1159,7 @@ export function ReactFlowCanvas({
   // Track whether React Flow has measured all nodes; used for one-shot
   // post-measure edge re-routing inside the overlay (Enhancement 2).
   const nodesInitialized = useNodesInitialized()
-  const lastRoutedSizeKeyRef = useRef<string | null>(null)
+  const lastRoutedSizeKeyRef = useRef<number | null>(null)
 
   // Keep a ref to the latest edges so the highlighting effect can read current
   // edges without adding them to its dependency array (which would cause an
@@ -1589,15 +1594,20 @@ export function ReactFlowCanvas({
       // Back to ABSOLUTE before this reaches edge routing: a member table's
       // position — both in `nodes` state and in the drag event — is relative to
       // its area, and handle geometry is computed in absolute flow space.
-      return toAbsoluteNodes(
-        nodes.map((n) => {
-          const updated = updatedPositions.get(n.id)
-          return withMeasured(updated ? { ...n, position: updated } : n)
-        }),
-        parentIndex,
-      )
+      return [
+        ...toAbsoluteNodes(
+          nodes.map((n) => {
+            const updated = updatedPositions.get(n.id)
+            return withMeasured(updated ? { ...n, position: updated } : n)
+          }),
+          parentIndex,
+        ),
+        // Edges to a reference node need it in the list, or they fall back
+        // to the smooth-step path for the whole drag.
+        ...(externalTableNodesState as unknown as Array<TableNodeType>),
+      ]
     },
-    [nodes, parentIndex, withMeasured],
+    [nodes, parentIndex, withMeasured, externalTableNodesState],
   )
 
   // rAF-throttle drag-frame edge recalculation (GH #121 perf, opt #5).
@@ -1706,7 +1716,13 @@ export function ReactFlowCanvas({
           return { ...n, position: toAbsolute(n.position, liveParent) }
         })
         if (movedIds.size === 0) return
-        scheduleDragEdgeRecalc(currentNodes, movedIds)
+        scheduleDragEdgeRecalc(
+          [
+            ...currentNodes,
+            ...(externalTableNodesState as unknown as Array<TableNodeType>),
+          ],
+          movedIds,
+        )
         return
       }
       const draggedIds = new Set(draggedNodes.map((n) => n.id))
@@ -1721,6 +1737,7 @@ export function ReactFlowCanvas({
       nodes,
       parentIndex,
       scheduleDragEdgeRecalc,
+      externalTableNodesState,
     ],
   )
 
