@@ -36,7 +36,7 @@ import {
   useForceFullDetail,
 } from '@/lib/react-flow/level-of-detail'
 import { createColumnHandleId } from '@/lib/react-flow/edge-routing'
-import { useTheme } from '@/hooks/use-theme'
+import { useAppliedTheme } from '@/hooks/use-applied-theme'
 import { useT } from '@/lib/i18n/use-t'
 
 // Safe-corridor tuning (bug fix: canvas-handle-visibility) — see the
@@ -485,12 +485,13 @@ export function CanvasNodeLayer({
   const forceFullDetail = useForceFullDetail()
 
   // Theme-change repaint (tactical plan Phase 4, item 1): `readColors` below
-  // reads `--rf-*` CSS custom properties fresh on every draw, but nothing
-  // previously triggered a redraw when ONLY the theme changed (no pan/zoom).
-  // Depending on `resolvedTheme` in the draw effect's deps closes that gap —
-  // CanvasNodeLayer renders inside `ThemeProvider` (src/routes/__root.tsx),
-  // so this hook is always available here.
-  const { resolvedTheme } = useTheme()
+  // reads `--rf-*` CSS custom properties on every draw, so a theme change
+  // alone must trigger a redraw. The key is the class on <html>
+  // (useAppliedTheme): it changes after ThemeProvider writes the class, so
+  // the redraw reads the new colors. (`useTheme().resolvedTheme` changes
+  // first, and ThemeProvider's passive effect writes the class after this
+  // component's effects, so a redraw keyed on it read the previous colors.)
+  const appliedTheme = useAppliedTheme()
 
   // Pane-resize repaint (tactical plan Phase 4, item 2): opening/closing a
   // side panel resizes the pane WITHOUT firing a `window` resize event, so a
@@ -1503,7 +1504,7 @@ export function CanvasNodeLayer({
     // `forceFullDetail` is a dep (not just read): export sets it true → this
     // component returns null (canvas unmounts) → export ends, sets it back
     // false → a NEW canvas element mounts. transform/drawNodes/
-    // resolvedTheme/resizeTick are all unchanged across that round-trip, so
+    // appliedTheme/resizeTick are all unchanged across that round-trip, so
     // without this dep the effect wouldn't re-run and the fresh canvas
     // would stay blank until an incidental pan/zoom (Hermes review
     // BLOCKER). The `!canvas` guard above already no-ops the true
@@ -1528,7 +1529,7 @@ export function CanvasNodeLayer({
     enabled,
     transform,
     drawNodes,
-    resolvedTheme,
+    appliedTheme,
     resizeTick,
     forceFullDetail,
     canEdit,

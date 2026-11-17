@@ -2076,7 +2076,9 @@ export function ReactFlowCanvas({
 
   // Stable callback for MiniMap's nodeColor (GH #121 stable-reference audit)
   // — an inline arrow function literal here is a new identity every render.
-  const minimapNodeColor = useCallback(() => 'var(--rf-table-bg)', [])
+  // Table-bg nodes vanished on the light background and the default white
+  // minimap background clashed with the dark page, so both follow the theme.
+  const minimapNodeColor = useCallback(() => 'var(--rf-edge-stroke)', [])
 
   // Viewport culling (GH #121 perf, opt #2) — only turn on
   // onlyRenderVisibleElements once the board is large enough that skipping
@@ -2308,6 +2310,7 @@ export function ReactFlowCanvas({
             {showMinimap && (
               <MiniMap
                 nodeColor={minimapNodeColor}
+                bgColor="var(--rf-background)"
                 maskColor="rgba(0, 0, 0, 0.1)"
                 pannable
                 onClick={onMinimapClick}
