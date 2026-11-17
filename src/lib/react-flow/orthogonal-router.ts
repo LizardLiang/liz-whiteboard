@@ -22,7 +22,7 @@ export const STICKY = 24
 /** The routing window is the endpoint bbox grown by this many px. */
 export const WINDOW_EXPAND = 200
 /** Hard cap on A* expansions per side pair. */
-export const MAX_EXPANSIONS = 5000
+export const MAX_EXPANSIONS = 12000
 
 export interface PortPair {
   left: Point
@@ -320,6 +320,10 @@ class Heap {
 const heap = new Heap()
 let gScratch = new Float64Array(0)
 let parentScratch = new Int32Array(0)
+// A state's g value is valid only when its stamp equals the current search
+// number, so a search never clears the whole scratch array.
+let stampScratch = new Uint32Array(0)
+let searchNumber = 0
 
 interface SearchResult {
   nodes: Array<Point>
@@ -335,6 +339,7 @@ function search(
   bend: number,
   midX: number,
   maxExpansions: number,
+  bound: number = Infinity,
 ): SearchResult | null {
   const { xs, ys, nx, ny } = grid
   const si = xs.indexOf(start.x)
@@ -349,21 +354,35 @@ function search(
   if (gScratch.length < total) {
     gScratch = new Float64Array(total)
     parentScratch = new Int32Array(total)
+    stampScratch = new Uint32Array(total)
+    searchNumber = 0
   }
   const g = gScratch
   const parent = parentScratch
-  g.fill(Infinity, 0, total)
+  const stamp = stampScratch
+  const run = ++searchNumber
+  const gOf = (state: number) => (stamp[state] === run ? g[state] : Infinity)
   heap.clear()
 
   const gx = goal.x
   const gy = goal.y
-  const h = (i: number, j: number) =>
-    Math.abs(xs[i] - gx) + Math.abs(ys[j] - gy)
+  // Manhattan distance plus the bend the goal position forces at the least.
+  const h = (i: number, j: number, d: number) => {
+    const dx = xs[i] - gx
+    const dy = ys[j] - gy
+    const dist = Math.abs(dx) + Math.abs(dy)
+    if (dist === 0) return 0
+    const horizontal = d < 2
+    const bends =
+      dx === 0 ? (horizontal ? 1 : 0) : dy === 0 ? (horizontal ? 0 : 1) : 1
+    return dist + bends * bend
+  }
 
   const startState = (si * ny + sj) * 4 + startDir
   g[startState] = 0
+  stamp[startState] = run
   parent[startState] = -1
-  heap.push(h(si, sj), startState)
+  heap.push(h(si, sj, startDir), startState)
 
   let expansions = 0
   while (heap.size > 0) {
@@ -385,11 +404,12 @@ function search(
     const node = s >> 2
     const i = Math.floor(node / ny)
     const j = node - i * ny
-    if (f - h(i, j) > g[s] + 1e-9) continue
+    if (f >= bound) return null
+    if (f - h(i, j, d) > gOf(s) + 1e-9) continue
     if (++expansions > maxExpansions) return null
 
     if (i === gi && j === gj && d !== OPPOSITE[finalDir]) {
-      const cost = g[s] + (d === finalDir ? 0 : bend)
+      const cost = gOf(s) + (d === finalDir ? 0 : bend)
       heap.push(cost, s + total)
     }
 
@@ -412,12 +432,13 @@ function search(
         step = len * (1 + 1e-4 * Math.abs(xs[i] - midX))
       }
       if (blocked || grid.nodeBlocked[ni * ny + nj]) continue
-      const ng = g[s] + step + (nd === d ? 0 : bend)
+      const ng = gOf(s) + step + (nd === d ? 0 : bend)
       const ns = (ni * ny + nj) * 4 + nd
-      if (ng < g[ns]) {
+      if (ng < gOf(ns)) {
         g[ns] = ng
+        stamp[ns] = run
         parent[ns] = s
-        heap.push(ng + h(ni, nj), ns)
+        heap.push(ng + h(ni, nj, nd), ns)
       }
     }
   }
@@ -480,12 +501,8 @@ function routeInWindow(
   const grid = buildGrid(padded, extraXs, extraYs)
   const midX = extraXs[extraXs.length - 1]
 
-  const results: Array<{
-    pair: number
-    cost: number
-    nodes: Array<Point>
-  } | null> = []
-  for (let k = 0; k < SIDE_PAIRS.length; k++) {
+  type PairResult = { pair: number; cost: number; nodes: Array<Point> }
+  const searchPair = (k: number, bound: number): PairResult | null => {
     const [ss, ts] = SIDE_PAIRS[k]
     const r = search(
       grid,
@@ -497,21 +514,30 @@ function routeInWindow(
       bend,
       midX,
       maxExp,
+      bound,
     )
-    results.push(r ? { pair: k, cost: r.cost, nodes: r.nodes } : null)
+    return r ? { pair: k, cost: r.cost, nodes: r.nodes } : null
   }
 
-  let best: { pair: number; cost: number; nodes: Array<Point> } | null = null
-  for (const r of results) if (r && (!best || r.cost < best.cost)) best = r
-  if (!best) return null
-  if (input.currentSides) {
-    const cur = SIDE_PAIRS.findIndex(
-      ([a, b]) =>
-        a === input.currentSides!.source && b === input.currentSides!.target,
-    )
-    const curR = cur >= 0 ? results[cur] : null
-    if (curR && curR.cost <= best.cost + sticky) best = curR
+  // The current side pair is kept unless another pair is cheaper by more than
+  // `sticky`, so the other pairs only matter below that bound. Searching the
+  // current pair first lets the others stop as soon as they cannot beat it.
+  const cur = input.currentSides
+    ? SIDE_PAIRS.findIndex(
+        ([a, b]) =>
+          a === input.currentSides!.source && b === input.currentSides!.target,
+      )
+    : -1
+  const curR = cur >= 0 ? searchPair(cur, Infinity) : null
+  const bound = curR ? curR.cost - sticky : Infinity
+  let best: PairResult | null = null
+  for (let k = 0; k < SIDE_PAIRS.length; k++) {
+    if (k === cur && curR) continue
+    const r = searchPair(k, bound)
+    if (r && r.cost < bound && (!best || r.cost < best.cost)) best = r
   }
+  if (!best) best = curR
+  if (!best) return null
 
   const [ss, ts] = SIDE_PAIRS[best.pair]
   const points = simplify([source.ports[ss], ...best.nodes, target.ports[ts]])
