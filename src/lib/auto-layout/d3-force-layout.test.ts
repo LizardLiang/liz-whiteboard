@@ -212,9 +212,9 @@ describe('computeD3ForceLayout', () => {
   // TC-AL-E-12 — Dynamic col gap leaves room for the actual label pill
   it('TC-AL-E-12: dynamic column gap leaves room for a 30-char label pill between adjacent columns', async () => {
     // 30-char label: computeLabelPillWidth = max(60, 30×7) + 22 = 210 + 22 = 232px (jsdom fallback)
-    // Required gap = srcExt(11) + margin(16) + 232 + margin(16) + tgtExt(11) = 286px
+    // Required gap = srcStub + margin(16) + 232 + margin(16) + tgtStub (stubs from endMinStubs)
     // Old fixed COL_GAP=200 would give horizGap=200px — FAILS at 264px assertion.
-    // New code: computeRequiredColGap raises gap to 286px — PASSES.
+    // New code: computeRequiredColGap raises the gap to cover the pill — PASSES.
     const label = 'a'.repeat(30)
     const nodes: Array<LayoutInputNode> = [
       makeNode('A', 250, 200),

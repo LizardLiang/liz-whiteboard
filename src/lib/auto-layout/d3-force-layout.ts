@@ -13,6 +13,8 @@
 // Outputs top-left coordinates matching React Flow's node.position contract.
 // Returns a Promise so the call-site API is unchanged.
 
+import { endMinStubs } from '@/lib/react-flow/cardinality-marker'
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -229,90 +231,34 @@ export function computeLabelPillHeight(): number {
 }
 
 // ---------------------------------------------------------------------------
-// Cardinality indicator extent — mirrors RelationshipEdge.tsx constants
-// ---------------------------------------------------------------------------
-
-/**
- * Crow's foot convergence-point distance outward from the handle (px).
- * Mirrors CROW_LENGTH in RelationshipEdge.tsx.
- */
-const CROW_LENGTH_EXTENT = 2
-
-/**
- * Distance from multiplicity outer edge to optionality symbol center (px).
- * Mirrors OPT_GAP in RelationshipEdge.tsx.
- */
-const OPT_GAP_EXTENT = 7
-
-/**
- * Open circle radius for the optional symbol (px).
- * Mirrors CIRCLE_R in RelationshipEdge.tsx.
- */
-const CARDINALITY_SYMBOL_RADIUS = 4
-
-/**
- * How far a cardinality indicator extends outward from the handle into the
- * inter-node gap. Mirrors the indicatorExtent() function in RelationshipEdge.tsx.
- */
-function cardinalityIndicatorExtent(isMany: boolean): number {
-  return (
-    (isMany ? CROW_LENGTH_EXTENT : 0) +
-    OPT_GAP_EXTENT +
-    CARDINALITY_SYMBOL_RADIUS
-  )
-}
-
-/** Maximum indicator extent (crow's foot end). Used as a conservative default. */
-const MAX_CARDINALITY_EXTENT = cardinalityIndicatorExtent(true) // 13 px
-
-/**
- * srcMany / tgtMany flags per cardinality type.
- * Mirrors CARDINALITY_FLAGS in RelationshipEdge.tsx (only the 'many' booleans needed).
- * Tuple: [srcMany, tgtMany]
- */
-const CARDINALITY_MANY: Readonly<Record<string, readonly [boolean, boolean]>> =
-  {
-    ONE_TO_ONE: [false, false],
-    ONE_TO_MANY: [false, true],
-    MANY_TO_ONE: [true, false],
-    MANY_TO_MANY: [true, true],
-    ZERO_TO_ONE: [false, false],
-    ZERO_TO_MANY: [false, true],
-    SELF_REFERENCING: [false, true],
-    MANY_TO_ZERO_OR_ONE: [true, false],
-    MANY_TO_ZERO_OR_MANY: [true, true],
-    ZERO_OR_ONE_TO_ONE: [false, false],
-    ZERO_OR_ONE_TO_MANY: [false, true],
-    ZERO_OR_ONE_TO_ZERO_OR_ONE: [false, false],
-    ZERO_OR_ONE_TO_ZERO_OR_MANY: [false, true],
-    ZERO_OR_MANY_TO_ONE: [true, false],
-    ZERO_OR_MANY_TO_MANY: [true, true],
-    ZERO_OR_MANY_TO_ZERO_OR_ONE: [true, false],
-    ZERO_OR_MANY_TO_ZERO_OR_MANY: [true, true],
-  }
-
-// ---------------------------------------------------------------------------
 // Per-edge column gap computation
 // ---------------------------------------------------------------------------
 
 /**
  * Compute the minimum inter-column gap required for a set of edges.
- * For each edge, the required gap is:
- *   leftCardinalityExtent + EDGE_LABEL_MARGIN + pillWidth + EDGE_LABEL_MARGIN + rightCardinalityExtent
- * Returns at least COL_GAP (the floor) even when there are no labelled edges.
+ * Each line starts on the table border and its first and last segments must
+ * hold the cardinality marker, so the end stubs come from the router's own
+ * per-end minimum (`endMinStubs`, cardinality-marker.ts: 11 / 14 / 21 / 28 px
+ * for one / optional one / many / optional many). For each edge the required
+ * gap is:
+ *   - labelled:   sourceStub + EDGE_LABEL_MARGIN + pillWidth + EDGE_LABEL_MARGIN + targetStub
+ *   - unlabelled: sourceStub + targetStub + MIN_GAP (a free run of the same 48 px the
+ *     table-pair floor uses, between the two markers)
+ * Returns at least COL_GAP (the floor) even when there are no edges.
  */
 export function computeRequiredColGap(edges: Array<LayoutInputEdge>): number {
   let maxRequired = COL_GAP
   for (const edge of edges) {
     const pillWidth = computeLabelPillWidth(edge.label ?? '')
-    const flags =
-      CARDINALITY_MANY[edge.cardinality ?? ''] ?? ([false, false] as const)
-    const srcExt = cardinalityIndicatorExtent(flags[0])
-    const tgtExt = cardinalityIndicatorExtent(flags[1])
+    const stubs = endMinStubs(edge.cardinality)
     const required =
       pillWidth > 0
-        ? srcExt + EDGE_LABEL_MARGIN + pillWidth + EDGE_LABEL_MARGIN + tgtExt
-        : MAX_CARDINALITY_EXTENT * 2 + MIN_GAP
+        ? stubs.source +
+          EDGE_LABEL_MARGIN +
+          pillWidth +
+          EDGE_LABEL_MARGIN +
+          stubs.target
+        : stubs.source + stubs.target + MIN_GAP
     maxRequired = Math.max(maxRequired, required)
   }
   return maxRequired
@@ -378,7 +324,9 @@ export function clampSameSideLabelX(
 /**
  * Minimum inter-column gap (px) — a visual floor only.
  * computeRequiredColGap() will raise this per layout run based on actual edge labels.
- * Set to cover cardinality indicators (13px×2) + breathing room (54px) = 80px.
+ * It already exceeds the widest facing pair of marker stubs (28 px + 28 px =
+ * 56 px, `endMinStubs`), so the router never lacks room even before the
+ * per-edge sizing in computeRequiredColGap() raises it.
  */
 export const COL_GAP = 80
 
