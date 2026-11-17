@@ -7,7 +7,8 @@
 //
 // Cases: (1) a table on the old straight path; (2) dragging a table onto a
 // line, before and after reload; (3) a blocked right side makes the line
-// leave from the left; (4) two lines through one gap stay >= 5 px apart.
+// leave from the left; (4) two lines through one gap stay >= 5 px apart;
+// (6) tables packed 42-48 px apart still get lines that clear every table.
 //
 // The line is read from the DOM path `d` (sampled along its length), so the
 // test checks what the user sees. The persisted result is asserted via
@@ -35,6 +36,8 @@ interface TableSeed {
   name: string
   x: number
   y: number
+  /** Stored width; leave out for the content-sized default. */
+  w?: number
   cols: Array<string>
 }
 interface BoardSeed {
@@ -134,6 +137,31 @@ const PARALLEL = board(
   ],
 )
 
+// 6: a row of five tables packed 42-48 px apart. A line anchors at the handle
+// strip, 24 px outside the table, and needs a 13 px stub plus clearance past
+// it, so these gaps (below the 56 px the full clearance needs) force the
+// reduced-clearance retry; the gap to a neighbour can go no lower than ~40 px. The test seeds the
+// row wide apart, reads the rendered widths, then re-seeds with exact gaps.
+const TIGHT_NAMES = ['tight_a', 'tight_b', 'tight_c', 'tight_d', 'tight_e']
+const TIGHT_GAPS = [46, 42, 48, 44]
+const tightBoard = (xs: Array<number>) =>
+  board(
+    5,
+    'E2E Edge Obstacle Tight',
+    TIGHT_NAMES.map((name, i) => ({
+      name,
+      x: xs[i],
+      y: 0,
+      cols: ['id', 'ref_one', 'ref_two', 'status', 'updated_at', 'notes'],
+    })),
+    [
+      ['tight_b', 'ref_one', 'tight_d', 'id'],
+      ['tight_a', 'ref_one', 'tight_e', 'id'],
+      ['tight_c', 'ref_two', 'tight_e', 'id'],
+      ['tight_b', 'ref_two', 'tight_c', 'id'],
+    ],
+  )
+
 const relId = (b: BoardSeed, i: number) => `${P}-9${b.id.slice(-2)}00000000${i}`
 
 const SEED_SCRIPT = `
@@ -154,7 +182,7 @@ let n = 0
 B.tables.forEach((t, ti) => {
   const tid = '0b57d0' + B.id.slice(-2) + '-0000-4000-8000-' + String(ti + 1).padStart(12, '0')
   tableIds[t.name] = tid
-  table.run(tid, B.id, t.name, null, t.x, t.y, null, null, now, now)
+  table.run(tid, B.id, t.name, null, t.x, t.y, t.w ?? null, null, now, now)
   t.cols.forEach((name, i) => {
     const id = '0b57c0' + B.id.slice(-2) + '-0000-4000-8001-' + String(++n).padStart(12, '0')
     colIds[t.name + '.' + name] = id
@@ -381,4 +409,37 @@ test('case 5: a table that grows back to full height after a low-zoom collapse i
     longName,
     'orphan_lookup_table',
   ])
+})
+
+test('case 6: tables packed 42-48 px apart still get lines that clear every table', async ({
+  page,
+}) => {
+  const spread = tightBoard(TIGHT_NAMES.map((_, i) => i * 700))
+  seed(spread)
+  await openBoard(page, spread)
+  const { ctm } = await readLine(page, relId(spread, 0))
+  const widths: Array<number> = []
+  for (const name of TIGHT_NAMES) {
+    widths.push((await flowBox(page, name, ctm)).width)
+  }
+  const xs: Array<number> = [0]
+  for (let i = 1; i < TIGHT_NAMES.length; i++) {
+    xs.push(xs[i - 1] + widths[i - 1] + TIGHT_GAPS[i - 1])
+  }
+  const tight = tightBoard(xs)
+  seed(tight)
+  await openBoard(page, tight)
+  // The seeded gaps are really 20-30 px.
+  const { ctm: c2 } = await readLine(page, relId(tight, 0))
+  const boxes = await Promise.all(
+    TIGHT_NAMES.map((name) => flowBox(page, name, c2)),
+  )
+  for (let i = 1; i < boxes.length; i++) {
+    const gap = boxes[i].x - (boxes[i - 1].x + boxes[i - 1].width)
+    expect(gap).toBeGreaterThan(40)
+    expect(gap).toBeLessThan(50)
+  }
+  for (let i = 0; i < tight.rels.length; i++) {
+    await expectLineClearsTables(page, relId(tight, i), TIGHT_NAMES)
+  }
 })

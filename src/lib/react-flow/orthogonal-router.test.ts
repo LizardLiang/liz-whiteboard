@@ -219,6 +219,96 @@ describe('routeEdge', () => {
   })
 })
 
+/** Handle strip: a port sits this far outside its table in the app. */
+const HANDLE_OUT = 24
+
+describe('routeEdge in tight gaps', () => {
+  const A = table(400, 0)
+  const C = table(1100, 0)
+
+  /** Tall neighbours hug both sides of A, `gap` px away. */
+  function walled(gap: number): Array<Rect> {
+    return [
+      table(A.x - gap - 100, -300, 100, 700),
+      table(A.x + W + gap, -300, 100, 700),
+    ]
+  }
+
+  function expectClear(r: ReturnType<typeof routeEdge>, rects: Array<Rect>) {
+    expect(r).not.toBeNull()
+    expect(isOrthogonal(r!.points)).toBe(true)
+    for (const o of rects) {
+      for (let i = 0; i + 1 < r!.points.length; i++) {
+        expect(segmentHitsRect(r!.points[i], r!.points[i + 1], o)).toBe(false)
+      }
+    }
+  }
+
+  it.each([20, 28])(
+    'routes through a %i px gap on both sides without touching a table',
+    (gap) => {
+      const others = walled(gap)
+      const r = routeEdge(input(A, C, others))
+      expectClear(r, [A, C, ...others])
+      const [p0, p1] = r!.points
+      expect(
+        Math.abs(p1.x - p0.x) + Math.abs(p1.y - p0.y),
+      ).toBeGreaterThanOrEqual(13)
+    },
+  )
+
+  it.each([40, 46])(
+    'routes through a %i px gap when ports sit 24 px outside the tables',
+    (gap) => {
+      const others = walled(gap)
+      const out = (rect: Rect): RouteEnd => ({
+        rect,
+        ports: {
+          left: { x: rect.x - HANDLE_OUT, y: rect.y + 40 },
+          right: { x: rect.x + rect.width + HANDLE_OUT, y: rect.y + 40 },
+        },
+      })
+      const r = routeEdge({
+        source: out(A),
+        target: out(C),
+        obstacles: [A, C, ...others],
+      })
+      expectClear(r, [A, C, ...others])
+      const [p0, p1] = r!.points
+      expect(
+        Math.abs(p1.x - p0.x) + Math.abs(p1.y - p0.y),
+      ).toBeGreaterThanOrEqual(13)
+    },
+  )
+
+  it('is deterministic in a tight gap', () => {
+    const others = walled(20)
+    const first = routeEdge(input(A, C, others))
+    expect(routeEdge(input(A, C, others))).toEqual(first)
+  })
+
+  it('leaves a roomy layout unchanged by the reduced-clearance retry', () => {
+    const others = walled(60)
+    const r = routeEdge(input(A, C, others))!
+    expectClear(r, [A, C, ...others])
+    const padded = others.map((o) => padRect(o, ROUTE_MARGIN))
+    for (const o of padded) {
+      for (const [p, q] of interiorSegments(r.points)) {
+        expect(segmentHitsRect(p, q, o)).toBe(false)
+      }
+    }
+    expect(Math.abs(r.points[1].x - r.points[0].x)).toBeGreaterThanOrEqual(16)
+  })
+
+  it('still returns null when the gap is smaller than the marker reach', () => {
+    expect(routeEdge(input(A, C, walled(8)))).toBeNull()
+  })
+
+  it('still returns null when a neighbour overlaps an endpoint', () => {
+    expect(routeEdge(input(A, table(A.x + 100, 50)))).toBeNull()
+  })
+})
+
 describe('routeKeyFor', () => {
   it('changes when an obstacle in the window moves and not when a far one does', () => {
     const a = table(0, 0)

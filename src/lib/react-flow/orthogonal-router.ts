@@ -15,6 +15,20 @@ export type RouteSide = 'left' | 'right'
 export const ROUTE_MARGIN = 16
 /** Length of the straight horizontal run that leaves and enters a port. */
 export const ROUTE_STUB = 16
+/** Shortest stub: the cardinality marker reach (CROW_LENGTH 2 + OPT_GAP 7 + CIRCLE_R 4). */
+export const MIN_STUB = 13
+/**
+ * Reduced clearances tried, in order, when the full margin leaves no route.
+ * A side is usable while port-to-neighbour space >= stub + margin. The floor is
+ * a 13 px stub and a 3 px margin: the route still clears every unpadded table.
+ */
+export const CLEARANCE_LADDER: ReadonlyArray<{ margin: number; stub: number }> =
+  [
+    { margin: 12, stub: 15 },
+    { margin: 9, stub: MIN_STUB },
+    { margin: 6, stub: MIN_STUB },
+    { margin: 3, stub: MIN_STUB },
+  ]
 /** Cost, in px of path length, of one direction change. */
 export const BEND_PENALTY = 40
 /** A different side pair must be cheaper than the current one by more than this. */
@@ -544,9 +558,41 @@ function routeInWindow(
   return { points, sourceSide: ss, targetSide: ts, cost: best.cost }
 }
 
+function routeAtClearance(input: RouteInput): RouteResult | null {
+  const { source, target } = input
+  const local = windowObstacles(input)
+  const inWindow = routeInWindow(input, local)
+  if (inWindow) return { ...inWindow, expanded: false }
+  if (local.length >= input.obstacles.length) return null
+  const all = [...input.obstacles]
+  if (!all.some((o) => sameRect(o, source.rect))) all.push(source.rect)
+  if (!all.some((o) => sameRect(o, target.rect))) all.push(target.rect)
+  const full = routeInWindow(input, all)
+  return full ? { ...full, expanded: true } : null
+}
+
+/**
+ * True when at least one side of the end can hold the shortest stub: the stub
+ * end lies outside every obstacle padded by the smallest ladder margin.
+ */
+function endHasRoom(
+  end: RouteEnd,
+  obstacles: ReadonlyArray<Rect>,
+  floorMargin: number,
+): boolean {
+  const padded = obstacles.map((o) => pad(o, floorMargin))
+  return (['left', 'right'] as const).some((side) => {
+    const p = end.ports[side]
+    const x = side === 'left' ? p.x - MIN_STUB : p.x + MIN_STUB
+    return !padded.some((q) => x > q.x0 && x < q.x1 && p.y > q.y0 && p.y < q.y1)
+  })
+}
+
 /**
  * Route one relationship. Returns null when the input is invalid (non-finite,
  * overlapping endpoint tables) or no route exists, so the caller can fall back.
+ * With the full clearance first, then each smaller one in CLEARANCE_LADDER, the
+ * first clearance that has a route wins; every route clears the unpadded tables.
  */
 export function routeEdge(input: RouteInput): RouteResult | null {
   if (!inputIsFinite(input)) return null
@@ -557,13 +603,26 @@ export function routeEdge(input: RouteInput): RouteResult | null {
   ) {
     return null
   }
-  const local = windowObstacles(input)
-  const inWindow = routeInWindow(input, local)
-  if (inWindow) return { ...inWindow, expanded: false }
-  if (local.length >= input.obstacles.length) return null
-  const all = [...input.obstacles]
-  if (!all.some((o) => sameRect(o, source.rect))) all.push(source.rect)
-  if (!all.some((o) => sameRect(o, target.rect))) all.push(target.rect)
-  const full = routeInWindow(input, all)
-  return full ? { ...full, expanded: true } : null
+  const full = routeAtClearance(input)
+  if (full) return full
+  const margin = input.margin ?? ROUTE_MARGIN
+  const stub = input.stub ?? ROUTE_STUB
+  // No retry can help when an end has no side that holds the shortest stub.
+  const floor = CLEARANCE_LADDER[CLEARANCE_LADDER.length - 1].margin
+  if (
+    !endHasRoom(source, input.obstacles, floor) ||
+    !endHasRoom(target, input.obstacles, floor)
+  ) {
+    return null
+  }
+  for (const level of CLEARANCE_LADDER) {
+    if (level.margin >= margin && level.stub >= stub) continue
+    const reduced = routeAtClearance({
+      ...input,
+      margin: Math.min(margin, level.margin),
+      stub: Math.min(stub, level.stub),
+    })
+    if (reduced) return reduced
+  }
+  return null
 }
