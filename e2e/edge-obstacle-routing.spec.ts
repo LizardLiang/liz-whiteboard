@@ -18,7 +18,11 @@
 // seed resets only its own boards, so it is safe to run before every test.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { tableNode } from './canvas-helpers'
+import {
+  tableNode,
+  zoomAboveLodThreshold,
+  zoomBelowLodThreshold,
+} from './canvas-helpers'
 import { IDS as SHARED } from './fixtures'
 import type { Page } from '@playwright/test'
 
@@ -359,4 +363,22 @@ test('case 4: two lines through one gap draw at least 5 px apart', async ({
   expect(minGap).toBeGreaterThanOrEqual(5)
   await expectLineClearsTables(page, relId(PARALLEL, 0), [longName])
   await expectLineClearsTables(page, relId(PARALLEL, 1), [longName])
+})
+
+test('case 5: a table that grows back to full height after a low-zoom collapse is still cleared', async ({
+  page,
+}) => {
+  seed(BETWEEN)
+  await openBoard(page, BETWEEN)
+  // Below the level-of-detail zoom, tables collapse to their header (34 px
+  // tall) and the router sees tiny obstacles; zooming back in restores the
+  // full height, and the lines must be re-routed around the full boxes.
+  await zoomBelowLodThreshold(page)
+  await page.waitForTimeout(1000)
+  await zoomAboveLodThreshold(page)
+  await page.waitForTimeout(1500)
+  await expectLineClearsTables(page, relId(BETWEEN, 0), [
+    longName,
+    'orphan_lookup_table',
+  ])
 })

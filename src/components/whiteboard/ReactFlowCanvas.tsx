@@ -16,6 +16,7 @@ import {
   useNodesInitialized,
   useNodesState,
   useReactFlow,
+  useStore,
   useStoreApi,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -41,6 +42,7 @@ import type {
   OnNodesChange,
   OnNodesDelete,
   OnReconnect,
+  ReactFlowState,
 } from '@xyflow/react'
 import type {
   AreaNodeType,
@@ -587,6 +589,23 @@ export interface ReactFlowCanvasProps {
  * />
  * ```
  */
+/**
+ * One string over every table's rendered size, read from the store so it
+ * follows a resize the `nodes` state has not caught up with. Null while any
+ * table is unmeasured.
+ */
+function selectTableSizeKey(s: ReactFlowState): string | null {
+  let key = ''
+  for (const n of s.nodeLookup.values()) {
+    if (n.type !== 'table' && n.type !== 'externalTable') continue
+    if (n.hidden) continue
+    const { width, height } = n.measured
+    if (!width || !height) return null
+    key += `${n.id}:${width}x${height}|`
+  }
+  return key
+}
+
 export function ReactFlowCanvas({
   initialNodes = [],
   initialEdges = [],
@@ -1062,6 +1081,12 @@ export function ReactFlowCanvas({
           right: { x: right.x + right.width, y: right.y + right.height / 2 },
         }
       },
+      getSize: (nodeId) => {
+        const m = getInternalNode(nodeId)?.measured
+        return m?.width && m.height
+          ? { width: m.width, height: m.height }
+          : null
+      },
       getExtraObstacles: (excludeIds) => {
         const out: Array<Rect> = []
         for (const n of reactFlowStore.getState().nodeLookup.values()) {
@@ -1129,7 +1154,7 @@ export function ReactFlowCanvas({
   // Track whether React Flow has measured all nodes; used for one-shot
   // post-measure edge re-routing inside the overlay (Enhancement 2).
   const nodesInitialized = useNodesInitialized()
-  const lastRoutedWidthKeyRef = useRef<string | null>(null)
+  const lastRoutedSizeKeyRef = useRef<string | null>(null)
 
   // Keep a ref to the latest edges so the highlighting effect can read current
   // edges without adding them to its dependency array (which would cause an
@@ -1380,7 +1405,7 @@ export function ReactFlowCanvas({
   // pass above may have routed with default widths, so the next measurement
   // must re-route even when the widths come back the same.
   useEffect(() => {
-    lastRoutedWidthKeyRef.current = null
+    lastRoutedSizeKeyRef.current = null
   }, [initialNodes])
 
   // Re-route after React Flow measures nodes, and again whenever a measured
@@ -1395,35 +1420,24 @@ export function ReactFlowCanvas({
   // default widths, then never ran again: an edge between a wide table and one
   // just right of it left from the wrong side, ran behind the table and hid
   // its label. So: skip while any width is missing, and route once per
-  // distinct set of widths (drags move positions, not widths, so this does not
-  // run per drag frame).
+  // distinct set of sizes (drags move positions, not sizes, so this does not
+  // run per drag frame). Heights count too: the obstacle router routes around
+  // each table's full box, and a height change (zoom crossing the
+  // level-of-detail threshold, a column added) moves the handles and the box.
   //
   // `nodes` is React Flow state, where an area member's position is RELATIVE
   // to its area. Edge routing compares positions across tables, so it must get
   // ABSOLUTE ones: fed the relative x, a member of an area far left of the
   // origin looked like it sat right of its partner, and its edge left from the
   // wrong side and looped around both tables. Reference nodes are never nested.
-  const measuredWidthKey = useMemo(() => {
-    let key = ''
-    for (const n of nodes) {
-      const w = n.measured?.width
-      if (!w) return null
-      key += `${n.id}:${w}|`
-    }
-    for (const n of externalTableNodesState) {
-      const w = n.measured?.width
-      if (!w) return null
-      key += `${n.id}:${w}|`
-    }
-    return key
-  }, [nodes, externalTableNodesState])
+  const measuredSizeKey = useStore(selectTableSizeKey)
   const routeAfterMeasureRef = useRef({ nodes, externalTableNodesState })
   routeAfterMeasureRef.current = { nodes, externalTableNodesState }
 
   useEffect(() => {
-    if (!nodesInitialized || measuredWidthKey === null) return
-    if (lastRoutedWidthKeyRef.current === measuredWidthKey) return
-    lastRoutedWidthKeyRef.current = measuredWidthKey
+    if (!nodesInitialized || measuredSizeKey === null) return
+    if (lastRoutedSizeKeyRef.current === measuredSizeKey) return
+    lastRoutedSizeKeyRef.current = measuredSizeKey
     const { nodes: liveNodes, externalTableNodesState: liveExternal } =
       routeAfterMeasureRef.current
     setEdges((prevEdges) => {
@@ -1435,7 +1449,7 @@ export function ReactFlowCanvas({
       const allIds = new Set(measured.map((n) => n.id))
       return recalculateEdgeRouting(prevEdges, measured, allIds, routeGeometry)
     })
-  }, [nodesInitialized, measuredWidthKey, parentIndex, setEdges, routeGeometry])
+  }, [nodesInitialized, measuredSizeKey, parentIndex, setEdges, routeGeometry])
 
   // Apply NODE highlighting when selection/relations-preview changes (GH
   // #121 perf, opt #1). Deliberately keyed on [activeTableId,

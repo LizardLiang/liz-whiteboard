@@ -38,13 +38,16 @@ export interface RouteGeometry {
     columnId: string,
     type: 'source' | 'target',
   ) => PortOffsets | null
+  /** Rendered size from the store; it follows a resize the node objects have not caught up with. */
+  getSize?: (nodeId: string) => { width: number; height: number } | null
   /** Table rects not in `nodes` (for example reference nodes), by absolute position. */
   getExtraObstacles?: (excludeIds: ReadonlySet<string>) => Array<Rect>
 }
 
-function measuredRect(node: Node): Rect | null {
-  const w = node.measured?.width ?? node.width
-  const h = node.measured?.height ?? node.height
+function measuredRect(node: Node, geometry: RouteGeometry): Rect | null {
+  const live = geometry.getSize?.(node.id)
+  const w = live?.width ?? node.measured?.width ?? node.width
+  const h = live?.height ?? node.measured?.height ?? node.height
   if (!w || !h) return null
   return { x: node.position.x, y: node.position.y, width: w, height: h }
 }
@@ -90,7 +93,7 @@ export function applyEdgeRoutes(
   for (const n of nodes) {
     if (n.type !== 'table' && n.type !== 'externalTable') continue
     if (n.hidden) continue
-    const r = measuredRect(n)
+    const r = measuredRect(n, geometry)
     if (r) obstacles.push(r)
   }
   if (geometry.getExtraObstacles) {
@@ -104,8 +107,8 @@ export function applyEdgeRoutes(
     const src = nodesById.get(orig.source)
     const tgt = nodesById.get(orig.target)
     if (!src || !tgt) return { edge: fb, base: undefined }
-    const srcRect = measuredRect(src)
-    const tgtRect = measuredRect(tgt)
+    const srcRect = measuredRect(src, geometry)
+    const tgtRect = measuredRect(tgt, geometry)
     const srcOff = geometry.getPortOffsets(
       orig.source,
       rel.sourceColumnId,
