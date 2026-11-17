@@ -31,22 +31,27 @@ import {
 import { useT } from '@/lib/i18n/use-t'
 
 // ── Layout constants ──
-// How far past the handle to push the crow's foot prong tips toward the table
-const TABLE_INSET = 10
-// Crow's foot convergence point distance outward from handle
-const CROW_LENGTH = 2
+// A line and its marker start ON the table border (not at the connect dot), so
+// the crow's foot prongs and the bars end 1 px outside it (negative inset) so
+// the table border does not clip them.
+const TABLE_INSET = -1
+// Crow's foot length outward from the table border: the foot lies entirely
+// outside the table, its prongs on the border and its tip CROW_LENGTH out
+const CROW_LENGTH = 5
 // Crow's foot half-spread (perpendicular distance of outer prongs)
 const CROW_SPREAD = 6
 // Curvature of outer prongs (quadratic bezier bow)
 const CROW_CURVE = 3
-// Multiplicity bar inset toward table from handle
-const MULT_BAR_INSET = 2
+// Multiplicity bar inset toward the table from the border
+const MULT_BAR_INSET = -1
 // Bar half-height (perpendicular extent of a bar symbol)
 const BAR_HALF = 6
 // Open circle radius (for zero/optional symbol)
 const CIRCLE_R = 4
-// Gap between the multiplicity symbol outer edge and the optionality symbol center
-const OPT_GAP = 7
+// Distance from the table border to the optionality symbol centre, after a
+// crow's foot (the circle touches the tip) and after a bar
+const OPT_DIST_MANY = 9
+const OPT_DIST_ONE = 7
 
 const CARDINALITY_COLORS: Record<string, string> = {
   ONE_TO_ONE: '#60a5fa', // blue
@@ -166,14 +171,14 @@ function outwardAngle(position: Position): number {
 /**
  * Render proper two-symbol crow's foot notation for one end of an edge.
  *
- * Standard crow's foot layout (reading outward from handle toward the edge line):
- *   [table] ← handle ← [multiplicity: crow/bar] ··· [optionality: circle/bar] ← edge line
+ * Standard crow's foot layout (reading outward from the table border toward the edge line):
+ *   [table] ← border ← [multiplicity: crow/bar] ··· [optionality: circle/bar] ← edge line
  *
- * Multiplicity symbol (closest to table, at handle):
+ * Multiplicity symbol (closest to table, at the table border):
  *   - Crow's foot (⋈) = many
  *   - Single perpendicular bar (|) = one
  *
- * Optionality symbol (further out, OPT_GAP from multiplicity):
+ * Optionality symbol (further out, OPT_DIST_* from the table border):
  *   - Open circle (○) = zero / optional
  *   - Single perpendicular bar (|) = mandatory / one
  *
@@ -199,10 +204,10 @@ function CardinalityIndicator(props: {
   const px = Math.sin(angle)
   const py = -Math.cos(angle)
 
-  // ── Multiplicity symbol (at handle, touching the table) ──
+  // ── Multiplicity symbol (at the table border, touching the table) ──
   const multSymbol = isMany ? (
     (() => {
-      // Crow's foot: prong tips at handle - TABLE_INSET, convergence at handle + CROW_LENGTH
+      // Crow's foot: prong tips at border - TABLE_INSET, convergence at border + CROW_LENGTH
       const baseX = x - cos * TABLE_INSET
       const baseY = y - sin * TABLE_INSET
       const tipX = x + cos * CROW_LENGTH
@@ -251,10 +256,10 @@ function CardinalityIndicator(props: {
   )
 
   // ── Optionality symbol (outward from multiplicity) ──
-  // Position: past multiplicity outer edge + OPT_GAP
-  const multExt = isMany ? CROW_LENGTH : 0
-  const optX = x + cos * (multExt + OPT_GAP)
-  const optY = y + sin * (multExt + OPT_GAP)
+  // Position: OPT_DIST_* out from the table border
+  const optDist = isMany ? OPT_DIST_MANY : OPT_DIST_ONE
+  const optX = x + cos * optDist
+  const optY = y + sin * optDist
 
   const optSymbol = isOptional ? (
     // Open circle = zero / optional
@@ -287,18 +292,35 @@ function CardinalityIndicator(props: {
   )
 }
 
-/** Total extent (outward from handle) that the indicator occupies — used to shorten the edge path */
+/** Total extent (outward from the table border) that the indicator occupies — used to shorten the edge path */
 function indicatorExtent(isMany: boolean): number {
-  const multExt = isMany ? CROW_LENGTH : 0
-  return multExt + OPT_GAP + CIRCLE_R
+  return (isMany ? OPT_DIST_MANY : OPT_DIST_ONE) + CIRCLE_R
 }
 
-/** How close (px) a route end must be to the live handle for the route to count as fresh. */
+/**
+ * X of the table border the line starts on: the node's left edge for a Left
+ * handle, its right edge for a Right one. Undefined while the node is missing
+ * or unmeasured.
+ */
+function borderXOf(
+  s: ReactFlowState,
+  nodeId: string,
+  position: Position,
+): number | undefined {
+  const n = s.nodeLookup.get(nodeId)
+  if (!n) return undefined
+  const x = n.internals.positionAbsolute.x
+  if (position === Position.Left) return x
+  const width = n.measured.width
+  return width ? x + width : undefined
+}
+
+/** How close (px) a route end must be to the live table border for the route to count as fresh. */
 const ROUTE_END_TOLERANCE = 1
 
 /**
  * The route to draw: the cached route when both ends still sit on the live
- * handles, shortened at each end to stop before the cardinality icon. Null
+ * table borders, shortened at each end to stop before the cardinality icon. Null
  * when there is no route or it is stale.
  */
 function freshRoutePoints(
@@ -355,7 +377,7 @@ function rectsEqual(a: ReadonlyArray<Rect>, b: ReadonlyArray<Rect>): boolean {
   return true
 }
 
-/** Rect the cardinality symbols occupy at one end, outward from the handle. */
+/** Rect the cardinality symbols occupy at one end, outward from the table border. */
 function markerRect(
   x: number,
   y: number,
@@ -398,9 +420,11 @@ function markerRect(
 export const RelationshipEdge = memo(
   ({
     id,
-    sourceX,
+    source,
+    target,
+    sourceX: handleSourceX,
     sourceY,
-    targetX,
+    targetX: handleTargetX,
     targetY,
     sourcePosition,
     targetPosition,
@@ -408,6 +432,24 @@ export const RelationshipEdge = memo(
     selected,
   }: EdgeProps<RelationshipEdgeType>) => {
     const t = useT()
+    // React Flow reports each end at its connect dot, about 24 px outside the
+    // table. The line and its marker start on the table border instead (design
+    // rule, user 2026-11-17); the dots only serve drag-to-connect. Y is the
+    // dot's, which is the column row's centre.
+    const sourceBorderX = useStore(
+      useCallback(
+        (s: ReactFlowState) => borderXOf(s, source, sourcePosition),
+        [source, sourcePosition],
+      ),
+    )
+    const targetBorderX = useStore(
+      useCallback(
+        (s: ReactFlowState) => borderXOf(s, target, targetPosition),
+        [target, targetPosition],
+      ),
+    )
+    const sourceX = sourceBorderX ?? handleSourceX
+    const targetX = targetBorderX ?? handleTargetX
     const {
       cardinality,
       label,
@@ -489,7 +531,7 @@ export const RelationshipEdge = memo(
     const bundledCenterX = defaultCenterX + bundleXOff
 
     // A router path replaces the smooth-step one while its ends still sit on
-    // the live handles. A stale route (a table moved and the pass has not run
+    // the live table borders. A stale route (a table moved and the pass has not run
     // yet) or no route at all draws the smooth-step path below.
     const routedPoints = useMemo(
       () =>

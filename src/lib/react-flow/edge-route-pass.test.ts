@@ -41,7 +41,7 @@ function edge(
 }
 
 const geometry: RouteGeometry = {
-  getPortOffsets: () => ({ left: { x: 0, y: 40 }, right: { x: W, y: 40 } }),
+  getPortOffsets: () => ({ y: 40 }),
 }
 
 function rectOf(n: Node): Rect {

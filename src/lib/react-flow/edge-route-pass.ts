@@ -34,10 +34,13 @@ const NUDGE_STEP = 0.5
 /** Prefix of a `routeKey` computed over the whole board instead of the routing window. */
 const FULL_KEY_PREFIX = 'X|'
 
-/** Offsets of a column's handle centres from the node's top-left corner. */
+/**
+ * Where a column's line starts, as an offset from the node's top-left corner.
+ * Only the row's y is needed: a line starts on the table border (the left or
+ * right edge of the rect), not at the connect dot.
+ */
 export interface PortOffsets {
-  left: Point
-  right: Point
+  y: number
 }
 
 /** Handle geometry the pass cannot read from the node objects. */
@@ -140,8 +143,8 @@ export function applyEdgeRoutes(
 
     const dy = handleYOffsets.get(orig.id)?.handleYOffset ?? 0
     const ports = (rect: Rect, off: PortOffsets) => ({
-      left: { x: rect.x + off.left.x, y: rect.y + off.left.y + dy },
-      right: { x: rect.x + off.right.x, y: rect.y + off.right.y + dy },
+      left: { x: rect.x, y: rect.y + off.y + dy },
+      right: { x: rect.x + rect.width, y: rect.y + off.y + dy },
     })
     const input: RouteInput = {
       source: { rect: srcRect, ports: ports(srcRect, srcOff) },

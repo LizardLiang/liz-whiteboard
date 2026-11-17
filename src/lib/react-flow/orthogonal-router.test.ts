@@ -224,7 +224,6 @@ describe('routeEdge', () => {
 })
 
 /** Handle strip: a port sits this far outside its table in the app. */
-const HANDLE_OUT = 24
 
 describe('routeEdge in tight gaps', () => {
   const A = table(400, 0)
@@ -248,35 +247,11 @@ describe('routeEdge in tight gaps', () => {
     }
   }
 
-  it.each([20, 28])(
+  it.each([16, 20, 28])(
     'routes through a %i px gap on both sides without touching a table',
     (gap) => {
       const others = walled(gap)
       const r = routeEdge(input(A, C, others))
-      expectClear(r, [A, C, ...others])
-      const [p0, p1] = r!.points
-      expect(
-        Math.abs(p1.x - p0.x) + Math.abs(p1.y - p0.y),
-      ).toBeGreaterThanOrEqual(13)
-    },
-  )
-
-  it.each([40, 46])(
-    'routes through a %i px gap when ports sit 24 px outside the tables',
-    (gap) => {
-      const others = walled(gap)
-      const out = (rect: Rect): RouteEnd => ({
-        rect,
-        ports: {
-          left: { x: rect.x - HANDLE_OUT, y: rect.y + 40 },
-          right: { x: rect.x + rect.width + HANDLE_OUT, y: rect.y + 40 },
-        },
-      })
-      const r = routeEdge({
-        source: out(A),
-        target: out(C),
-        obstacles: [A, C, ...others],
-      })
       expectClear(r, [A, C, ...others])
       const [p0, p1] = r!.points
       expect(
@@ -454,7 +429,7 @@ describe('perf: 150 tables, 200 edges', () => {
         }) as unknown as RelationshipEdgeType,
     )
   const geometry: RouteGeometry = {
-    getPortOffsets: () => ({ left: { x: 0, y: 40 }, right: { x: 250, y: 40 } }),
+    getPortOffsets: () => ({ y: 40 }),
   }
   // The pass as the canvas wires it: side pass, router, route cache, nudge.
   const wired = (

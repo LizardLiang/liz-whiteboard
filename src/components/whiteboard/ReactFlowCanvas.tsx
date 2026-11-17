@@ -1065,10 +1065,10 @@ export function ReactFlowCanvas({
     [getInternalNode],
   )
 
-  // Handle geometry for the orthogonal edge router. Handle centres come from
-  // the store's measured `handleBounds` as offsets from the node's top-left,
-  // so the pass adds them to the (possibly mid-drag) absolute positions it
-  // already holds. Reference nodes that the drag callbacks do not carry are
+  // Handle geometry for the orthogonal edge router. A column's row y comes from
+  // the store's measured `handleBounds` as an offset from the node's top-left,
+  // so the pass adds it to the (possibly mid-drag) absolute positions it
+  // already holds; the line itself starts on the table border. Reference nodes that the drag callbacks do not carry are
   // read from the store as extra obstacles.
   const routeGeometry = useMemo<RouteGeometry>(
     () => ({
@@ -1081,10 +1081,8 @@ export function ReactFlowCanvas({
           (h) => h.id === createColumnHandleId(nodeId, columnId, 'right', type),
         )
         if (!left || !right) return null
-        return {
-          left: { x: left.x, y: left.y + left.height / 2 },
-          right: { x: right.x + right.width, y: right.y + right.height / 2 },
-        }
+        // The line starts on the table border, so only the row's y is read.
+        return { y: left.y + left.height / 2 }
       },
       getSize: (nodeId) => {
         const m = getInternalNode(nodeId)?.measured

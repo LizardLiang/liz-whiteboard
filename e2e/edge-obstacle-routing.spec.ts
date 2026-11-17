@@ -8,7 +8,7 @@
 // Cases: (1) a table on the old straight path; (2) dragging a table onto a
 // line, before and after reload; (3) a blocked right side makes the line
 // leave from the left; (4) two lines through one gap stay >= 5 px apart;
-// (6) tables packed 42-48 px apart still get lines that clear every table.
+// (6) tables packed 20-30 px apart still get lines that clear every table.
 //
 // The line is read from the DOM path `d` (sampled along its length), so the
 // test checks what the user sees. The persisted result is asserted via
@@ -137,13 +137,13 @@ const PARALLEL = board(
   ],
 )
 
-// 6: a row of five tables packed 42-48 px apart. A line anchors at the handle
-// strip, 24 px outside the table, and needs a 13 px stub plus clearance past
-// it, so these gaps (below the 56 px the full clearance needs) force the
-// reduced-clearance retry; the gap to a neighbour can go no lower than ~40 px. The test seeds the
-// row wide apart, reads the rendered widths, then re-seeds with exact gaps.
+// 6: a row of five tables packed 20-30 px apart. A line starts on the table
+// border and needs a 13 px marker stub plus 3 px of air, so a 16 px gap is the
+// least that routes; these gaps (below the 32 px the full clearance needs)
+// force the reduced-clearance retry. The test seeds the row wide apart, reads
+// the rendered widths, then re-seeds with exact gaps.
 const TIGHT_NAMES = ['tight_a', 'tight_b', 'tight_c', 'tight_d', 'tight_e']
-const TIGHT_GAPS = [46, 42, 48, 44]
+const TIGHT_GAPS = [24, 20, 30, 26]
 const tightBoard = (xs: Array<number>) =>
   board(
     5,
@@ -381,9 +381,9 @@ test('case 3: a blocked right side makes the line leave from the left', async ({
   // Free right side: the line leaves A on its right.
   expect(start.pts[0].x).toBeGreaterThan(a.x + a.width - 1)
 
-  // Park the middle table 20 px right of A: its padded box covers A's stub.
+  // Park the middle table 10 px right of A: the gap is under the 16 px a stub needs.
   const mid = await flowBox(page, longName, start.ctm)
-  const dxFlow = a.x + a.width + 20 - mid.x
+  const dxFlow = a.x + a.width + 10 - mid.x
   await dragTable(page, id, longName, dxFlow * start.ctm.d, 0)
 
   const moved = await readLine(page, id)
@@ -436,7 +436,7 @@ test('case 5: a table that grows back to full height after a low-zoom collapse i
   ])
 })
 
-test('case 6: tables packed 42-48 px apart still get lines that clear every table', async ({
+test('case 6: tables packed 20-30 px apart still get lines that clear every table', async ({
   page,
 }) => {
   const spread = tightBoard(TIGHT_NAMES.map((_, i) => i * 700))
@@ -461,10 +461,27 @@ test('case 6: tables packed 42-48 px apart still get lines that clear every tabl
   )
   for (let i = 1; i < boxes.length; i++) {
     const gap = boxes[i].x - (boxes[i - 1].x + boxes[i - 1].width)
-    expect(gap).toBeGreaterThan(40)
-    expect(gap).toBeLessThan(50)
+    expect(gap).toBeGreaterThan(19)
+    expect(gap).toBeLessThan(31)
   }
   for (let i = 0; i < tight.rels.length; i++) {
     await expectLineClearsTables(page, relId(tight, i), TIGHT_NAMES)
   }
+})
+
+test('case 7: a line starts on the table border, not at the connect dot', async ({
+  page,
+}) => {
+  seed(BETWEEN)
+  await openBoard(page, BETWEEN)
+  const { pts, ctm } = await readLine(page, relId(BETWEEN, 0))
+  const src = await flowBox(page, 'accounts_receivable', ctm)
+  const tgt = await flowBox(page, cjkName, ctm)
+  const fromBorder = (p: Pt, b: Box) =>
+    Math.min(Math.abs(p.x - b.x), Math.abs(p.x - (b.x + b.width)))
+  // The drawn path stops short of the border by the cardinality marker (at most
+  // 13 px); the connect dot sits 24 px out, so a line that began there would
+  // be 24 + 13 px from the border.
+  expect(fromBorder(pts[0], src)).toBeLessThanOrEqual(14)
+  expect(fromBorder(pts[pts.length - 1], tgt)).toBeLessThanOrEqual(14)
 })

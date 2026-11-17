@@ -23,8 +23,9 @@ export const ROUTE_STUB = 16
 export const MIN_STUB = 13
 /**
  * Reduced clearances tried, in order, when the full margin leaves no route.
- * A side is usable while port-to-neighbour space >= stub + margin. The floor is
- * a 13 px stub and a 3 px margin: the route still clears every unpadded table.
+ * A port sits on the table border, so a side is usable while the gap to the
+ * neighbour is >= stub + margin. The floor is a 13 px stub and a 3 px margin,
+ * a 16 px gap: the route still clears every unpadded table.
  */
 export const CLEARANCE_LADDER: ReadonlyArray<{ margin: number; stub: number }> =
   [
@@ -60,7 +61,7 @@ export interface PortPair {
 
 export interface RouteEnd {
   rect: Rect
-  /** Absolute centre of the left and right handle of the connected column. */
+  /** Where the line starts: the table border (left and right edge) at the connected column's row. */
   ports: PortPair
 }
 
