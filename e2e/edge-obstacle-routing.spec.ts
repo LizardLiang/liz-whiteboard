@@ -8,7 +8,7 @@
 // Cases: (1) a table on the old straight path; (2) dragging a table onto a
 // line, before and after reload; (3) a blocked right side makes the line
 // leave from the left; (4) two lines through one gap stay >= 5 px apart;
-// (6) tables packed 20-30 px apart still get lines that clear every table.
+// (6) tables packed 26-30 px apart still get lines that clear every table.
 //
 // The line is read from the DOM path `d` (sampled along its length), so the
 // test checks what the user sees. The persisted result is asserted via
@@ -137,13 +137,16 @@ const PARALLEL = board(
   ],
 )
 
-// 6: a row of five tables packed 20-30 px apart. A line starts on the table
-// border and needs a 13 px marker stub plus 3 px of air, so a 16 px gap is the
-// least that routes; these gaps (below the 32 px the full clearance needs)
-// force the reduced-clearance retry. The test seeds the row wide apart, reads
+// 6: a row of five tables packed 26-30 px apart. A line starts on the table
+// border and each end needs a stub of its own marker extent plus 3 px of air,
+// then 3 px of margin: the seeded MANY_TO_ONE source (crow's foot + bar, extent
+// 18) needs a 24 px gap, the target (bar + bar, extent 8) a 14 px one. These
+// gaps (below the 44 px the full clearance needs at a "many" end) force the
+// reduced-clearance retry; a line that cannot fit draws the smooth-step
+// fallback. The test seeds the row wide apart, reads
 // the rendered widths, then re-seeds with exact gaps.
 const TIGHT_NAMES = ['tight_a', 'tight_b', 'tight_c', 'tight_d', 'tight_e']
-const TIGHT_GAPS = [24, 20, 30, 26]
+const TIGHT_GAPS = [28, 26, 30, 27]
 const tightBoard = (xs: Array<number>) =>
   board(
     5,
@@ -381,7 +384,8 @@ test('case 3: a blocked right side makes the line leave from the left', async ({
   // Free right side: the line leaves A on its right.
   expect(start.pts[0].x).toBeGreaterThan(a.x + a.width - 1)
 
-  // Park the middle table 10 px right of A: the gap is under the 16 px a stub needs.
+  // Park the middle table 10 px right of A: the gap is under the 24 px a
+  // crow's-foot (many) source end needs (marker 18 + 3 air + 3 margin).
   const mid = await flowBox(page, longName, start.ctm)
   const dxFlow = a.x + a.width + 10 - mid.x
   await dragTable(page, id, longName, dxFlow * start.ctm.d, 0)
@@ -436,7 +440,7 @@ test('case 5: a table that grows back to full height after a low-zoom collapse i
   ])
 })
 
-test('case 6: tables packed 20-30 px apart still get lines that clear every table', async ({
+test('case 6: tables packed 26-30 px apart still get lines that clear every table', async ({
   page,
 }) => {
   const spread = tightBoard(TIGHT_NAMES.map((_, i) => i * 700))
@@ -454,14 +458,15 @@ test('case 6: tables packed 20-30 px apart still get lines that clear every tabl
   const tight = tightBoard(xs)
   seed(tight)
   await openBoard(page, tight)
-  // The seeded gaps are really 20-30 px.
+  // The seeded gaps are really 26-30 px: above the 24 px a many end needs,
+  // below the 44 px the full clearance needs.
   const { ctm: c2 } = await readLine(page, relId(tight, 0))
   const boxes = await Promise.all(
     TIGHT_NAMES.map((name) => flowBox(page, name, c2)),
   )
   for (let i = 1; i < boxes.length; i++) {
     const gap = boxes[i].x - (boxes[i - 1].x + boxes[i - 1].width)
-    expect(gap).toBeGreaterThan(19)
+    expect(gap).toBeGreaterThan(25)
     expect(gap).toBeLessThan(31)
   }
   for (let i = 0; i < tight.rels.length; i++) {
@@ -479,9 +484,10 @@ test('case 7: a line starts on the table border, not at the connect dot', async 
   const tgt = await flowBox(page, cjkName, ctm)
   const fromBorder = (p: Pt, b: Box) =>
     Math.min(Math.abs(p.x - b.x), Math.abs(p.x - (b.x + b.width)))
-  // The drawn path stops short of the border by the cardinality marker (at most
-  // 13 px); the connect dot sits 24 px out, so a line that began there would
-  // be 24 + 13 px from the border.
-  expect(fromBorder(pts[0], src)).toBeLessThanOrEqual(14)
-  expect(fromBorder(pts[pts.length - 1], tgt)).toBeLessThanOrEqual(14)
+  // The drawn path stops short of the border by the cardinality marker (18 px
+  // for the seeded many source, 8 px for the one target); the connect dot sits
+  // 24 px out, so a line that began there would be 24 + marker px from the
+  // border.
+  expect(fromBorder(pts[0], src)).toBeLessThanOrEqual(19)
+  expect(fromBorder(pts[pts.length - 1], tgt)).toBeLessThanOrEqual(9)
 })

@@ -28,30 +28,19 @@ import {
   buildRoundedOrthogonalPath,
   pathMidpoint,
 } from '@/lib/react-flow/orthogonal-path'
+import {
+  BAR_HALF,
+  CIRCLE_R,
+  CROW_CURVE,
+  CROW_LENGTH,
+  CROW_SPREAD,
+  MULT_BAR_INSET,
+  TABLE_INSET,
+  cardinalityFlags,
+  markerExtent,
+  optSymbolDistance,
+} from '@/lib/react-flow/cardinality-marker'
 import { useT } from '@/lib/i18n/use-t'
-
-// ── Layout constants ──
-// A line and its marker start ON the table border (not at the connect dot), so
-// the crow's foot prongs and the bars end 1 px outside it (negative inset) so
-// the table border does not clip them.
-const TABLE_INSET = -1
-// Crow's foot length outward from the table border: the foot lies entirely
-// outside the table, its prongs on the border and its tip CROW_LENGTH out
-const CROW_LENGTH = 5
-// Crow's foot half-spread (perpendicular distance of outer prongs)
-const CROW_SPREAD = 6
-// Curvature of outer prongs (quadratic bezier bow)
-const CROW_CURVE = 3
-// Multiplicity bar inset toward the table from the border
-const MULT_BAR_INSET = -1
-// Bar half-height (perpendicular extent of a bar symbol)
-const BAR_HALF = 6
-// Open circle radius (for zero/optional symbol)
-const CIRCLE_R = 4
-// Distance from the table border to the optionality symbol centre, after a
-// crow's foot (the circle touches the tip) and after a bar
-const OPT_DIST_MANY = 9
-const OPT_DIST_ONE = 7
 
 const CARDINALITY_COLORS: Record<string, string> = {
   ONE_TO_ONE: '#60a5fa', // blue
@@ -71,84 +60,6 @@ const CARDINALITY_COLORS: Record<string, string> = {
   ZERO_OR_MANY_TO_MANY: '#d8b4fe', // lighter purple
   ZERO_OR_MANY_TO_ZERO_OR_ONE: '#fda4af', // light rose
   ZERO_OR_MANY_TO_ZERO_OR_MANY: '#fbbf24', // amber
-}
-
-const CARDINALITY_FLAGS: Record<
-  string,
-  { srcMany: boolean; srcOpt: boolean; tgtMany: boolean; tgtOpt: boolean }
-> = {
-  ONE_TO_ONE: { srcMany: false, srcOpt: false, tgtMany: false, tgtOpt: false },
-  ONE_TO_MANY: { srcMany: false, srcOpt: false, tgtMany: true, tgtOpt: false },
-  MANY_TO_ONE: { srcMany: true, srcOpt: false, tgtMany: false, tgtOpt: false },
-  MANY_TO_MANY: { srcMany: true, srcOpt: false, tgtMany: true, tgtOpt: false },
-  ZERO_TO_ONE: { srcMany: false, srcOpt: false, tgtMany: false, tgtOpt: true },
-  ZERO_TO_MANY: { srcMany: false, srcOpt: false, tgtMany: true, tgtOpt: true },
-  SELF_REFERENCING: {
-    srcMany: false,
-    srcOpt: false,
-    tgtMany: true,
-    tgtOpt: true,
-  },
-  MANY_TO_ZERO_OR_ONE: {
-    srcMany: true,
-    srcOpt: false,
-    tgtMany: false,
-    tgtOpt: true,
-  },
-  MANY_TO_ZERO_OR_MANY: {
-    srcMany: true,
-    srcOpt: false,
-    tgtMany: true,
-    tgtOpt: true,
-  },
-  ZERO_OR_ONE_TO_ONE: {
-    srcMany: false,
-    srcOpt: true,
-    tgtMany: false,
-    tgtOpt: false,
-  },
-  ZERO_OR_ONE_TO_MANY: {
-    srcMany: false,
-    srcOpt: true,
-    tgtMany: true,
-    tgtOpt: false,
-  },
-  ZERO_OR_ONE_TO_ZERO_OR_ONE: {
-    srcMany: false,
-    srcOpt: true,
-    tgtMany: false,
-    tgtOpt: true,
-  },
-  ZERO_OR_ONE_TO_ZERO_OR_MANY: {
-    srcMany: false,
-    srcOpt: true,
-    tgtMany: true,
-    tgtOpt: true,
-  },
-  ZERO_OR_MANY_TO_ONE: {
-    srcMany: true,
-    srcOpt: true,
-    tgtMany: false,
-    tgtOpt: false,
-  },
-  ZERO_OR_MANY_TO_MANY: {
-    srcMany: true,
-    srcOpt: true,
-    tgtMany: true,
-    tgtOpt: false,
-  },
-  ZERO_OR_MANY_TO_ZERO_OR_ONE: {
-    srcMany: true,
-    srcOpt: true,
-    tgtMany: false,
-    tgtOpt: true,
-  },
-  ZERO_OR_MANY_TO_ZERO_OR_MANY: {
-    srcMany: true,
-    srcOpt: true,
-    tgtMany: true,
-    tgtOpt: true,
-  },
 }
 
 function getCardinalityColor(cardinality: string | undefined): string {
@@ -178,7 +89,7 @@ function outwardAngle(position: Position): number {
  *   - Crow's foot (⋈) = many
  *   - Single perpendicular bar (|) = one
  *
- * Optionality symbol (further out, OPT_DIST_* from the table border):
+ * Optionality symbol (further out, optSymbolDistance() from the table border):
  *   - Open circle (○) = zero / optional
  *   - Single perpendicular bar (|) = mandatory / one
  *
@@ -256,8 +167,8 @@ function CardinalityIndicator(props: {
   )
 
   // ── Optionality symbol (outward from multiplicity) ──
-  // Position: OPT_DIST_* out from the table border
-  const optDist = isMany ? OPT_DIST_MANY : OPT_DIST_ONE
+  // Position: optSymbolDistance() out from the table border
+  const optDist = optSymbolDistance(isMany, isOptional)
   const optX = x + cos * optDist
   const optY = y + sin * optDist
 
@@ -290,11 +201,6 @@ function CardinalityIndicator(props: {
       {optSymbol}
     </g>
   )
-}
-
-/** Total extent (outward from the table border) that the indicator occupies — used to shorten the edge path */
-function indicatorExtent(isMany: boolean): number {
-  return (isMany ? OPT_DIST_MANY : OPT_DIST_ONE) + CIRCLE_R
 }
 
 /**
@@ -501,12 +407,7 @@ export const RelationshipEdge = memo(
     )
 
     // Derive multiplicity and optionality from lookup table
-    const flags = CARDINALITY_FLAGS[cardinality ?? ''] ?? {
-      srcMany: false,
-      srcOpt: false,
-      tgtMany: false,
-      tgtOpt: false,
-    }
+    const flags = cardinalityFlags(cardinality)
     const sourceIsMany = flags.srcMany
     const sourceIsOptional = flags.srcOpt
     const targetIsMany = flags.tgtMany
@@ -514,8 +415,8 @@ export const RelationshipEdge = memo(
 
     // Shorten the path so it stops before the cardinality icons.
     // Move source/target inward by the icon extent.
-    const srcExt = indicatorExtent(sourceIsMany)
-    const tgtExt = indicatorExtent(targetIsMany)
+    const srcExt = markerExtent(sourceIsMany, sourceIsOptional)
+    const tgtExt = markerExtent(targetIsMany, targetIsOptional)
     const adjSourceX = sourceX + Math.cos(srcAngle) * srcExt
     const adjSourceY = sourceY + Math.sin(srcAngle) * srcExt
     const adjTargetX = targetX + Math.cos(tgtAngle) * tgtExt

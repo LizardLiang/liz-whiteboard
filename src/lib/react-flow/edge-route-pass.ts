@@ -9,6 +9,7 @@
  * checks EVERY edge's key, not only edges attached to a moved table.
  */
 
+import { endMinStubs } from './cardinality-marker'
 import { createColumnHandleId, parseColumnHandleId } from './edge-routing'
 import {
   ROUTE_STUB,
@@ -146,9 +147,18 @@ export function applyEdgeRoutes(
       left: { x: rect.x, y: rect.y + off.y + dy },
       right: { x: rect.x + rect.width, y: rect.y + off.y + dy },
     })
+    const minStubs = endMinStubs(rel.cardinality)
     const input: RouteInput = {
-      source: { rect: srcRect, ports: ports(srcRect, srcOff) },
-      target: { rect: tgtRect, ports: ports(tgtRect, tgtOff) },
+      source: {
+        rect: srcRect,
+        ports: ports(srcRect, srcOff),
+        minStub: minStubs.source,
+      },
+      target: {
+        rect: tgtRect,
+        ports: ports(tgtRect, tgtOff),
+        minStub: minStubs.target,
+      },
       obstacles,
       // An edge with no route history is routed from scratch with no side
       // preference, so the same geometry gives every peer the same first route.

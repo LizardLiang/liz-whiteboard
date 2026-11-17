@@ -15,24 +15,25 @@ import type { Point, Rect } from './edge-label-placement'
 
 export type RouteSide = 'left' | 'right'
 
-/** Clear space between a route and any table. Marker reach 13 px + 3 px air. */
+/** Clear space between a route and any table. Marker air above each end's own stub. */
 export const ROUTE_MARGIN = 16
 /** Length of the straight horizontal run that leaves and enters a port. */
 export const ROUTE_STUB = 16
-/** Shortest stub: the cardinality marker reach (CROW_LENGTH 2 + OPT_GAP 7 + CIRCLE_R 4). */
-export const MIN_STUB = 13
+/** Shortest stub at an end that names no `minStub` (a bar marker plus air). */
+export const DEFAULT_MIN_STUB = 13
 /**
  * Reduced clearances tried, in order, when the full margin leaves no route.
  * A port sits on the table border, so a side is usable while the gap to the
- * neighbour is >= stub + margin. The floor is a 13 px stub and a 3 px margin,
- * a 16 px gap: the route still clears every unpadded table.
+ * neighbour is >= stub + margin. A ladder `stub` of 0 means "the end's own
+ * `minStub`": every end floors at its own marker extent, never below, and a
+ * stub is never shorter than the end's `minStub` at any level.
  */
 export const CLEARANCE_LADDER: ReadonlyArray<{ margin: number; stub: number }> =
   [
     { margin: 12, stub: 15 },
-    { margin: 9, stub: MIN_STUB },
-    { margin: 6, stub: MIN_STUB },
-    { margin: 3, stub: MIN_STUB },
+    { margin: 9, stub: 0 },
+    { margin: 6, stub: 0 },
+    { margin: 3, stub: 0 },
   ]
 /** Cost, in px of path length, of one direction change. */
 export const BEND_PENALTY = 40
@@ -63,6 +64,11 @@ export interface RouteEnd {
   rect: Rect
   /** Where the line starts: the table border (left and right edge) at the connected column's row. */
   ports: PortPair
+  /**
+   * Shortest first/last segment: the end's marker extent plus air. The stub at
+   * this end is never shorter, at any clearance level. Default DEFAULT_MIN_STUB.
+   */
+  minStub?: number
 }
 
 export interface RouteInput {
@@ -237,7 +243,10 @@ export function routeKeyHead(input: RouteInput): string {
   const r = Math.round
   const pt = (p: Point) => `${r(p.x)},${r(p.y)}`
   const ends = [input.source, input.target]
-    .map((e) => `${keyRect(e.rect)}|${pt(e.ports.left)}|${pt(e.ports.right)}`)
+    .map(
+      (e) =>
+        `${keyRect(e.rect)}|${pt(e.ports.left)}|${pt(e.ports.right)}|${e.minStub ?? ''}`,
+    )
     .join(';')
   const sides = input.currentSides
     ? `${input.currentSides.source[0]}${input.currentSides.target[0]}`
@@ -558,6 +567,10 @@ function simplify(points: ReadonlyArray<Point>): Array<Point> {
   return out
 }
 
+function endMinStub(end: RouteEnd): number {
+  return end.minStub ?? DEFAULT_MIN_STUB
+}
+
 function routeInWindow(
   input: RouteInput,
   obstacles: ReadonlyArray<Rect>,
@@ -571,7 +584,8 @@ function routeInWindow(
 
   const stubOf = (end: RouteEnd, side: RouteSide): Point => {
     const p = end.ports[side]
-    return { x: side === 'left' ? p.x - stub : p.x + stub, y: p.y }
+    const len = Math.max(stub, endMinStub(end))
+    return { x: side === 'left' ? p.x - len : p.x + len, y: p.y }
   }
   const sStub = { left: stubOf(source, 'left'), right: stubOf(source, 'right') }
   const tStub = { left: stubOf(target, 'left'), right: stubOf(target, 'right') }
@@ -657,8 +671,8 @@ function routeAtClearance(input: RouteInput): RouteResult | null {
 }
 
 /**
- * True when at least one side of the end can hold the shortest stub: the stub
- * end lies outside every obstacle padded by the smallest ladder margin.
+ * True when at least one side of the end can hold the shortest stub (the end's
+ * own `minStub`): the stub end lies outside every obstacle padded by the smallest ladder margin.
  */
 function endHasRoom(
   end: RouteEnd,
@@ -668,7 +682,8 @@ function endHasRoom(
   const padded = obstacles.map((o) => pad(o, floorMargin))
   return (['left', 'right'] as const).some((side) => {
     const p = end.ports[side]
-    const x = side === 'left' ? p.x - MIN_STUB : p.x + MIN_STUB
+    const len = endMinStub(end)
+    const x = side === 'left' ? p.x - len : p.x + len
     return !padded.some((q) => x > q.x0 && x < q.x1 && p.y > q.y0 && p.y < q.y1)
   })
 }

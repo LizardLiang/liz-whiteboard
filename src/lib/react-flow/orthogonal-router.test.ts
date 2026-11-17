@@ -8,6 +8,7 @@ import {
   scratchStates,
   segmentHitsRect,
 } from './orthogonal-router'
+import { endMinStubs, markerExtent } from './cardinality-marker'
 import { recalculateEdgeRouting } from './edge-bundles'
 import { createColumnHandleId } from './edge-routing'
 import type { Node } from '@xyflow/react'
@@ -259,6 +260,74 @@ describe('routeEdge in tight gaps', () => {
       ).toBeGreaterThanOrEqual(13)
     },
   )
+
+  // Each end floors at its own marker extent (+ air): a "one" end routes in a
+  // smaller gap than a "many"/optional end, and the first and last segments
+  // are never shorter than the marker, so it always sits on a straight run.
+  const CARDS = [
+    'ONE_TO_ONE',
+    'ONE_TO_MANY',
+    'ZERO_TO_ONE',
+    'ZERO_TO_MANY',
+    'ZERO_OR_MANY_TO_ZERO_OR_MANY',
+  ]
+  const seg = (a: Point, b: Point) => Math.abs(b.x - a.x) + Math.abs(b.y - a.y)
+
+  it.each(CARDS)(
+    '%s: first and last segments hold each end marker; the target end too',
+    (card) => {
+      const { source, target } = endMinStubs(card)
+      const others = [
+        ...walled(source + 3),
+        table(C.x - target - 3 - 100, -300, 100, 700),
+        table(C.x + W + target + 3, -300, 100, 700),
+      ]
+      const r = routeEdge({
+        ...input(A, C, others),
+        source: { ...end(A), minStub: source },
+        target: { ...end(C), minStub: target },
+      })
+      expectClear(r, [A, C, ...others])
+      const pts = r!.points
+      expect(seg(pts[0], pts[1])).toBeGreaterThanOrEqual(source)
+      expect(
+        seg(pts[pts.length - 2], pts[pts.length - 1]),
+      ).toBeGreaterThanOrEqual(target)
+    },
+  )
+
+  it.each(CARDS)(
+    '%s: a gap below the end floor + 3 px has no route',
+    (card) => {
+      const { source } = endMinStubs(card)
+      const others = walled(source + 2)
+      const r = routeEdge({
+        ...input(A, C, others),
+        source: { ...end(A), minStub: source },
+        target: { ...end(C), minStub: 3 },
+      })
+      expect(r).toBeNull()
+    },
+  )
+
+  it('a "one" end routes in a gap too small for an optional-many end', () => {
+    const oneGap = endMinStubs('ONE_TO_ONE').source + 3
+    expect(oneGap).toBeLessThan(markerExtent(true, true))
+    const others = walled(oneGap)
+    const one = routeEdge({
+      ...input(A, C, others),
+      source: { ...end(A), minStub: endMinStubs('ONE_TO_ONE').source },
+    })
+    const many = routeEdge({
+      ...input(A, C, others),
+      source: {
+        ...end(A),
+        minStub: endMinStubs('ZERO_OR_MANY_TO_ONE').source,
+      },
+    })
+    expect(one).not.toBeNull()
+    expect(many).toBeNull()
+  })
 
   it('is deterministic in a tight gap', () => {
     const others = walled(20)
