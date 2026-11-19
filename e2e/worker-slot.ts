@@ -12,6 +12,10 @@ import { resolve } from 'node:path'
 // runs on one machine, for example from two git worktrees, do not collide.
 const WEB_PORT_BASE = Number(process.env.E2E_PORT_BASE) || 3100
 const PORT_STEP = 10
+// E2E_SLOT_TAG renames each slot's database, login files and Vite cache, so a
+// second run beside a live stack (same checkout, other E2E_PORT_BASE) cannot
+// touch the first run's data.
+const TAG = process.env.E2E_SLOT_TAG ?? ''
 const DEFAULT_WORKERS = 3
 
 /** True when specs target one already-running server (E2E_BASE_URL). */
@@ -36,22 +40,22 @@ export function slotPorts(i: number): { web: number; socket: number } {
 }
 
 export function slotDbPath(i: number): string {
-  return resolve(process.cwd(), 'data', `e2e-w${i}.db`)
+  return resolve(process.cwd(), 'data', `e2e-${TAG}w${i}.db`)
 }
 
 export function slotStorageState(i: number): string {
   // External-server mode keeps the single historical session file, which
   // playwright.cimd.config.ts also reads.
   if (usesExternalServer()) return 'e2e/.auth/state.json'
-  return `e2e/.auth/state-w${i}.json`
+  return `e2e/.auth/state-${TAG}w${i}.json`
 }
 
 /** Saved login of the VIEWER member (E2E_VIEWER_USER), written by global-setup. */
 export function slotViewerStorageState(i: number): string {
   if (usesExternalServer()) return 'e2e/.auth/state-viewer.json'
-  return `e2e/.auth/state-viewer-w${i}.json`
+  return `e2e/.auth/state-viewer-${TAG}w${i}.json`
 }
 
 export function slotViteCacheDir(i: number): string {
-  return `node_modules/.vite-e2e-w${i}`
+  return `node_modules/.vite-e2e-${TAG}w${i}`
 }
