@@ -13,6 +13,10 @@ import type { CommentActions } from '@/components/whiteboard/ReactFlowWhiteboard
 import type { CommentWithAuthor } from '@/data/models'
 import type { ShowMode } from '@/lib/react-flow/types'
 import type { TableHistoryRequest } from '@/components/whiteboard/WhiteboardChangesTab'
+import {
+  insertOptimisticTable,
+  removeOptimisticTable,
+} from '@/lib/react-flow/optimistic-table'
 import { ReactFlowWhiteboard } from '@/components/whiteboard/ReactFlowWhiteboard'
 import { BoardChip, BoardNavFallback } from '@/components/layout/BoardChip'
 import { WhiteboardAccessDenied } from '@/components/whiteboard/WhiteboardAccessDenied'
@@ -225,37 +229,12 @@ function WhiteboardEditor() {
     mutationFn: async (data: CreateTable) => {
       return await createTableFn({ data })
     },
-    onMutate: async (newTable: CreateTable) => {
-      // Optimistic update
-      await queryClient.cancelQueries({
-        queryKey: ['whiteboard', whiteboardId],
-      })
-
-      const previousData = queryClient.getQueryData([
-        'whiteboard',
-        whiteboardId,
-      ])
-
-      // Optimistically add table to cache
-      queryClient.setQueryData(['whiteboard', whiteboardId], (old: any) => {
-        if (!old) return old
-        return {
-          ...old,
-          tables: [
-            ...(old.tables ?? []),
-            {
-              id: 'temp-' + Date.now(),
-              ...newTable,
-              columns: [],
-              outgoingRelationships: [],
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            },
-          ],
-        }
-      })
-
-      return { previousData }
+    onMutate: (newTable: CreateTable) => {
+      // Optimistic insert. No cancelQueries: a running board reload (for
+      // example the reconnect resync) must run to its end.
+      return {
+        tempId: insertOptimisticTable(queryClient, whiteboardId, newTable),
+      }
     },
     // GH #125: no longer re-emits 'table:create' here. That re-submitted the
     // already-persisted row (DB nulls) back through the socket's
@@ -277,11 +256,8 @@ function WhiteboardEditor() {
     },
     onError: (err, _newTable, context) => {
       // Rollback on error
-      if (context?.previousData) {
-        queryClient.setQueryData(
-          ['whiteboard', whiteboardId],
-          context.previousData,
-        )
+      if (context) {
+        removeOptimisticTable(queryClient, whiteboardId, context.tempId)
       }
       console.error('Failed to create table:', err)
       toast.error(

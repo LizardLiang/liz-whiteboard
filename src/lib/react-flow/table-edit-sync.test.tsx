@@ -12,6 +12,10 @@ import {
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { createTableEditSync, noteBoardReloadStart } from './table-edit-sync'
 import { resyncBoardAfterReconnect } from './board-resync'
+import {
+  insertOptimisticTable,
+  removeOptimisticTable,
+} from './optimistic-table'
 import type { ReactNode } from 'react'
 
 const WB = 'wb-1'
@@ -471,6 +475,55 @@ describe('table edit sync (real QueryClient)', () => {
       expect(
         t.sync().apply({ id: 't1', name: 'A', description: null }),
       ).toEqual({ id: 't1', name: 'A', description: null })
+    })
+  })
+
+  describe('(8) creating a table during the reconnect reload', () => {
+    const newTable = { whiteboardId: WB, name: 'fresh' } as never
+
+    it('does not cancel the reload: the reconcile still runs once, on the reloaded data', async () => {
+      const t = await loaded()
+      const reconcile = vi.fn()
+      const done = resyncBoardAfterReconnect({
+        queryClient: t.qc,
+        whiteboardId: WB,
+        isCurrent: () => true,
+        reconcile,
+      })
+      await waitFor(() => expect(t.server.reloads.length).toBe(2))
+      // The user creates a table while the reload is in flight.
+      insertOptimisticTable(t.qc, WB, newTable)
+      expect(t.cancelSpy).not.toHaveBeenCalled()
+      expect(t.qc.isFetching({ queryKey: KEY })).toBe(1)
+      // The resync must still be waiting: reconciling now would read the cache from before the reload.
+      await new Promise((r) => setTimeout(r, 20))
+      expect(reconcile).not.toHaveBeenCalled()
+
+      await t.land(1)
+      await done
+
+      expect(t.server.reloads.length).toBe(2)
+      // The reload landed over the optimistic row; the create's own invalidation loads the real one.
+      expect(t.qc.getQueryData<Board>(KEY)?.tables.map((x) => x.id)).toEqual([
+        't1',
+        't2',
+      ])
+      expect(reconcile.mock.calls.filter((c) => c[0] === 't1')).toHaveLength(1)
+    })
+
+    it('a failed create removes only its own row', async () => {
+      const t = await loaded()
+      const tempId = insertOptimisticTable(t.qc, WB, newTable)
+      expect(t.qc.getQueryData<Board>(KEY)?.tables.map((x) => x.id)).toContain(
+        tempId,
+      )
+
+      removeOptimisticTable(t.qc, WB, tempId)
+
+      expect(t.qc.getQueryData<Board>(KEY)?.tables.map((x) => x.id)).toEqual([
+        't1',
+        't2',
+      ])
     })
   })
 })
