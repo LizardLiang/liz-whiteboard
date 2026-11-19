@@ -183,6 +183,7 @@ import { useWhiteboardCollaboration } from '@/hooks/use-whiteboard-collaboration
 import { useColumnCollaboration } from '@/hooks/use-column-collaboration'
 import { useColumnMutations } from '@/hooks/use-column-mutations'
 import { useTableMutations } from '@/hooks/use-table-mutations'
+import { patchTableFieldsInCache } from '@/lib/react-flow/patch-table-fields-cache'
 import { useRelationshipMutations } from '@/hooks/use-relationship-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
 import { useTableFocus } from '@/hooks/use-table-focus'
@@ -1447,9 +1448,23 @@ function ReactFlowWhiteboardInner({
   // (table-comment). The hook already filters out self-originated events
   // (updatedBy === userId); this applies the inbound description to the
   // matching table node's data so the popover reflects it when reopened.
+  const patchTableCache = useCallback(
+    (tableId: string, fields: { name?: string; description?: string }) => {
+      void patchTableFieldsInCache(queryClient, whiteboardId, tableId, fields)
+    },
+    [queryClient, whiteboardId],
+  )
+
   const onTableUpdated = useCallback(
     (data: { tableId: string; name?: string; description?: string }) => {
       if (data.name === undefined && data.description === undefined) return
+      // Keep the query cache in step so an older refetch cannot revert a peer's change.
+      patchTableCache(data.tableId, {
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.description !== undefined && {
+          description: data.description,
+        }),
+      })
       setNodes((prev) =>
         prev.map((n) =>
           n.id === data.tableId
@@ -1470,7 +1485,7 @@ function ReactFlowWhiteboardInner({
         ),
       )
     },
-    [],
+    [patchTableCache],
   )
 
   // Ref for onRelationshipError — breaks circular dependency between useWhiteboardCollaboration and useRelationshipMutations
@@ -1830,6 +1845,7 @@ function ReactFlowWhiteboardInner({
     emitTableDelete,
     isConnected,
     emitTableUpdate,
+    patchTableCache,
   )
 
   // Wire onTableError ref now that tableMutations is available

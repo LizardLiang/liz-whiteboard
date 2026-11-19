@@ -43,12 +43,16 @@ type EmitTableUpdate = (
   ack?: (ok: boolean) => void,
 ) => void
 
+/** Mirrors a field change into the whiteboard query cache so refetches agree with the canvas. */
+type PatchTableCache = (tableId: string, fields: UpdateTableFields) => void
+
 export function useTableMutations(
   setNodes: SetNodes,
   setEdges: SetEdges,
   emitTableDelete: ((tableId: string) => void) | null,
   isConnected: boolean,
   emitTableUpdate: EmitTableUpdate | null = null,
+  patchTableCache: PatchTableCache | null = null,
 ) {
   /**
    * Track optimistic mutations for rollback on server error.
@@ -188,12 +192,15 @@ export function useTableMutations(
         }),
       )
 
+      patchTableCache?.(tableId, data)
+
       // Store rollback
       pendingMutations.current.set(tableId, {
         type: 'update',
         rollback: () => {
           const toRestore = previousValues
           if (!toRestore) return
+          patchTableCache?.(tableId, toRestore)
           setNodes((prev) =>
             prev.map((node) =>
               node.id === tableId
@@ -224,7 +231,7 @@ export function useTableMutations(
         })
       }
     },
-    [isConnected, setNodes, emitTableUpdate, t],
+    [isConnected, setNodes, emitTableUpdate, patchTableCache, t],
   )
 
   /**
