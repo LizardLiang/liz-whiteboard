@@ -187,6 +187,7 @@ import {
   getBoardTables,
   resyncBoardAfterReconnect,
 } from '@/lib/react-flow/board-resync'
+import { withPendingTables } from '@/lib/react-flow/optimistic-table'
 import {
   createTableEditSync,
   noteBoardReloadStart,
@@ -4999,6 +5000,11 @@ export function ReactFlowWhiteboard({
 }: ReactFlowWhiteboardProps) {
   const t = useT()
   const queryClient = useQueryClient()
+  // Stable, so the query result keeps its identity between renders.
+  const selectBoardWithPending = useCallback(
+    <T,>(board: T) => withPendingTables(queryClient, whiteboardId, board),
+    [queryClient, whiteboardId],
+  )
   // Fetch whiteboard data with tables — disabled on the public read-only
   // path (GH #109): that path never has an authenticated session, and
   // getWhiteboardWithDiagram/getWhiteboardRelationships are both
@@ -5017,6 +5023,8 @@ export function ReactFlowWhiteboard({
       noteBoardReloadStart(queryClient, whiteboardId)
       return await getWhiteboardWithDiagram({ data: whiteboardId })
     },
+    // A created table stays visible over a reload that does not carry it yet.
+    select: selectBoardWithPending,
     staleTime: 1000 * 60 * 5, // 5 minutes
     enabled: !isPublic,
   })

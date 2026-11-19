@@ -15,6 +15,7 @@ import { resyncBoardAfterReconnect } from './board-resync'
 import {
   insertOptimisticTable,
   removeOptimisticTable,
+  withPendingTables,
 } from './optimistic-table'
 import type { ReactNode } from 'react'
 
@@ -75,6 +76,9 @@ function setup() {
 
   const view = renderHook(
     () => {
+      const [select] = useState(
+        () => (board: Board) => withPendingTables(qc, WB, board),
+      )
       const { data } = useQuery({
         queryKey: KEY,
         // The board's queryFn announces every start, restarts included.
@@ -82,6 +86,7 @@ function setup() {
           noteBoardReloadStart(qc, WB)
           return server.queryFn()
         },
+        select,
         staleTime: 5 * 60_000,
       })
       const [shown, setShown] = useState<Record<string, Partial<Row>>>({})
@@ -503,12 +508,60 @@ describe('table edit sync (real QueryClient)', () => {
       await done
 
       expect(t.server.reloads.length).toBe(2)
-      // The reload landed over the optimistic row; the create's own invalidation loads the real one.
+      // The reload landed over the optimistic row in the cache; `select` keeps it shown.
       expect(t.qc.getQueryData<Board>(KEY)?.tables.map((x) => x.id)).toEqual([
         't1',
         't2',
       ])
       expect(reconcile.mock.calls.filter((c) => c[0] === 't1')).toHaveLength(1)
+    })
+
+    const names = (t: Awaited<ReturnType<typeof loaded>>) =>
+      Object.values(t.view.result.current.shown).map((r) => r.name)
+
+    it('keeps the new table visible over a reload that lands without it, and shows one row once the real table arrives', async () => {
+      const t = await loaded()
+      void t.reload()
+      await waitFor(() => expect(t.server.reloads.length).toBe(2))
+
+      insertOptimisticTable(t.qc, WB, {
+        whiteboardId: WB,
+        name: 'fresh',
+      })
+      await waitFor(() => expect(names(t)).toContain('fresh'))
+
+      // The reload that was already in flight lands without the new table.
+      await t.land(1)
+      expect(names(t).filter((n) => n === 'fresh')).toHaveLength(1)
+
+      // The create's own reload carries the real row.
+      t.server.state.names.real = 'fresh'
+      void t.reload()
+      await waitFor(() => expect(t.server.reloads.length).toBe(3))
+      await t.land(2)
+      await waitFor(() =>
+        expect(Object.keys(t.view.result.current.shown).sort()).toEqual([
+          'real',
+          't1',
+          't2',
+        ]),
+      )
+      expect(names(t).filter((n) => n === 'fresh')).toHaveLength(1)
+    })
+
+    it('a failed create removes the pending row at once', async () => {
+      const t = await loaded()
+      const tempId = insertOptimisticTable(t.qc, WB, {
+        whiteboardId: WB,
+        name: 'fresh',
+      })
+      await waitFor(() => expect(names(t)).toContain('fresh'))
+      removeOptimisticTable(t.qc, WB, tempId)
+      await waitFor(() => expect(names(t)).not.toContain('fresh'))
+      void t.reload()
+      await waitFor(() => expect(t.server.reloads.length).toBe(2))
+      await t.land(1)
+      expect(names(t)).not.toContain('fresh')
     })
 
     it('a failed create removes only its own row', async () => {
