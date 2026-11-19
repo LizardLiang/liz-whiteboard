@@ -668,6 +668,7 @@ export const whiteboardEn = {
     showRelations: 'Show relations for {name}',
     hideRelationsHint: 'Hide relations (r)',
     showRelationsHint: 'Show relations (r)',
+    renameHint: 'Double-click to rename',
     unresolvedOne: '{count} unresolved comment on {name}',
     unresolvedOther: '{count} unresolved comments on {name}',
     commentOn: 'Comment on {name}',

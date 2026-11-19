@@ -34,10 +34,8 @@ export interface TableErrorEvent {
   tableId?: string
 }
 
-/** Fields a table:update emit may carry. Currently only `description`
- * (table-comment), but kept as a partial bag so future fields (e.g. `name`)
- * don't require a signature change. */
-export type UpdateTableFields = Partial<{ description: string }>
+/** Fields a table:update emit may carry: `name` (inline rename) and `description` (table-comment). */
+export type UpdateTableFields = Partial<{ name: string; description: string }>
 
 type EmitTableUpdate = (
   tableId: string,
@@ -236,7 +234,13 @@ export function useTableMutations(
    */
   const onTableUpdateError = useCallback(
     (data: TableErrorEvent) => {
-      toast.error(t('hooks.table.saveFailed'))
+      // A rename onto an existing table name names itself; every other
+      // failure keeps the generic text.
+      toast.error(
+        data.error === 'DUPLICATE_NAME' && data.message
+          ? tError(t, data.message)
+          : t('hooks.table.saveFailed'),
+      )
 
       if (data.tableId) {
         const pending = pendingMutations.current.get(data.tableId)

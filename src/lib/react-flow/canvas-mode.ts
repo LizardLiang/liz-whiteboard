@@ -37,7 +37,8 @@ export function useCanvasMode(): boolean {
 export interface InitialEditingField {
   tableId: string
   columnId?: string
-  field?: 'name' | 'dataType'
+  /** `'tableName'` opens the table header's inline rename editor (no columnId). */
+  field?: 'name' | 'dataType' | 'tableName'
 }
 
 /**
@@ -70,7 +71,7 @@ export interface CanvasEditContextValue {
   requestEdit: (
     tableId: string,
     columnId?: string,
-    field?: 'name' | 'dataType',
+    field?: 'name' | 'dataType' | 'tableName',
   ) => void
   /**
    * Open a canvas header icon's popover/panel in place (no edit overlay).
@@ -101,7 +102,7 @@ export interface CanvasEditContextValue {
   registerEditPress: (
     tableId: string,
     columnId?: string,
-    field?: 'name' | 'dataType',
+    field?: 'name' | 'dataType' | 'tableName',
   ) => void
   /**
    * Cancel any in-flight double-press tracking (LizMeter #53 drag guard).

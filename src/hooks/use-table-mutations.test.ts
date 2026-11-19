@@ -499,9 +499,9 @@ describe('useTableMutations', () => {
         result.current.updateTable('tbl-001', { description: 'new note' })
       })
 
-      expect(nodes.find((n) => n.id === 'tbl-001')?.data.table.description).toBe(
-        'new note',
-      )
+      expect(
+        nodes.find((n) => n.id === 'tbl-001')?.data.table.description,
+      ).toBe('new note')
 
       act(() => {
         result.current.onTableUpdateError({
@@ -514,6 +514,46 @@ describe('useTableMutations', () => {
       expect(
         nodes.find((n) => n.id === 'tbl-001')?.data.table.description,
       ).toBeNull()
+    })
+
+    it('rename: optimistically sets the name, and a rejected rename rolls it back', () => {
+      const before = nodes.find((n) => n.id === 'tbl-001')?.data.table.name
+      const { result } = renderHook(() =>
+        useTableMutations(
+          setNodes,
+          setEdges,
+          emitTableDelete,
+          true,
+          emitTableUpdate,
+        ),
+      )
+
+      act(() => {
+        result.current.updateTable('tbl-001', { name: 'renamed' })
+      })
+      expect(nodes.find((n) => n.id === 'tbl-001')?.data.table.name).toBe(
+        'renamed',
+      )
+      expect(emitTableUpdate).toHaveBeenCalledWith(
+        'tbl-001',
+        { name: 'renamed' },
+        expect.any(Function),
+      )
+
+      act(() => {
+        result.current.onTableUpdateError({
+          event: 'table:update',
+          tableId: 'tbl-001',
+          error: 'DUPLICATE_NAME',
+          message: 'A table named "renamed" already exists on this whiteboard',
+        })
+      })
+      expect(nodes.find((n) => n.id === 'tbl-001')?.data.table.name).toBe(
+        before,
+      )
+      expect(toast.error).toHaveBeenCalledWith(
+        'A table named "renamed" already exists on this whiteboard',
+      )
     })
 
     it('TC-TU-06: onTableUpdateError shows a toast error', () => {
@@ -607,9 +647,7 @@ describe('useTableMutations', () => {
         result.current.updateTable('tbl-001', { description: 'new note' })
       })
 
-      expect(result.current.pendingMutations.current.has('tbl-001')).toBe(
-        true,
-      )
+      expect(result.current.pendingMutations.current.has('tbl-001')).toBe(true)
 
       // Simulate the server ack succeeding — emitTableUpdate is called with
       // (tableId, data, ack); invoke the captured ack callback with ok=true.
@@ -620,9 +658,7 @@ describe('useTableMutations', () => {
         ackCallback(true)
       })
 
-      expect(result.current.pendingMutations.current.has('tbl-001')).toBe(
-        false,
-      )
+      expect(result.current.pendingMutations.current.has('tbl-001')).toBe(false)
     })
   })
 })

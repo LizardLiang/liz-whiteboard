@@ -196,6 +196,9 @@ export interface TableNodeData extends Record<string, unknown> {
    * Named onTableNoteSave (not onTableCommentSave) to disambiguate from the
    * GH #110 threaded-comment callbacks (onCreateTableComment etc.) below. */
   onTableNoteSave?: (tableId: string, description: string) => void
+
+  /** Callback to rename the table from its header — fires table:update with `name`. */
+  onTableRename?: (tableId: string, name: string) => void
 }
 
 /**

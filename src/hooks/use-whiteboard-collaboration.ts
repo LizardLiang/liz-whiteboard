@@ -117,7 +117,11 @@ export function useWhiteboardCollaboration(
   // Table comment/note (table-comment): applies inbound table:updated events
   // from other users (currently only `description` is threaded through, but
   // the payload carries whatever fields the sender changed via table:update).
-  onTableUpdated?: (data: { tableId: string; description?: string }) => void,
+  onTableUpdated?: (data: {
+    tableId: string
+    name?: string
+    description?: string
+  }) => void,
   // Table comment/note (table-comment, W1 fix): server-side rejections of a
   // LOCAL table:update emit (FORBIDDEN / NOT_FOUND / VALIDATION_ERROR) arrive
   // on the shared `error` event. A sibling listener (separate from the
@@ -308,6 +312,7 @@ export function useWhiteboardCollaboration(
 
     const handleTableUpdated = (data: {
       tableId: string
+      name?: string
       description?: string
       updatedBy: string
     }) => {
@@ -433,7 +438,7 @@ export function useWhiteboardCollaboration(
   const emitTableUpdate = useCallback(
     (
       tableId: string,
-      data: { description?: string },
+      data: { name?: string; description?: string },
       ack?: (ok: boolean) => void,
     ) => {
       emit(

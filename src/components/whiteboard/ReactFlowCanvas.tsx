@@ -879,10 +879,18 @@ export function ReactFlowCanvas({
   // editingTableId moved away from A and resolves any open edit there
   // before it collapses back to chrome-light.
   const requestEdit = useCallback(
-    (tableId: string, columnId?: string, field?: 'name' | 'dataType') => {
+    (
+      tableId: string,
+      columnId?: string,
+      field?: 'name' | 'dataType' | 'tableName',
+    ) => {
       setEditingTableId(tableId)
       setInitialEditingField(
-        columnId && field ? { tableId, columnId, field } : { tableId },
+        columnId && field
+          ? { tableId, columnId, field }
+          : field === 'tableName'
+            ? { tableId, field }
+            : { tableId },
       )
     },
     [],
@@ -900,8 +908,16 @@ export function ReactFlowCanvas({
   // DOUBLE_PRESS_WINDOW_MS call requestEdit directly; anything else just
   // records the press and waits.
   const registerEditPress = useCallback(
-    (tableId: string, columnId?: string, field?: 'name' | 'dataType') => {
-      const key = columnId ? `${tableId}:${columnId}` : tableId
+    (
+      tableId: string,
+      columnId?: string,
+      field?: 'name' | 'dataType' | 'tableName',
+    ) => {
+      const key = columnId
+        ? `${tableId}:${columnId}`
+        : field === 'tableName'
+          ? `${tableId}:header`
+          : tableId
       // Monotonic clock: a wall-clock step must not lapse the press window.
       const now = performance.now()
       const prev = pressTrackerRef.current

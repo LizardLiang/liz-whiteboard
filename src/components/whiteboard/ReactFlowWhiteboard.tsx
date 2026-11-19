@@ -592,14 +592,24 @@ function ReactFlowWhiteboardInner({
     RelationshipEdgeType
   >()
 
-  // Stable map of tableId → tableName derived from the query data.
+  // Stable map of tableId → tableName derived from the live nodes (so an
+  // inline rename, local or from a peer, reaches relationship labels).
   // Recomputes only when tables are added, removed, or renamed — not on
-  // every position/highlight change — so TableNode memo isn't broken.
-  const tableNameById = useMemo(
-    () =>
-      new Map(initialNodes.map((n) => [n.data.table.id, n.data.table.name])),
-    [initialNodes],
-  )
+  // every position/highlight change — so TableNode memo isn't broken: the
+  // previous Map instance is reused while its entries are unchanged.
+  const tableNameByIdRef = useRef<Map<string, string>>(new Map())
+  const tableNameById = useMemo(() => {
+    const next = new Map(nodes.map((n) => [n.data.table.id, n.data.table.name]))
+    const prev = tableNameByIdRef.current
+    if (
+      prev.size === next.size &&
+      [...next].every(([id, name]) => prev.get(id) === name)
+    ) {
+      return prev
+    }
+    tableNameByIdRef.current = next
+    return next
+  }, [nodes])
 
   // Keep a stable ref to edges for use inside callbacks without stale closure
   const edgesRef = useRef(edges)
@@ -1177,6 +1187,7 @@ function ReactFlowWhiteboardInner({
               onColumnDuplicate: handleColumnDuplicateRef.current,
               onRequestTableDelete: handleRequestTableDeleteRef.current,
               onTableNoteSave: handleTableNoteSaveRef.current,
+              onTableRename: handleTableRenameRef.current,
               onFocusTable: (tableId: string) =>
                 handleFocusTableRef.current(tableId),
               onJumpToTable: (tableId: string) =>
@@ -1187,7 +1198,7 @@ function ReactFlowWhiteboardInner({
                 handleTogglePreviewTableRef.current(tableId),
               edges: edgesRef.current,
               relationsEdges: validEdgesForPanelRef.current,
-              tableNameById,
+              tableNameById: tableNameByIdRef.current,
               // Declaration-order note: isConnectedRef is READ here but not
               // WRITTEN until the `isConnectedRef.current = isConnected`
               // effect further down this file (search for that assignment).
@@ -1232,6 +1243,7 @@ function ReactFlowWhiteboardInner({
             onColumnDuplicate: prev.data.onColumnDuplicate,
             onRequestTableDelete: prev.data.onRequestTableDelete,
             onTableNoteSave: prev.data.onTableNoteSave,
+            onTableRename: prev.data.onTableRename,
             onFocusTable: prev.data.onFocusTable,
             onJumpToTable: prev.data.onJumpToTable,
             onExportDdl: prev.data.onExportDdl,
@@ -1243,12 +1255,28 @@ function ReactFlowWhiteboardInner({
             // new-node branch above (L598-599).
             edges: edgesRef.current,
             relationsEdges: validEdgesForPanelRef.current,
-            tableNameById,
+            tableNameById: tableNameByIdRef.current,
           },
         }
       })
     })
-  }, [initialNodes, tableNameById])
+  }, [initialNodes])
+
+  // A rename (local or from a peer) changes the live name map, not
+  // initialNodes: push the new map into every node so relationship labels and
+  // the relations panel show the new name. Kept out of the initialNodes sync
+  // above, which would overwrite the optimistic name with the stale query data.
+  useEffect(() => {
+    setNodes((prev) =>
+      prev.some((n) => n.data.tableNameById !== tableNameById)
+        ? prev.map((n) =>
+            n.data.tableNameById === tableNameById
+              ? n
+              : { ...n, data: { ...n.data, tableNameById } },
+          )
+        : prev,
+    )
+  }, [tableNameById])
 
   // Update local edge state when initial data changes — preserve onDelete and onLabelUpdate callbacks
   // so that a TanStack Query refetch does not wipe the injected callbacks.
@@ -1421,8 +1449,8 @@ function ReactFlowWhiteboardInner({
   // (updatedBy === userId); this applies the inbound description to the
   // matching table node's data so the popover reflects it when reopened.
   const onTableUpdated = useCallback(
-    (data: { tableId: string; description?: string }) => {
-      if (data.description === undefined) return
+    (data: { tableId: string; name?: string; description?: string }) => {
+      if (data.name === undefined && data.description === undefined) return
       setNodes((prev) =>
         prev.map((n) =>
           n.id === data.tableId
@@ -1430,7 +1458,13 @@ function ReactFlowWhiteboardInner({
                 ...n,
                 data: {
                   ...n.data,
-                  table: { ...n.data.table, description: data.description! },
+                  table: {
+                    ...n.data.table,
+                    ...(data.name !== undefined && { name: data.name }),
+                    ...(data.description !== undefined && {
+                      description: data.description,
+                    }),
+                  },
                 },
               }
             : n,
@@ -2019,6 +2053,16 @@ function ReactFlowWhiteboardInner({
     [tableMutations],
   )
 
+  // Callback to rename a table inline from its header. Same optimistic +
+  // rollback path as the note save; a duplicate name is rejected server-side
+  // and rolled back by onTableUpdateError.
+  const handleTableRename = useCallback(
+    (tableId: string, name: string) => {
+      tableMutations.updateTable(tableId, { name })
+    },
+    [tableMutations],
+  )
+
   // Callback to open the Focus view overlay for a table
   const handleFocusTable = useCallback(
     (tableId: string) => setFocusedTableId(tableId),
@@ -2128,6 +2172,7 @@ function ReactFlowWhiteboardInner({
   const handleColumnDuplicateRef = useRef(handleColumnDuplicate)
   const handleRequestTableDeleteRef = useRef(handleRequestTableDelete)
   const handleTableNoteSaveRef = useRef(handleTableNoteSave)
+  const handleTableRenameRef = useRef(handleTableRename)
   const handleFocusTableRef = useRef(handleFocusTable)
   const handleJumpToRelatedTableRef = useRef(handleJumpToRelatedTable)
   const handleTogglePreviewTableRef = useRef(handleTogglePreviewTable)
@@ -2153,6 +2198,9 @@ function ReactFlowWhiteboardInner({
   useEffect(() => {
     handleTableNoteSaveRef.current = handleTableNoteSave
   }, [handleTableNoteSave])
+  useEffect(() => {
+    handleTableRenameRef.current = handleTableRename
+  }, [handleTableRename])
   useEffect(() => {
     handleFocusTableRef.current = handleFocusTable
   }, [handleFocusTable])
@@ -2188,6 +2236,7 @@ function ReactFlowWhiteboardInner({
           onColumnDuplicate: handleColumnDuplicateRef.current,
           onRequestTableDelete: handleRequestTableDeleteRef.current,
           onTableNoteSave: handleTableNoteSaveRef.current,
+          onTableRename: handleTableRenameRef.current,
           onFocusTable: (tableId: string) =>
             handleFocusTableRef.current(tableId),
           onJumpToTable: (tableId: string) =>
@@ -2234,6 +2283,7 @@ function ReactFlowWhiteboardInner({
           onColumnDuplicate: handleColumnDuplicateRef.current,
           onRequestTableDelete: handleRequestTableDeleteRef.current,
           onTableNoteSave: handleTableNoteSaveRef.current,
+          onTableRename: handleTableRenameRef.current,
           onFocusTable: (tableId: string) =>
             handleFocusTableRef.current(tableId),
           onJumpToTable: (tableId: string) =>

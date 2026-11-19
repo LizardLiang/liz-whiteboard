@@ -652,6 +652,7 @@ export const whiteboardZhTW: DeepStringRecord<typeof whiteboardEn> = {
     showRelations: '顯示 {name} 的關聯',
     hideRelationsHint: '隱藏關聯 (r)',
     showRelationsHint: '顯示關聯 (r)',
+    renameHint: '按兩下重新命名',
     unresolvedOne: '{name} 上有 {count} 則未解決的留言',
     unresolvedOther: '{name} 上有 {count} 則未解決的留言',
     commentOn: '對 {name} 留言',

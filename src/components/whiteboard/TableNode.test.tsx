@@ -54,8 +54,9 @@ const { mockTransform } = vi.hoisted(() => ({
 vi.mock('@xyflow/react', () => ({
   Handle: () => null,
   Position: { Left: 'left', Right: 'right' },
-  useStore: (selector: (state: { transform: [number, number, number] }) => unknown) =>
-    selector({ transform: mockTransform.value }),
+  useStore: (
+    selector: (state: { transform: [number, number, number] }) => unknown,
+  ) => selector({ transform: mockTransform.value }),
 }))
 
 // Mock edge-routing utility (Handle IDs)
@@ -445,6 +446,69 @@ describe('TableNode canEdit gating (WhiteboardPermissionsContext)', () => {
 
     expect(screen.getByRole('button', { name: /delete table/i })).toBeTruthy()
     expect(screen.getByRole('button', { name: /add new column/i })).toBeTruthy()
+  })
+
+  it('double-click on the header name opens an inline editor; Enter commits a trimmed new name', () => {
+    const onTableRename = vi.fn()
+    render(
+      <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+        <TableNode id={TABLE_ID} data={makeTableData({ onTableRename })} />
+      </WhiteboardPermissionsProvider>,
+    )
+
+    fireEvent.doubleClick(screen.getByTestId('table-name'))
+    const input = document.querySelector<HTMLInputElement>(
+      '.table-header input[type="text"]',
+    )!
+    expect(input).toBeTruthy()
+    fireEvent.change(input, { target: { value: '  accounts  ' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(onTableRename).toHaveBeenCalledWith(TABLE_ID, 'accounts')
+    expect(
+      document.querySelector('.table-header input[type="text"]'),
+    ).toBeNull()
+  })
+
+  it('rename: Escape, an empty name, and an unchanged name send nothing', () => {
+    const onTableRename = vi.fn()
+    render(
+      <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+        <TableNode id={TABLE_ID} data={makeTableData({ onTableRename })} />
+      </WhiteboardPermissionsProvider>,
+    )
+    const open = () => {
+      fireEvent.doubleClick(screen.getByTestId('table-name'))
+      return document.querySelector<HTMLInputElement>(
+        '.table-header input[type="text"]',
+      )!
+    }
+
+    let input = open()
+    fireEvent.change(input, { target: { value: 'other' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+
+    input = open()
+    fireEvent.change(input, { target: { value: '   ' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    input = open()
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(onTableRename).not.toHaveBeenCalled()
+    expect(screen.getByTestId('table-name').textContent).toBe('users')
+  })
+
+  it('does not make the header name editable when canEdit is false', () => {
+    render(
+      <WhiteboardPermissionsProvider value={{ canEdit: false }}>
+        <TableNode id={TABLE_ID} data={makeTableData()} />
+      </WhiteboardPermissionsProvider>,
+    )
+    fireEvent.doubleClick(screen.getByTestId('table-name'))
+    expect(
+      document.querySelector('.table-header input[type="text"]'),
+    ).toBeNull()
   })
 
   it('hides per-column write affordances (drag handle, duplicate, delete, constraint toggles) when canEdit is false', () => {

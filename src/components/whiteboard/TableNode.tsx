@@ -13,6 +13,7 @@ import { ColumnHandles } from './column/ColumnHandles'
 import { ColumnNotePopover } from './column/ColumnNotePopover'
 import { AddColumnRow } from './column/AddColumnRow'
 import { DeleteColumnDialog } from './column/DeleteColumnDialog'
+import { InlineNameEditor } from './column/InlineNameEditor'
 import { InsertionLine } from './column/InsertionLine'
 import { TableNodeContextMenu } from './TableNodeContextMenu'
 import { TableRelationsPanel } from './TableRelationsPanel'
@@ -130,6 +131,20 @@ function LodColumnRow({
   )
 }
 
+/**
+ * Whether a pointer event on the chrome-light wrapper landed in the header
+ * band. The wrapper is scaled by the React Flow zoom, so the offset is
+ * normalised against the wrapper's own rendered height.
+ */
+function isHeaderPress(
+  e: { clientY: number; currentTarget: HTMLElement },
+  unscaledHeight: number,
+): boolean {
+  const rect = e.currentTarget.getBoundingClientRect()
+  if (rect.height <= 0) return false
+  return ((e.clientY - rect.top) / rect.height) * unscaledHeight < HEADER_H
+}
+
 export const TableNode = memo(
   ({ data, selected }: TableNodeProps) => {
     const t = useT()
@@ -170,12 +185,18 @@ export const TableNode = memo(
       onDeleteComment,
       onResolveComment,
       onTableNoteSave,
+      onTableRename,
     } = data
 
     const columns = table.columns
 
     // --- Local editing state ---
     const [editingField, setEditingField] = useState<EditingField | null>(null)
+
+    // Table header name is being renamed inline (InlineNameEditor, same
+    // pattern as a column name). Local to this node: only one user edits it.
+    const [isRenamingName, setIsRenamingName] = useState(false)
+    const headerRef = useRef<HTMLDivElement>(null)
 
     // Which column has a pending delete confirmation dialog
     const [deletingColumn, setDeletingColumn] = useState<Column | null>(null)
@@ -306,13 +327,15 @@ export const TableNode = memo(
         return
       if (consumedInitialEditRef.current === initialEditingField) return
       consumedInitialEditRef.current = initialEditingField
-      if (initialEditingField.columnId && initialEditingField.field) {
+      if (initialEditingField.field === 'tableName') {
+        if (canEdit) setIsRenamingName(true)
+      } else if (initialEditingField.columnId && initialEditingField.field) {
         setEditingField({
           columnId: initialEditingField.columnId,
           field: initialEditingField.field,
         })
       }
-    }, [canvasMode, editingTableId, table.id, initialEditingField])
+    }, [canvasMode, editingTableId, table.id, initialEditingField, canEdit])
 
     // Consume a header-icon affordance click (note / comment / relations) for
     // THIS table — clicking a canvas-drawn header icon opens the matching
@@ -501,6 +524,32 @@ export const TableNode = memo(
         handleCancelEdit()
       }
     }, [isLodCollapsed, isNotOverlayTarget, editingField, handleCancelEdit])
+
+    // Same commit-on-exit as the column editors above: when the overlay
+    // moves off this table mid-rename, blur the header input so its own
+    // blur handler commits (or reverts an empty name) before the table
+    // collapses back to chrome-light.
+    useEffect(() => {
+      if (!(isLodCollapsed || isNotOverlayTarget) || !isRenamingName) return
+      const input =
+        headerRef.current?.querySelector<HTMLInputElement>('input[type="text"]')
+      if (input) input.blur()
+      else setIsRenamingName(false)
+    }, [isLodCollapsed, isNotOverlayTarget, isRenamingName])
+
+    const handleCommitRename = useCallback(
+      (value: string) => {
+        setIsRenamingName(false)
+        // Unchanged name sends nothing (the editor already trims).
+        if (value === table.name) return
+        onTableRename?.(table.id, value)
+      },
+      [table.id, table.name, onTableRename],
+    )
+
+    const handleCancelRename = useCallback(() => {
+      setIsRenamingName(false)
+    }, [])
 
     const handleToggleConstraint = useCallback(
       (
@@ -844,7 +893,7 @@ export const TableNode = memo(
     // (CanvasNodeLayer.tsx skips drawing during export too, for the same
     // reason — see that file's `forceFullDetail` early return).
     const isChromeLightTarget =
-      isNotOverlayTarget && !editingField && !forceFullDetail
+      isNotOverlayTarget && !editingField && !isRenamingName && !forceFullDetail
 
     if (isChromeLightTarget) {
       return (
@@ -909,7 +958,18 @@ export const TableNode = memo(
             // get the overlay (locked decision #5). A column row's own
             // onDoubleClick below stops propagation so a column
             // double-click never ALSO fires this one.
-            onDoubleClick={canEdit ? () => requestEdit(table.id) : undefined}
+            onDoubleClick={
+              canEdit
+                ? (e) =>
+                    requestEdit(
+                      table.id,
+                      undefined,
+                      isHeaderPress(e, chromeLightHeight)
+                        ? 'tableName'
+                        : undefined,
+                    )
+                : undefined
+            }
             // LizMeter #53 fix — sibling mousedown feeding the retargeting-
             // immune double-press detector (see CanvasEditContextValue's
             // registerEditPress doc comment). Kept alongside the native
@@ -936,7 +996,13 @@ export const TableNode = memo(
               canEdit
                 ? (e) => {
                     if (e.currentTarget.contains(e.target as Node)) {
-                      registerEditPress(table.id)
+                      registerEditPress(
+                        table.id,
+                        undefined,
+                        isHeaderPress(e, chromeLightHeight)
+                          ? 'tableName'
+                          : undefined,
+                      )
                     }
                   }
                 : undefined
@@ -1157,6 +1223,7 @@ export const TableNode = memo(
           {/* Table Header */}
           <div
             className="table-header"
+            ref={headerRef}
             style={{
               padding: '12px 16px',
               background: 'var(--rf-table-header-bg)',
@@ -1176,16 +1243,36 @@ export const TableNode = memo(
               setIsHeaderHovered(false)
             }}
           >
-            <span
-              style={{
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                flex: 1,
-              }}
-            >
-              {table.name}
-            </span>
+            {isRenamingName ? (
+              <InlineNameEditor
+                value={table.name}
+                onCommit={handleCommitRename}
+                onCancel={handleCancelRename}
+              />
+            ) : (
+              <span
+                data-testid="table-name"
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  flex: 1,
+                }}
+                title={
+                  canEdit ? t('whiteboard.tableNode.renameHint') : undefined
+                }
+                onDoubleClick={
+                  canEdit
+                    ? (e) => {
+                        e.stopPropagation()
+                        setIsRenamingName(true)
+                      }
+                    : undefined
+                }
+              >
+                {table.name}
+              </span>
+            )}
 
             {/* Header buttons container */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1490,6 +1577,7 @@ export const TableNode = memo(
     if (prev.data.onDeleteComment !== next.data.onDeleteComment) return false
     if (prev.data.onResolveComment !== next.data.onResolveComment) return false
     if (prev.data.onTableNoteSave !== next.data.onTableNoteSave) return false
+    if (prev.data.onTableRename !== next.data.onTableRename) return false
     return true
   },
 )
