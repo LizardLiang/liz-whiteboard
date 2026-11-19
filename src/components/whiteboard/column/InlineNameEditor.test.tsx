@@ -119,4 +119,22 @@ describe('InlineNameEditor', () => {
     expect(input.classList.contains('nodrag')).toBe(true)
     expect(input.classList.contains('nowheel')).toBe(true)
   })
+
+  it('sizes its slot from a hidden copy of the name so the input adds no width of its own', () => {
+    const { container } = render(
+      <InlineNameEditor
+        value="user_id"
+        onCommit={vi.fn()}
+        onCancel={vi.fn()}
+        fontWeight={600}
+      />,
+    )
+    const input = screen.getByRole('textbox')
+    // Out of flow: the input cannot widen the table while it is open.
+    expect(input.style.position).toBe('absolute')
+    const sizer = container.querySelector('[aria-hidden="true"]') as HTMLElement
+    expect(sizer.textContent).toBe('user_id')
+    expect(sizer.style.visibility).toBe('hidden')
+    expect((sizer.parentElement as HTMLElement).style.fontWeight).toBe('600')
+  })
 })

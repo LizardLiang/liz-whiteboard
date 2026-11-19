@@ -220,6 +220,7 @@ export const ColumnRow = memo(
               value={column.name}
               onCommit={(newValue) => onCommitEdit(column.id, 'name', newValue)}
               onCancel={onCancelEdit}
+              fontWeight={column.isPrimaryKey ? 600 : 400}
             />
           ) : (
             <LazyTooltip
