@@ -187,7 +187,10 @@ import {
   getBoardTables,
   resyncBoardAfterReconnect,
 } from '@/lib/react-flow/board-resync'
-import { createTableEditSync } from '@/lib/react-flow/table-edit-sync'
+import {
+  createTableEditSync,
+  noteBoardReloadStart,
+} from '@/lib/react-flow/table-edit-sync'
 import { useRelationshipMutations } from '@/hooks/use-relationship-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
 import { useTableFocus } from '@/hooks/use-table-focus'
@@ -624,6 +627,8 @@ function ReactFlowWhiteboardInner({
     createTableEditSync({
       queryClient,
       whiteboardId,
+      // A local ack for a table deleted meanwhile must record nothing.
+      tableExists: (tableId) => nodesRef.current.some((n) => n.id === tableId),
       onShown: (tableId, fields) =>
         setNodes((prev) =>
           prev.map((n) =>
@@ -4678,6 +4683,8 @@ function ReactFlowWhiteboardInner({
               affectedRelationships={tableDeleteAffectedRelationships}
               onConfirm={() => {
                 tableMutations.deleteTable(deletingTableId)
+                // Unsaved or just-saved name/note values of this table are moot.
+                tableEditSync.dropTable(deletingTableId)
                 // W4-A: clean up per-table reorder state on local delete path.
                 // forgetTable is also called in onTableDeleted for the remote path —
                 // this call covers the case where the current user deletes a table.
@@ -4991,6 +4998,7 @@ export function ReactFlowWhiteboard({
   onCommentActionsReady,
 }: ReactFlowWhiteboardProps) {
   const t = useT()
+  const queryClient = useQueryClient()
   // Fetch whiteboard data with tables — disabled on the public read-only
   // path (GH #109): that path never has an authenticated session, and
   // getWhiteboardWithDiagram/getWhiteboardRelationships are both
@@ -5005,6 +5013,8 @@ export function ReactFlowWhiteboard({
   } = useQuery({
     queryKey: ['whiteboard', whiteboardId],
     queryFn: async () => {
+      // Every start counts, restarts included (see noteBoardReloadStart).
+      noteBoardReloadStart(queryClient, whiteboardId)
       return await getWhiteboardWithDiagram({ data: whiteboardId })
     },
     staleTime: 1000 * 60 * 5, // 5 minutes

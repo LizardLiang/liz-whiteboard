@@ -17,17 +17,41 @@ const FIELDS: ReadonlyArray<TableEditField> = ['name', 'description']
 const fieldsOf = (fields: TableEditFields) =>
   FIELDS.filter((field) => fields[field] !== undefined)
 
+type ReloadStartListener = (whiteboardId: string) => void
+const reloadStartListeners = new WeakMap<
+  QueryClient,
+  Set<ReloadStartListener>
+>()
+
+/**
+ * The board query function calls this each time it starts to read the server.
+ * query-core announces a reload with a `fetch` action only when the query was
+ * idle. A reload that `cancelRefetch` restarts (invalidateQueries does this)
+ * reads the server again and dispatches nothing, so only the query function
+ * sees every start. A confirmed value recorded before a start is then known to
+ * be carried by the reload that start began.
+ */
+export function noteBoardReloadStart(
+  queryClient: QueryClient,
+  whiteboardId: string,
+): void {
+  reloadStartListeners.get(queryClient)?.forEach((fn) => fn(whiteboardId))
+}
+
 export interface TableEditSyncOptions {
   queryClient: QueryClient
   whiteboardId: string
   /** Called with the values to show for a table after the overlay changed. */
   onShown: (tableId: string, fields: TableEditFields) => void
+  /** Whether the table is still on the board. A local ack for a table that is gone records nothing. Default: always. */
+  tableExists?: (tableId: string) => boolean
 }
 
 export function createTableEditSync({
   queryClient,
   whiteboardId,
   onShown,
+  tableExists = () => true,
 }: TableEditSyncOptions) {
   const overlay = createTableEditOverlay()
   const queryKey = ['whiteboard', whiteboardId]
@@ -76,20 +100,37 @@ export function createTableEditSync({
   return {
     /** Subscribes to the board query. Returns the unsubscribe function. */
     attach(): () => void {
-      return queryClient.getQueryCache().subscribe((event) => {
-        if (event.type !== 'updated') return
-        const key = event.query.queryKey
-        if (
-          key.length !== 2 ||
-          key[0] !== 'whiteboard' ||
-          key[1] !== whiteboardId
-        )
-          return
-        if (event.action.type === 'fetch') overlay.onFetchStart()
-        // setQueryData also dispatches `success`; only a reload counts.
-        else if (event.action.type === 'success' && !event.action.manual)
-          overlay.onFetchSuccess()
-      })
+      let listeners = reloadStartListeners.get(queryClient)
+      if (!listeners) {
+        listeners = new Set()
+        reloadStartListeners.set(queryClient, listeners)
+      }
+      const onReloadStart: ReloadStartListener = (id) => {
+        if (id === whiteboardId) overlay.onFetchStart()
+      }
+      listeners.add(onReloadStart)
+      const unsubscribeCache = queryClient
+        .getQueryCache()
+        .subscribe((event) => {
+          if (event.type !== 'updated') return
+          const key = event.query.queryKey
+          if (
+            key.length !== 2 ||
+            key[0] !== 'whiteboard' ||
+            key[1] !== whiteboardId
+          )
+            return
+          // A reload that starts on an idle query counts here; every start,
+          // restarts included, counts through noteBoardReloadStart.
+          if (event.action.type === 'fetch') overlay.onFetchStart()
+          // setQueryData also dispatches `success`; only a reload counts.
+          else if (event.action.type === 'success' && !event.action.manual)
+            overlay.onFetchSuccess()
+        })
+      return () => {
+        unsubscribeCache()
+        listeners.delete(onReloadStart)
+      }
     },
 
     /** Lays the shown values over a table from the reloaded data. */
@@ -108,6 +149,12 @@ export function createTableEditSync({
       fields: TableEditFields,
       previous?: TableEditFields,
     ): void {
+      // The table was deleted while the edit was in flight: settle the pending
+      // value, but keep no confirmed value and write nothing.
+      if (ok && !tableExists(tableId)) {
+        overlay.ackLocal(editId, tableId, false, fields)
+        return
+      }
       overlay.ackLocal(editId, tableId, ok, fields)
       if (ok) writeCache(tableId, fields)
       else show(tableId, fieldsOf(fields), previous)

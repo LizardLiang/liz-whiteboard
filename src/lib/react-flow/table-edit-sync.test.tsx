@@ -10,7 +10,7 @@ import {
   useQuery,
 } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { createTableEditSync } from './table-edit-sync'
+import { createTableEditSync, noteBoardReloadStart } from './table-edit-sync'
 import { resyncBoardAfterReconnect } from './board-resync'
 import type { ReactNode } from 'react'
 
@@ -64,6 +64,8 @@ function setup() {
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   })
   const cancelSpy = vi.spyOn(qc, 'cancelQueries')
+  /** Tables the board no longer holds (local or remote delete). */
+  const gone = new Set<string>()
   const wrapper = ({ children }: { children: ReactNode }) =>
     createElement(QueryClientProvider, { client: qc }, children)
 
@@ -71,7 +73,11 @@ function setup() {
     () => {
       const { data } = useQuery({
         queryKey: KEY,
-        queryFn: server.queryFn,
+        // The board's queryFn announces every start, restarts included.
+        queryFn: () => {
+          noteBoardReloadStart(qc, WB)
+          return server.queryFn()
+        },
         staleTime: 5 * 60_000,
       })
       const [shown, setShown] = useState<Record<string, Partial<Row>>>({})
@@ -79,6 +85,7 @@ function setup() {
         createTableEditSync({
           queryClient: qc,
           whiteboardId: WB,
+          tableExists: (id) => !gone.has(id),
           onShown: (id, fields) =>
             setShown((prev) => ({ ...prev, [id]: { ...prev[id], ...fields } })),
         }),
@@ -104,6 +111,7 @@ function setup() {
     server,
     view,
     cancelSpy,
+    gone,
     name: (id = 't1') => row(id)?.name,
     note: (id = 't1') => row(id)?.description,
     sync: () => view.result.current.sync,
@@ -374,6 +382,95 @@ describe('table edit sync (real QueryClient)', () => {
       await t.land(1)
       await done
       expect(reconcile).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('(6) a reload restarted by invalidateQueries', () => {
+    it("shows the restarted reload's newer value over a value confirmed during the first run", async () => {
+      const t = await loaded()
+      void t.reload()
+      await waitFor(() => expect(t.server.reloads.length).toBe(2))
+      // Ack ok while the reload runs: B is confirmed.
+      const edit = t.local('t1', { name: 'B' })
+      t.ack(edit, 't1', true, { name: 'B' })
+      // A version restore changes the name; its invalidate restarts the
+      // reload, which reads the server again (query-core dispatches no
+      // `fetch` action for a restart).
+      t.server.state.names.t1 = 'RESTORED'
+      void t.reload()
+      await waitFor(() => expect(t.server.reloads.length).toBe(3))
+
+      await t.land(2)
+
+      await waitFor(() => expect(t.name()).toBe('RESTORED'))
+      expect(t.cancelSpy).not.toHaveBeenCalled()
+    })
+
+    it('counts a restart that dispatches no `fetch` action (same fetch meta), through the query function', async () => {
+      const t = await loaded()
+      void t.reload()
+      await waitFor(() => expect(t.server.reloads.length).toBe(2))
+      const edit = t.local('t1', { name: 'B' })
+      t.ack(edit, 't1', true, { name: 'B' })
+      t.server.state.names.t1 = 'RESTORED'
+      t.server.state.relationships.push('restart')
+      const query = t.qc.getQueryCache().find({ queryKey: KEY })!
+      const actions: Array<string> = []
+      const stop = t.qc.getQueryCache().subscribe((event) => {
+        if (event.type === 'updated') actions.push(event.action.type)
+      })
+      // query-core dispatches `fetch` on a restart only when the fetch meta
+      // differs; with an equal meta it dispatches nothing.
+      void query.fetch(undefined, { cancelRefetch: true, meta: null as never })
+      stop()
+      await waitFor(() => expect(t.server.reloads.length).toBe(3))
+      expect(actions).not.toContain('fetch')
+
+      await t.land(2)
+
+      await waitFor(() => expect(t.name()).toBe('RESTORED'))
+    })
+
+    it('still keeps a value confirmed after the restart began', async () => {
+      const t = await loaded()
+      void t.reload()
+      await waitFor(() => expect(t.server.reloads.length).toBe(2))
+      void t.reload()
+      await waitFor(() => expect(t.server.reloads.length).toBe(3))
+      const edit = t.local('t1', { name: 'B' })
+      t.ack(edit, 't1', true, { name: 'B' })
+
+      await t.land(2)
+
+      expect(t.name()).toBe('B')
+    })
+  })
+
+  describe('(7) a table that is gone', () => {
+    it('keeps no entry for an ack ok that arrives after the table was deleted', async () => {
+      const t = await loaded()
+      const edit = t.local('t1', { name: 'B' })
+      t.gone.add('t1')
+      t.sync().dropTable('t1')
+
+      t.ack(edit, 't1', true, { name: 'B' })
+
+      // No entry: the overlay leaves a rebuilt row alone, and the cache is untouched.
+      expect(t.sync().apply({ id: 't1', name: 'A' }).name).toBe('A')
+      expect(t.qc.getQueryData<Board>(KEY)?.tables[0].name).toBe('A')
+    })
+
+    it('dropTable forgets pending and confirmed values', async () => {
+      const t = await loaded()
+      const edit = t.local('t1', { name: 'B' })
+      t.ack(edit, 't1', true, { name: 'B' })
+      t.local('t1', { description: 'note' })
+
+      t.sync().dropTable('t1')
+
+      expect(
+        t.sync().apply({ id: 't1', name: 'A', description: null }),
+      ).toEqual({ id: 't1', name: 'A', description: null })
     })
   })
 })
