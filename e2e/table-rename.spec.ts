@@ -46,15 +46,14 @@ async function renameTo(page: Page, from: string, to: string) {
 
 test.afterEach(async ({ page }) => {
   await openBoard(page)
-  for (const stale of ['users_renamed', '用戶資料表', 'orders']) {
-    // 'orders' is only stale if a test renamed it; the board always has the
-    // seeded one, so only touch names that should not exist.
-    if (stale === 'orders') continue
+  for (const stale of ['users_renamed', '用戶資料表', 'should_not_stick']) {
     if ((await tableNode(page, stale).count()) === 0) continue
     await renameTo(page, stale, 'users')
     await settle(page)
   }
   await page.keyboard.press('Escape')
+  // A failed restore must fail loudly, not leak into the next test.
+  await expect(tableNode(page, 'users')).toBeVisible()
 })
 
 test('double-click the header, type, Enter: the new name persists across reload', async ({
@@ -70,6 +69,23 @@ test('double-click the header, type, Enter: the new name persists across reload'
   await expect(page.getByTestId('canvas-node-layer')).toBeVisible()
   await expect(tableNode(page, 'users_renamed')).toBeVisible()
   await expect(tableNode(page, 'users')).toHaveCount(0)
+})
+
+test('after a first rename (edit layout), double-clicking the header padding opens the editor again', async ({
+  page,
+}) => {
+  await openBoard(page)
+  await renameTo(page, 'users', 'users_renamed')
+  await settle(page)
+  await expect(page.locator(NAME_INPUT)).toHaveCount(0)
+
+  // (40,12) is header padding, not the name text.
+  await dblclickHeader(page, 'users_renamed')
+  const input = page.locator(NAME_INPUT)
+  await expect(input).toBeVisible()
+  await expect(input).toBeFocused()
+  await input.press('Escape')
+  await expect(input).toHaveCount(0)
 })
 
 test('a CJK name persists across reload', async ({ page }) => {

@@ -1242,6 +1242,19 @@ export const TableNode = memo(
             onMouseLeave={() => {
               setIsHeaderHovered(false)
             }}
+            // The whole header band opens the rename editor (the painted
+            // canvas layout does the same); header buttons keep their own
+            // double-click. stopPropagation keeps the wrapper's requestEdit
+            // from also firing.
+            onDoubleClick={
+              canEdit
+                ? (e) => {
+                    if ((e.target as HTMLElement).closest('button')) return
+                    e.stopPropagation()
+                    setIsRenamingName(true)
+                  }
+                : undefined
+            }
           >
             {isRenamingName ? (
               <InlineNameEditor
@@ -1260,14 +1273,6 @@ export const TableNode = memo(
                 }}
                 title={
                   canEdit ? t('whiteboard.tableNode.renameHint') : undefined
-                }
-                onDoubleClick={
-                  canEdit
-                    ? (e) => {
-                        e.stopPropagation()
-                        setIsRenamingName(true)
-                      }
-                    : undefined
                 }
               >
                 {table.name}
