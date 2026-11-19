@@ -5,6 +5,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
 import { resyncBoardAfterReconnect } from './board-resync'
+import { noteBoardReloadStart } from './table-edit-sync'
 
 const KEY = ['whiteboard', 'wb-1']
 
@@ -95,5 +96,39 @@ describe('resyncBoardAfterReconnect', () => {
     expect(reconcile).not.toHaveBeenCalled()
     reload.land(board(['c1']))
     await reload.loading
+  })
+
+  it('keeps waiting when a restart cancels the reload the wait joined, and reconciles once on the restarted reload', async () => {
+    const qc = client()
+    qc.setQueryData(KEY, board(['c1']))
+    const gates: Array<(data: unknown) => void> = []
+    const queryFn = vi.fn(() => {
+      noteBoardReloadStart(qc, 'wb-1')
+      return new Promise((resolve) => gates.push(resolve))
+    })
+    // A reload already running when the socket reconnects. No observer is
+    // active, so invalidateQueries does not wait on it and the wait loop joins it.
+    void qc.fetchQuery({ queryKey: KEY, queryFn, staleTime: 0 })
+    await vi.waitFor(() => expect(gates).toHaveLength(1))
+    const reconcile = vi.fn()
+
+    const done = resyncBoardAfterReconnect({
+      queryClient: qc,
+      whiteboardId: 'wb-1',
+      isCurrent: () => true,
+      reconcile,
+    })
+    await new Promise((r) => setTimeout(r, 10))
+    // A local create's invalidate restarts the reload the wait joined.
+    void qc.refetchQueries({ queryKey: KEY })
+    await vi.waitFor(() => expect(gates).toHaveLength(2))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(reconcile).not.toHaveBeenCalled()
+
+    gates[1](board(['c2', 'c1']))
+    await done
+
+    expect(reconcile).toHaveBeenCalledTimes(1)
+    expect(reconcile).toHaveBeenCalledWith('t1', ['c2', 'c1'])
   })
 })
