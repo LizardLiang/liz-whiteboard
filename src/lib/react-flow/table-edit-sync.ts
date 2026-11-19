@@ -9,7 +9,11 @@
 //   - It tells the board which values to show (onShown) after any change.
 // See .claude/.Arena/flows/table-edit-sync.md.
 import { createTableEditOverlay } from './table-edit-overlay'
-import type { TableEditField, TableEditFields } from './table-edit-overlay'
+import type {
+  TableEditDropToken,
+  TableEditField,
+  TableEditFields,
+} from './table-edit-overlay'
 import type { QueryClient } from '@tanstack/react-query'
 
 const FIELDS: ReadonlyArray<TableEditField> = ['name', 'description']
@@ -162,9 +166,11 @@ export function createTableEditSync({
       fields: TableEditFields,
       previous?: TableEditFields,
     ): void {
-      // The table was deleted while the edit was in flight: settle the pending
-      // value, but keep no confirmed value and write nothing.
-      if (ok && !tableExists(tableId)) {
+      // The table was deleted while the edit was in flight: keep the answer
+      // for restoreTable (a refused delete brings the table back), record
+      // nothing now and write no cache.
+      if (!tableExists(tableId)) {
+        overlay.recordDroppedAck(tableId, editId, ok, fields)
         overlay.ackLocal(editId, tableId, false, fields)
         return
       }
@@ -186,18 +192,17 @@ export function createTableEditSync({
       for (const tableId of touched) show(tableId, FIELDS)
     },
 
-    /** The table is gone. Returns its entries for restoreTable. */
-    dropTable(tableId: string) {
+    /** The table is gone. Returns a token for restoreTable. */
+    dropTable(tableId: string): TableEditDropToken {
       return overlay.dropTable(tableId)
     },
 
-    /** A delete failed and the table is back: restore the entries dropTable returned and show them. */
-    restoreTable(
-      tableId: string,
-      entries: ReturnType<typeof overlay.dropTable>,
-    ) {
-      if (!entries) return
-      overlay.restoreTable(tableId, entries)
+    /** A delete failed and the table is back: restore what dropTable returned, apply the acks that came meanwhile, and show it. */
+    restoreTable(tableId: string, token: TableEditDropToken): void {
+      overlay.restoreTable(tableId, token)
+      for (const ack of token.acks) {
+        if (ack.ok) writeCache(tableId, ack.fields)
+      }
       show(tableId, FIELDS)
     },
   }

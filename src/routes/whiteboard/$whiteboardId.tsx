@@ -16,7 +16,7 @@ import type { TableHistoryRequest } from '@/components/whiteboard/WhiteboardChan
 import {
   insertOptimisticTable,
   removeOptimisticTable,
-  settleOptimisticTable,
+  settleOptimisticTableAfterReload,
 } from '@/lib/react-flow/optimistic-table'
 import { ReactFlowWhiteboard } from '@/components/whiteboard/ReactFlowWhiteboard'
 import { BoardChip, BoardNavFallback } from '@/components/layout/BoardChip'
@@ -255,11 +255,11 @@ function WhiteboardEditor() {
       })
       // When this reload has landed, the real table is in the data; a pending
       // row that is still there was renamed or deleted by a peer meanwhile.
-      void queryClient
-        .invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
-        .then(() => {
-          settleOptimisticTable(queryClient, whiteboardId, context.tempId)
-        })
+      void settleOptimisticTableAfterReload(
+        queryClient,
+        whiteboardId,
+        context.tempId,
+      )
     },
     onError: (err, _newTable, context) => {
       // Rollback on error

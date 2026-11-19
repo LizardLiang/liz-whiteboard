@@ -481,6 +481,30 @@ describe('table edit sync (real QueryClient)', () => {
       expect(t.name()).toBe('B')
     })
 
+    it('a refused delete restores a name whose ack came while the table was gone (ok: shown as confirmed; refused: discarded)', async () => {
+      const t = await loaded()
+      const ok = t.local('t1', { name: 'B' })
+      const bad = t.local('t2', { name: 'Y' })
+      const d1 = t.sync().dropTable('t1')
+      const d2 = t.sync().dropTable('t2')
+      t.gone.add('t1')
+      t.gone.add('t2')
+      t.ack(ok, 't1', true, { name: 'B' })
+      t.ack(bad, 't2', false, { name: 'Y' })
+
+      // The deletes are refused: the tables are back.
+      t.gone.clear()
+      act(() => {
+        t.sync().restoreTable('t1', d1)
+        t.sync().restoreTable('t2', d2)
+      })
+
+      expect(t.sync().apply({ id: 't1', name: 'A' }).name).toBe('B')
+      // t2's edit was refused: no unconfirmed value comes back.
+      expect(t.sync().apply({ id: 't2', name: 'X' }).name).toBe('X')
+      expect(t.qc.getQueryData<Board>(KEY)?.tables[0].name).toBe('B')
+    })
+
     it('dropTable forgets pending and confirmed values', async () => {
       const t = await loaded()
       const edit = t.local('t1', { name: 'B' })

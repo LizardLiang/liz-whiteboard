@@ -7,7 +7,7 @@
 // every result until a reload carries the real table (same name; names are
 // unique per board), the create fails, the create's own reload has landed
 // (settleOptimisticTable), or the board unmounts (clearPendingTables).
-import { useCallback, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import type { QueryClient } from '@tanstack/react-query'
 import type { CreateTable } from '@/data/schema'
 
@@ -67,27 +67,37 @@ export function withPendingTables<T>(
 
 /**
  * Stable `select` for the board query. Its identity changes when the pending
- * list changes, so the query runs it again without new data.
+ * list changes, so the query runs it again without new data. When the board
+ * closes, its pending rows are cleared: a created table whose real row never
+ * arrived must not come back as a ghost. `enabled` false (a read-only preview
+ * that shares the live board's client and id) neither subscribes nor clears.
  */
 export function useBoardSelectWithPending(
   queryClient: QueryClient,
   whiteboardId: string,
+  enabled = true,
 ) {
   const board = boardOf(queryClient, whiteboardId)
-  const version = useSyncExternalStore(
-    (fn) => {
+  const subscribe = useCallback(
+    (fn: () => void) => {
+      if (!enabled) return () => undefined
       board.listeners.add(fn)
       return () => board.listeners.delete(fn)
     },
-    () => board.version,
+    [board, enabled],
   )
+  const version = useSyncExternalStore(subscribe, () => board.version)
+  useEffect(() => {
+    if (!enabled) return
+    return () => clearPendingTables(queryClient, whiteboardId)
+  }, [enabled, queryClient, whiteboardId])
   return useCallback(
     <T>(data: T) => {
       // A new function identity per version makes the query re-select.
       void version
-      return withPendingTables(queryClient, whiteboardId, data)
+      return enabled ? withPendingTables(queryClient, whiteboardId, data) : data
     },
-    [queryClient, whiteboardId, version],
+    [queryClient, whiteboardId, version, enabled],
   )
 }
 
@@ -160,4 +170,28 @@ export function clearPendingTables(
   board.rows.clear()
   for (const id of ids) removeOptimisticTable(queryClient, whiteboardId, id)
   changed(board)
+}
+
+/**
+ * The create succeeded: invalidates the board query and settles the pending
+ * row once that reload has really landed. A failed reload keeps the row (the
+ * table exists on the server; the next landing carries it and retires the row
+ * by name).
+ */
+export async function settleOptimisticTableAfterReload(
+  queryClient: QueryClient,
+  whiteboardId: string,
+  tempId: string,
+): Promise<void> {
+  const startedAt = Date.now()
+  const queryKey = ['whiteboard', whiteboardId]
+  await queryClient.invalidateQueries({ queryKey })
+  const state = queryClient.getQueryState(queryKey)
+  if (
+    state?.status === 'success' &&
+    state.fetchStatus === 'idle' &&
+    state.dataUpdatedAt >= startedAt
+  ) {
+    settleOptimisticTable(queryClient, whiteboardId, tempId)
+  }
 }

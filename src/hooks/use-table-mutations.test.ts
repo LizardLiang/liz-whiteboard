@@ -737,7 +737,7 @@ describe('useTableMutations', () => {
 
   describe('table edit overlay on delete', () => {
     const port = () => {
-      const dropped = { name: { pending: { value: 'B', editId: 1 } } }
+      const dropped = { entries: undefined, acks: [] }
       return {
         dropped,
         port: {

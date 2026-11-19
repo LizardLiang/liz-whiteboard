@@ -30,8 +30,19 @@ interface FieldEntry {
 
 type TableEntry = Partial<Record<TableEditField, FieldEntry>>
 
+/** What dropTable returns: the table's entries plus the acks that arrive while it is gone. Pass it back to restoreTable. */
+export interface TableEditDropToken {
+  readonly entries: TableEntry | undefined
+  readonly acks: Array<{
+    editId: number
+    ok: boolean
+    fields: TableEditFields
+  }>
+}
+
 export function createTableEditOverlay() {
   const tables = new Map<string, TableEntry>()
+  const dropped = new Map<string, TableEditDropToken>()
   let fetchStartSeq = 0
   let nextEditId = 0
 
@@ -67,6 +78,31 @@ export function createTableEditOverlay() {
     return entry.confirmed ? entry.confirmed.value : undefined
   }
 
+  /**
+   * The server answered a local edit. ok: the server holds the values, so
+   * record them as confirmed even when a newer edit has replaced this one.
+   * The pending value goes away only if this edit still owns it.
+   */
+  const ackLocal = (
+    editId: number,
+    tableId: string,
+    ok: boolean,
+    fields: TableEditFields,
+  ): void => {
+    for (const field of fieldsOf(fields)) {
+      const entry = ok ? entryFor(tableId, field) : tables.get(tableId)?.[field]
+      if (!entry) continue
+      if (ok) {
+        entry.confirmed = {
+          value: fields[field] as string | null,
+          seq: fetchStartSeq,
+        }
+      }
+      if (entry.pending?.editId === editId) delete entry.pending
+    }
+    prune(tableId)
+  }
+
   return {
     /** Starts a local edit: its values show until the server answers. Returns the edit id. */
     beginLocal(tableId: string, fields: TableEditFields): number {
@@ -80,32 +116,7 @@ export function createTableEditOverlay() {
       return editId
     },
 
-    /**
-     * The server answered a local edit. ok: the server holds the values, so
-     * record them as confirmed even when a newer edit has replaced this one.
-     * The pending value goes away only if this edit still owns it.
-     */
-    ackLocal(
-      editId: number,
-      tableId: string,
-      ok: boolean,
-      fields: TableEditFields,
-    ): void {
-      for (const field of fieldsOf(fields)) {
-        const entry = ok
-          ? entryFor(tableId, field)
-          : tables.get(tableId)?.[field]
-        if (!entry) continue
-        if (ok) {
-          entry.confirmed = {
-            value: fields[field] as string | null,
-            seq: fetchStartSeq,
-          }
-        }
-        if (entry.pending?.editId === editId) delete entry.pending
-      }
-      prune(tableId)
-    },
+    ackLocal,
 
     /** A peer saved these values. A local pending edit stays on top. */
     applyPeer(tableId: string, fields: TableEditFields): void {
@@ -182,15 +193,35 @@ export function createTableEditOverlay() {
     },
 
     /** The table is gone: forget its entries. Returns them, so a failed delete can restore them. */
-    dropTable(tableId: string): TableEntry | undefined {
-      const entry = tables.get(tableId)
+    dropTable(tableId: string): TableEditDropToken {
+      const token: TableEditDropToken = {
+        entries: tables.get(tableId),
+        acks: [],
+      }
+      dropped.set(tableId, token)
       tables.delete(tableId)
-      return entry
+      return token
+    },
+
+    /** An ack arrived for a table that was dropped: keep it for restoreTable. */
+    recordDroppedAck(
+      tableId: string,
+      editId: number,
+      ok: boolean,
+      fields: TableEditFields,
+    ): void {
+      dropped.get(tableId)?.acks.push({ editId, ok, fields })
     },
 
     /** A delete failed: put the entries dropTable returned back, unless newer ones exist. */
-    restoreTable(tableId: string, entry: TableEntry): void {
-      if (!tables.has(tableId)) tables.set(tableId, entry)
+    restoreTable(tableId: string, token: TableEditDropToken): void {
+      if (dropped.get(tableId) === token) dropped.delete(tableId)
+      if (tables.has(tableId)) return
+      if (token.entries) tables.set(tableId, token.entries)
+      // Acks that came while the table was gone: settle them now.
+      for (const ack of token.acks) {
+        ackLocal(ack.editId, tableId, ack.ok, ack.fields)
+      }
     },
 
     /** Number of tables with entries (tests). */

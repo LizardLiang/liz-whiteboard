@@ -187,10 +187,7 @@ import {
   getBoardTables,
   resyncBoardAfterReconnect,
 } from '@/lib/react-flow/board-resync'
-import {
-  clearPendingTables,
-  useBoardSelectWithPending,
-} from '@/lib/react-flow/optimistic-table'
+import { useBoardSelectWithPending } from '@/lib/react-flow/optimistic-table'
 import {
   createTableEditSync,
   noteBoardReloadStart,
@@ -654,11 +651,7 @@ function ReactFlowWhiteboardInner({
       begin: tableEditSync.beginLocal,
       settle: tableEditSync.ackLocal,
       drop: tableEditSync.dropTable,
-      restore: (tableId: string, dropped: unknown) =>
-        tableEditSync.restoreTable(
-          tableId,
-          dropped as Parameters<typeof tableEditSync.restoreTable>[1],
-        ),
+      restore: tableEditSync.restoreTable,
     }),
     [tableEditSync],
   )
@@ -5008,15 +5001,12 @@ export function ReactFlowWhiteboard({
   const t = useT()
   const queryClient = useQueryClient()
   // Stable, so the query result keeps its identity between renders.
+  // A read-only mount (the history preview) shares the live board's query
+  // client and id, so it must not touch the live board's pending rows.
   const selectBoardWithPending = useBoardSelectWithPending(
     queryClient,
     whiteboardId,
-  )
-  // Leaving the board: a created table whose real row never arrived must not
-  // come back as a ghost when the board opens again.
-  useEffect(
-    () => () => clearPendingTables(queryClient, whiteboardId),
-    [queryClient, whiteboardId],
+    !isPublic,
   )
   // Fetch whiteboard data with tables — disabled on the public read-only
   // path (GH #109): that path never has an authenticated session, and

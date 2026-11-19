@@ -8,6 +8,7 @@
 
 import { useCallback, useRef } from 'react'
 import { toast } from 'sonner'
+import type { TableEditDropToken } from '@/lib/react-flow/table-edit-overlay'
 import type {
   RelationshipEdgeType,
   TableNodeType,
@@ -52,9 +53,9 @@ type EmitTableUpdate = (
  */
 export interface TableEditPort {
   /** The table is deleted: forget its unsaved values. Returns them for `restore`. */
-  drop?: (tableId: string) => unknown
+  drop?: (tableId: string) => TableEditDropToken
   /** The delete failed and the table is back: put the values `drop` returned back. */
-  restore?: (tableId: string, dropped: unknown) => void
+  restore?: (tableId: string, dropped: TableEditDropToken) => void
   begin: (tableId: string, fields: UpdateTableFields) => number
   settle: (
     editId: number,
@@ -129,7 +130,7 @@ export function useTableMutations(
       pendingMutations.current.set(tableId, {
         type: 'delete',
         rollback: () => {
-          tableEditPort?.restore?.(tableId, dropped)
+          if (dropped) tableEditPort?.restore?.(tableId, dropped)
           if (deletedNode) {
             setNodes((prev) => {
               // Guard: don't re-insert if node already exists (concurrent remote deletion)
