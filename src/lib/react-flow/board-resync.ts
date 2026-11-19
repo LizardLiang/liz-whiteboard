@@ -23,6 +23,15 @@ export function getBoardTables(data: BoardData): Array<BoardTable> {
   return data.tables.filter((t) => !referenceIds.has(t.id))
 }
 
+/** Upper bound on consecutive waits for a restarted reload. */
+const MAX_RELOAD_WAITS = 20
+
+/** Number of times the query has ended a fetch (data landed or error). */
+function settledCount(queryClient: QueryClient, queryKey: Array<string>) {
+  const state = queryClient.getQueryState(queryKey)
+  return (state?.dataUpdateCount ?? 0) + (state?.errorUpdateCount ?? 0)
+}
+
 export interface ReconnectResyncOptions {
   queryClient: QueryClient
   whiteboardId: string
@@ -45,13 +54,29 @@ export async function resyncBoardAfterReconnect({
   const queryKey = ['whiteboard', whiteboardId]
   await queryClient.invalidateQueries({ queryKey })
   // A newer invalidate can restart the reload and settle this await early;
-  // wait for the reload that is still running.
-  while (queryClient.isFetching({ queryKey, exact: true }) > 0) {
-    if (!isCurrent()) return
+  // wait for the reload that is still running. Each wait must move the query
+  // (a landing or a failure). A reload that refetchQueries cannot await (for
+  // example a query with no observer and no data) resolves at once and leaves
+  // the query unchanged: stop then, and skip the reconcile, because the cache
+  // is not known to hold the reloaded data. MAX_RELOAD_WAITS bounds the
+  // restarts a busy board can cause in a row.
+  for (
+    let waits = 0;
+    queryClient.isFetching({ queryKey, exact: true }) > 0;
+    waits++
+  ) {
+    if (!isCurrent() || waits >= MAX_RELOAD_WAITS) return
+    const before = settledCount(queryClient, queryKey)
     await queryClient.refetchQueries(
       { queryKey, exact: true },
       { cancelRefetch: false },
     )
+    if (
+      queryClient.isFetching({ queryKey, exact: true }) > 0 &&
+      settledCount(queryClient, queryKey) === before
+    ) {
+      return
+    }
   }
   if (!isCurrent()) return
   if (queryClient.getQueryState(queryKey)?.status === 'error') return
