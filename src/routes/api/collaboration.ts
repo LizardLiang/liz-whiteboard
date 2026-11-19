@@ -45,6 +45,7 @@ import {
   updateTableSchema,
 } from '@/data/schema'
 import {
+  DuplicateTableNameError,
   createDiagramTable,
   deleteDiagramTable,
   findDiagramTableById,
@@ -1023,8 +1024,12 @@ export function setupCollaborationEventHandlers(
         const message = clientErrorMessage(error, 'Failed to update table')
         socket.emit('error', {
           event: 'table:update',
-          error: 'UPDATE_FAILED',
+          error:
+            error instanceof DuplicateTableNameError
+              ? 'DUPLICATE_NAME'
+              : 'UPDATE_FAILED',
           message,
+          tableId: typeof data.tableId === 'string' ? data.tableId : undefined,
         })
         cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
         return

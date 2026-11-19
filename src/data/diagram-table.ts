@@ -302,6 +302,10 @@ export async function updateDiagramTable(
     if (validated.height !== undefined) values.height = validated.height
     return writeTableUpdate(id, values, ctx)
   } catch (error) {
+    // The only unique index an update can break is (whiteboardId, name).
+    if (validated.name !== undefined && isUniqueViolation(error)) {
+      throw new DuplicateTableNameError(validated.name)
+    }
     throw new Error(
       `Failed to update table: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )
