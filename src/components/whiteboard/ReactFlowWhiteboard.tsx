@@ -1264,8 +1264,7 @@ function ReactFlowWhiteboardInner({
 
   // A rename (local or from a peer) changes the live name map, not
   // initialNodes: push the new map into every node so relationship labels and
-  // the relations panel show the new name. Kept out of the initialNodes sync
-  // above, which would overwrite the optimistic name with the stale query data.
+  // the relations panel show the new name.
   useEffect(() => {
     setNodes((prev) =>
       prev.some((n) => n.data.tableNameById !== tableNameById)
