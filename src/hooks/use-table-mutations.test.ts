@@ -499,9 +499,9 @@ describe('useTableMutations', () => {
         result.current.updateTable('tbl-001', { description: 'new note' })
       })
 
-      expect(nodes.find((n) => n.id === 'tbl-001')?.data.table.description).toBe(
-        'new note',
-      )
+      expect(
+        nodes.find((n) => n.id === 'tbl-001')?.data.table.description,
+      ).toBe('new note')
 
       act(() => {
         result.current.onTableUpdateError({
@@ -573,9 +573,11 @@ describe('useTableMutations', () => {
       act(() => {
         result.current.updateTable('tbl-001', { name: 'renamed' })
       })
-      expect(patchTableCache).toHaveBeenLastCalledWith('tbl-001', {
-        name: 'renamed',
-      })
+      expect(patchTableCache).toHaveBeenLastCalledWith(
+        'tbl-001',
+        { name: 'renamed' },
+        'defer',
+      )
 
       act(() => {
         result.current.onTableUpdateError({
@@ -586,6 +588,31 @@ describe('useTableMutations', () => {
       expect(patchTableCache).toHaveBeenLastCalledWith('tbl-001', {
         name: before,
       })
+    })
+
+    it('rename: settles the cache refetch on the table:update ack, ok or not', () => {
+      const settleTableCache = vi.fn()
+      const { result } = renderHook(() =>
+        useTableMutations(
+          setNodes,
+          setEdges,
+          emitTableDelete,
+          true,
+          emitTableUpdate,
+          vi.fn(),
+          settleTableCache,
+        ),
+      )
+      act(() => {
+        result.current.updateTable('tbl-001', { name: 'renamed' })
+      })
+      expect(settleTableCache).not.toHaveBeenCalled()
+      const ack = emitTableUpdate.mock.calls.at(-1)?.[2] as (
+        ok: boolean,
+      ) => void
+      ack(false)
+      ack(true)
+      expect(settleTableCache).toHaveBeenCalledTimes(2)
     })
 
     it('TC-TU-06: onTableUpdateError shows a toast error', () => {
@@ -679,9 +706,7 @@ describe('useTableMutations', () => {
         result.current.updateTable('tbl-001', { description: 'new note' })
       })
 
-      expect(result.current.pendingMutations.current.has('tbl-001')).toBe(
-        true,
-      )
+      expect(result.current.pendingMutations.current.has('tbl-001')).toBe(true)
 
       // Simulate the server ack succeeding — emitTableUpdate is called with
       // (tableId, data, ack); invoke the captured ack callback with ok=true.
@@ -692,9 +717,7 @@ describe('useTableMutations', () => {
         ackCallback(true)
       })
 
-      expect(result.current.pendingMutations.current.has('tbl-001')).toBe(
-        false,
-      )
+      expect(result.current.pendingMutations.current.has('tbl-001')).toBe(false)
     })
   })
 })

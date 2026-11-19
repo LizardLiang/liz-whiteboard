@@ -183,7 +183,11 @@ import { useWhiteboardCollaboration } from '@/hooks/use-whiteboard-collaboration
 import { useColumnCollaboration } from '@/hooks/use-column-collaboration'
 import { useColumnMutations } from '@/hooks/use-column-mutations'
 import { useTableMutations } from '@/hooks/use-table-mutations'
-import { patchTableFieldsInCache } from '@/lib/react-flow/patch-table-fields-cache'
+import {
+  hasDeferredWhiteboardRefetch,
+  patchTableFieldsInCache,
+  settleCancelledWhiteboardRefetch,
+} from '@/lib/react-flow/patch-table-fields-cache'
 import { useRelationshipMutations } from '@/hooks/use-relationship-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
 import { useTableFocus } from '@/hooks/use-table-focus'
@@ -1144,7 +1148,15 @@ function ReactFlowWhiteboardInner({
   // refresh lastConfirmedOrderByTable unconditionally on reconnect so the stale pre-disconnect
   // baseline does not cause false-positive toasts on the NEXT reconnect.
   useEffect(() => {
-    const isReconnect = justReconnectedRef.current
+    // A table patch can cancel the reconnect refetch and re-run it later; until
+    // the re-run lands, initialNodes is only the patched stale cache, so keep
+    // the flag for the data the re-run brings.
+    const reconnectRefetchPending =
+      queryClient.isFetching({
+        queryKey: ['whiteboard', whiteboardId],
+        exact: true,
+      }) > 0 || hasDeferredWhiteboardRefetch(queryClient, whiteboardId)
+    const isReconnect = justReconnectedRef.current && !reconnectRefetchPending
     if (isReconnect) {
       justReconnectedRef.current = false
     }
@@ -1164,7 +1176,13 @@ function ReactFlowWhiteboardInner({
         stableSeedConfirmedOrderFromServer(tableId, serverOrder)
       }
     })
-  }, [initialNodes, stableOnSyncReconcile, stableSeedConfirmedOrderFromServer])
+  }, [
+    initialNodes,
+    stableOnSyncReconcile,
+    stableSeedConfirmedOrderFromServer,
+    queryClient,
+    whiteboardId,
+  ])
 
   // Update local state when initial data changes (and attach callbacks)
   // Preserve existing callbacks from prev nodes so that a TanStack Query refetch
@@ -1444,17 +1462,31 @@ function ReactFlowWhiteboardInner({
     [findColumnOnBoard],
   )
 
-  // Callback for when a remote user updates a table's comment/note
-  // (table-comment). The hook already filters out self-originated events
-  // (updatedBy === userId); this applies the inbound description to the
-  // matching table node's data so the popover reflects it when reopened.
   const patchTableCache = useCallback(
-    (tableId: string, fields: { name?: string; description?: string }) => {
-      void patchTableFieldsInCache(queryClient, whiteboardId, tableId, fields)
+    (
+      tableId: string,
+      fields: { name?: string; description?: string },
+      rerunMode?: 'now' | 'defer',
+    ) => {
+      void patchTableFieldsInCache(
+        queryClient,
+        whiteboardId,
+        tableId,
+        fields,
+        rerunMode,
+      )
     },
     [queryClient, whiteboardId],
   )
 
+  const settleTableCache = useCallback(() => {
+    settleCancelledWhiteboardRefetch(queryClient, whiteboardId)
+  }, [queryClient, whiteboardId])
+
+  // Callback for when a remote user updates a table's comment/note
+  // (table-comment). The hook already filters out self-originated events
+  // (updatedBy === userId); this applies the inbound description to the
+  // matching table node's data so the popover reflects it when reopened.
   const onTableUpdated = useCallback(
     (data: { tableId: string; name?: string; description?: string }) => {
       if (data.name === undefined && data.description === undefined) return
@@ -1846,6 +1878,7 @@ function ReactFlowWhiteboardInner({
     isConnected,
     emitTableUpdate,
     patchTableCache,
+    settleTableCache,
   )
 
   // Wire onTableError ref now that tableMutations is available

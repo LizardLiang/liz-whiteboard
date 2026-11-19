@@ -4,7 +4,11 @@
 // peer table:updated path both go through patchTableFieldsInCache.
 import { describe, expect, it } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
-import { patchTableFieldsInCache } from './patch-table-fields-cache'
+import {
+  hasDeferredWhiteboardRefetch,
+  patchTableFieldsInCache,
+  settleCancelledWhiteboardRefetch,
+} from './patch-table-fields-cache'
 
 const KEY = ['whiteboard', 'wb-1']
 const snapshot = (name: string) => ({
@@ -42,6 +46,69 @@ describe('patchTableFieldsInCache', () => {
     await refetch
 
     expect(nameOf(qc)).toBe('B')
+  })
+
+  describe('refetches cancelled by the patch are re-run', () => {
+    const withRelationship = (name: string) => ({
+      ...snapshot(name),
+      relationships: [{ id: 'r1' }],
+    })
+    const startInFlight = (qc: QueryClient) => {
+      let calls = 0
+      let resolveFirst!: (v: unknown) => void
+      const first = new Promise((r) => (resolveFirst = r))
+      const queryFn = () => {
+        calls += 1
+        return calls === 1 ? first : Promise.resolve(withRelationship('B'))
+      }
+      const refetch = qc
+        .fetchQuery({ queryKey: KEY, queryFn, staleTime: 0 })
+        .catch(() => undefined)
+      return { resolveFirst, refetch, calls: () => calls }
+    }
+    const relsOf = (qc: QueryClient) =>
+      (qc.getQueryData<any>(KEY)?.relationships ?? []).length
+
+    it('keeps data a cancelled invalidate-style refetch carried (new relationship) after a peer patch', async () => {
+      const qc = new QueryClient()
+      qc.setQueryData(KEY, snapshot('A'))
+      const f = startInFlight(qc)
+
+      await patchTableFieldsInCache(qc, 'wb-1', 't1', { name: 'B' })
+      f.resolveFirst(withRelationship('A'))
+      await f.refetch
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(f.calls()).toBeGreaterThanOrEqual(2)
+      expect(relsOf(qc)).toBe(1)
+      expect(nameOf(qc)).toBe('B')
+    })
+
+    it('defers the re-run of a local patch until the server settles', async () => {
+      const qc = new QueryClient()
+      qc.setQueryData(KEY, snapshot('A'))
+      const f = startInFlight(qc)
+
+      await patchTableFieldsInCache(qc, 'wb-1', 't1', { name: 'B' }, 'defer')
+      f.resolveFirst(withRelationship('A'))
+      await f.refetch
+      expect(f.calls()).toBe(1)
+      expect(hasDeferredWhiteboardRefetch(qc, 'wb-1')).toBe(true)
+      expect(nameOf(qc)).toBe('B')
+
+      settleCancelledWhiteboardRefetch(qc, 'wb-1')
+      await new Promise((r) => setTimeout(r, 0))
+      expect(f.calls()).toBe(2)
+      expect(hasDeferredWhiteboardRefetch(qc, 'wb-1')).toBe(false)
+      expect(relsOf(qc)).toBe(1)
+    })
+
+    it('does not refetch when nothing was in flight', async () => {
+      const qc = new QueryClient()
+      qc.setQueryData(KEY, snapshot('A'))
+      await patchTableFieldsInCache(qc, 'wb-1', 't1', { name: 'B' }, 'defer')
+      expect(hasDeferredWhiteboardRefetch(qc, 'wb-1')).toBe(false)
+    })
   })
 
   it('is a no-op while the cache has not loaded', async () => {
