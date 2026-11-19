@@ -23,6 +23,16 @@ const reloadStartListeners = new WeakMap<
   Set<ReloadStartListener>
 >()
 
+const reloadStartCounts = new WeakMap<QueryClient, Map<string, number>>()
+
+/** How many times the board query function has started (see noteBoardReloadStart). */
+export function boardReloadStartCount(
+  queryClient: QueryClient,
+  whiteboardId: string,
+): number {
+  return reloadStartCounts.get(queryClient)?.get(whiteboardId) ?? 0
+}
+
 /**
  * The board query function calls this each time it starts to read the server.
  * query-core announces a reload with a `fetch` action only when the query was
@@ -35,6 +45,9 @@ export function noteBoardReloadStart(
   queryClient: QueryClient,
   whiteboardId: string,
 ): void {
+  let counts = reloadStartCounts.get(queryClient)
+  if (!counts) reloadStartCounts.set(queryClient, (counts = new Map()))
+  counts.set(whiteboardId, (counts.get(whiteboardId) ?? 0) + 1)
   reloadStartListeners.get(queryClient)?.forEach((fn) => fn(whiteboardId))
 }
 
@@ -173,8 +186,19 @@ export function createTableEditSync({
       for (const tableId of touched) show(tableId, FIELDS)
     },
 
-    dropTable(tableId: string): void {
-      overlay.dropTable(tableId)
+    /** The table is gone. Returns its entries for restoreTable. */
+    dropTable(tableId: string) {
+      return overlay.dropTable(tableId)
+    },
+
+    /** A delete failed and the table is back: restore the entries dropTable returned and show them. */
+    restoreTable(
+      tableId: string,
+      entries: ReturnType<typeof overlay.dropTable>,
+    ) {
+      if (!entries) return
+      overlay.restoreTable(tableId, entries)
+      show(tableId, FIELDS)
     },
   }
 }

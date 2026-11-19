@@ -13,9 +13,11 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { createTableEditSync, noteBoardReloadStart } from './table-edit-sync'
 import { resyncBoardAfterReconnect } from './board-resync'
 import {
+  clearPendingTables,
   insertOptimisticTable,
   removeOptimisticTable,
-  withPendingTables,
+  settleOptimisticTable,
+  useBoardSelectWithPending,
 } from './optimistic-table'
 import type { ReactNode } from 'react'
 
@@ -76,9 +78,7 @@ function setup() {
 
   const view = renderHook(
     () => {
-      const [select] = useState(
-        () => (board: Board) => withPendingTables(qc, WB, board),
-      )
+      const select = useBoardSelectWithPending(qc, WB)
       const { data } = useQuery({
         queryKey: KEY,
         // The board's queryFn announces every start, restarts included.
@@ -469,6 +469,18 @@ describe('table edit sync (real QueryClient)', () => {
       expect(t.qc.getQueryData<Board>(KEY)?.tables[0].name).toBe('A')
     })
 
+    it('restoreTable brings back what dropTable returned, so a failed delete keeps the unsaved name', async () => {
+      const t = await loaded()
+      t.local('t1', { name: 'B' })
+
+      const dropped = t.sync().dropTable('t1')
+      expect(t.sync().apply({ id: 't1', name: 'A' }).name).toBe('A')
+      act(() => t.sync().restoreTable('t1', dropped))
+
+      expect(t.sync().apply({ id: 't1', name: 'A' }).name).toBe('B')
+      expect(t.name()).toBe('B')
+    })
+
     it('dropTable forgets pending and confirmed values', async () => {
       const t = await loaded()
       const edit = t.local('t1', { name: 'B' })
@@ -562,6 +574,57 @@ describe('table edit sync (real QueryClient)', () => {
       await waitFor(() => expect(t.server.reloads.length).toBe(2))
       await t.land(1)
       expect(names(t)).not.toContain('fresh')
+    })
+
+    it('(a) leaving the board drops a pending row, so no ghost shows when it opens again', async () => {
+      const t = await loaded()
+      insertOptimisticTable(t.qc, WB, { whiteboardId: WB, name: 'fresh' })
+      await waitFor(() => expect(names(t)).toContain('fresh'))
+
+      // The board closes; a peer deletes the real table; the board opens again.
+      clearPendingTables(t.qc, WB)
+      await waitFor(() => expect(names(t)).not.toContain('fresh'))
+      void t.reload()
+      await waitFor(() => expect(t.server.reloads.length).toBe(2))
+      await t.land(1)
+      expect(names(t)).not.toContain('fresh')
+    })
+
+    it('(b) a peer renamed the real table before the create reload landed: the row does not linger once that reload has landed', async () => {
+      const t = await loaded()
+      const tempId = insertOptimisticTable(t.qc, WB, {
+        whiteboardId: WB,
+        name: 'fresh',
+      })
+      await waitFor(() => expect(names(t)).toContain('fresh'))
+
+      // The server holds the table under the peer's new name.
+      t.server.state.names.real = 'renamed_by_peer'
+      void t.reload().then(() => settleOptimisticTable(t.qc, WB, tempId))
+      await waitFor(() => expect(t.server.reloads.length).toBe(2))
+      await t.land(1)
+
+      await waitFor(() => expect(names(t)).not.toContain('fresh'))
+      expect(names(t).filter((n) => n === 'renamed_by_peer')).toHaveLength(1)
+    })
+
+    it('two creates in the same millisecond get different ids and both show', async () => {
+      const t = await loaded()
+      const now = vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000)
+      const a = insertOptimisticTable(t.qc, WB, {
+        whiteboardId: WB,
+        name: 'a1',
+      })
+      const b = insertOptimisticTable(t.qc, WB, {
+        whiteboardId: WB,
+        name: 'b1',
+      })
+      now.mockRestore()
+
+      expect(a).not.toBe(b)
+      await waitFor(() =>
+        expect(names(t)).toEqual(expect.arrayContaining(['a1', 'b1'])),
+      )
     })
 
     it('a failed create removes only its own row', async () => {

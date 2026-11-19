@@ -181,9 +181,16 @@ export function createTableEditOverlay() {
       return next ?? table
     },
 
-    /** The table is gone: forget its entries. */
-    dropTable(tableId: string): void {
+    /** The table is gone: forget its entries. Returns them, so a failed delete can restore them. */
+    dropTable(tableId: string): TableEntry | undefined {
+      const entry = tables.get(tableId)
       tables.delete(tableId)
+      return entry
+    },
+
+    /** A delete failed: put the entries dropTable returned back, unless newer ones exist. */
+    restoreTable(tableId: string, entry: TableEntry): void {
+      if (!tables.has(tableId)) tables.set(tableId, entry)
     },
 
     /** Number of tables with entries (tests). */

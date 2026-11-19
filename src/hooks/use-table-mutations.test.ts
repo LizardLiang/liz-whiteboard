@@ -734,4 +734,60 @@ describe('useTableMutations', () => {
       expect(result.current.pendingMutations.current.has('tbl-001')).toBe(false)
     })
   })
+
+  describe('table edit overlay on delete', () => {
+    const port = () => {
+      const dropped = { name: { pending: { value: 'B', editId: 1 } } }
+      return {
+        dropped,
+        port: {
+          begin: vi.fn(() => 1),
+          settle: vi.fn(),
+          drop: vi.fn(() => dropped),
+          restore: vi.fn(),
+        },
+      }
+    }
+
+    it('drops the overlay entries when the table is deleted', () => {
+      const { port: p } = port()
+      const { result } = renderHook(() =>
+        useTableMutations(setNodes, setEdges, emitTableDelete, true, null, p),
+      )
+
+      act(() => result.current.deleteTable('tbl-001'))
+
+      expect(p.drop).toHaveBeenCalledWith('tbl-001')
+      expect(p.restore).not.toHaveBeenCalled()
+    })
+
+    it('restores the dropped entries when the server refuses the delete', () => {
+      const { port: p, dropped } = port()
+      const { result } = renderHook(() =>
+        useTableMutations(setNodes, setEdges, emitTableDelete, true, null, p),
+      )
+      act(() => result.current.deleteTable('tbl-001'))
+
+      act(() =>
+        result.current.onTableError({
+          event: 'table:delete',
+          tableId: 'tbl-001',
+        }),
+      )
+
+      expect(p.restore).toHaveBeenCalledWith('tbl-001', dropped)
+      expect(nodes.find((n) => n.id === 'tbl-001')).toBeDefined()
+    })
+
+    it('drops nothing when not connected', () => {
+      const { port: p } = port()
+      const { result } = renderHook(() =>
+        useTableMutations(setNodes, setEdges, emitTableDelete, false, null, p),
+      )
+
+      act(() => result.current.deleteTable('tbl-001'))
+
+      expect(p.drop).not.toHaveBeenCalled()
+    })
+  })
 })

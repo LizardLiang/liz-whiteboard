@@ -51,6 +51,10 @@ type EmitTableUpdate = (
  * `previous` is the display fallback when a failed edit has no other value.
  */
 export interface TableEditPort {
+  /** The table is deleted: forget its unsaved values. Returns them for `restore`. */
+  drop?: (tableId: string) => unknown
+  /** The delete failed and the table is back: put the values `drop` returned back. */
+  restore?: (tableId: string, dropped: unknown) => void
   begin: (tableId: string, fields: UpdateTableFields) => number
   settle: (
     editId: number,
@@ -118,10 +122,14 @@ export function useTableMutations(
       // deletes many tables over time doesn't leak cache entries forever.
       evictTableWidth(tableId)
 
+      // The table's unsaved name/note values go with it; a failed delete brings them back.
+      const dropped = tableEditPort?.drop?.(tableId)
+
       // Store rollback
       pendingMutations.current.set(tableId, {
         type: 'delete',
         rollback: () => {
+          tableEditPort?.restore?.(tableId, dropped)
           if (deletedNode) {
             setNodes((prev) => {
               // Guard: don't re-insert if node already exists (concurrent remote deletion)
@@ -140,7 +148,7 @@ export function useTableMutations(
         emitTableDelete(tableId)
       }
     },
-    [isConnected, setNodes, setEdges, emitTableDelete, t],
+    [isConnected, setNodes, setEdges, emitTableDelete, tableEditPort, t],
   )
 
   /**

@@ -187,7 +187,10 @@ import {
   getBoardTables,
   resyncBoardAfterReconnect,
 } from '@/lib/react-flow/board-resync'
-import { withPendingTables } from '@/lib/react-flow/optimistic-table'
+import {
+  clearPendingTables,
+  useBoardSelectWithPending,
+} from '@/lib/react-flow/optimistic-table'
 import {
   createTableEditSync,
   noteBoardReloadStart,
@@ -650,6 +653,12 @@ function ReactFlowWhiteboardInner({
     () => ({
       begin: tableEditSync.beginLocal,
       settle: tableEditSync.ackLocal,
+      drop: tableEditSync.dropTable,
+      restore: (tableId: string, dropped: unknown) =>
+        tableEditSync.restoreTable(
+          tableId,
+          dropped as Parameters<typeof tableEditSync.restoreTable>[1],
+        ),
     }),
     [tableEditSync],
   )
@@ -4684,8 +4693,6 @@ function ReactFlowWhiteboardInner({
               affectedRelationships={tableDeleteAffectedRelationships}
               onConfirm={() => {
                 tableMutations.deleteTable(deletingTableId)
-                // Unsaved or just-saved name/note values of this table are moot.
-                tableEditSync.dropTable(deletingTableId)
                 // W4-A: clean up per-table reorder state on local delete path.
                 // forgetTable is also called in onTableDeleted for the remote path —
                 // this call covers the case where the current user deletes a table.
@@ -5001,8 +5008,14 @@ export function ReactFlowWhiteboard({
   const t = useT()
   const queryClient = useQueryClient()
   // Stable, so the query result keeps its identity between renders.
-  const selectBoardWithPending = useCallback(
-    <T,>(board: T) => withPendingTables(queryClient, whiteboardId, board),
+  const selectBoardWithPending = useBoardSelectWithPending(
+    queryClient,
+    whiteboardId,
+  )
+  // Leaving the board: a created table whose real row never arrived must not
+  // come back as a ghost when the board opens again.
+  useEffect(
+    () => () => clearPendingTables(queryClient, whiteboardId),
     [queryClient, whiteboardId],
   )
   // Fetch whiteboard data with tables — disabled on the public read-only
