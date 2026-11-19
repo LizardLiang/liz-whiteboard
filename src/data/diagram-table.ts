@@ -302,9 +302,17 @@ export async function updateDiagramTable(
     if (validated.height !== undefined) values.height = validated.height
     return writeTableUpdate(id, values, ctx)
   } catch (error) {
-    // The only unique index an update can break is (whiteboardId, name).
+    // Mirrors the create path: a unique violation is a duplicate name only
+    // when another table on this whiteboard really holds that name.
     if (validated.name !== undefined && isUniqueViolation(error)) {
-      throw new DuplicateTableNameError(validated.name)
+      const taken = db
+        .prepare(
+          `SELECT 1 AS "x" FROM "DiagramTable"
+           WHERE "whiteboardId" = (SELECT "whiteboardId" FROM "DiagramTable" WHERE "id" = ?)
+             AND "name" = ? AND "id" <> ?`,
+        )
+        .get(id, validated.name, id)
+      if (taken != null) throw new DuplicateTableNameError(validated.name)
     }
     throw new Error(
       `Failed to update table: ${error instanceof Error ? error.message : 'Unknown error'}`,
