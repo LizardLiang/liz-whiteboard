@@ -137,4 +137,20 @@ describe('InlineNameEditor', () => {
     expect(sizer.style.visibility).toBe('hidden')
     expect((sizer.parentElement as HTMLElement).style.fontWeight).toBe('600')
   })
+
+  it('grows the hidden sizer with the typed text so the whole name stays visible', () => {
+    const { container } = render(
+      <InlineNameEditor
+        value="user_id"
+        onCommit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+    const input = screen.getByRole('textbox')
+    fireEvent.change(input, {
+      target: { value: 'user_id_with_a_much_longer_column_name' },
+    })
+    const sizer = container.querySelector('[aria-hidden="true"]') as HTMLElement
+    expect(sizer.textContent).toBe('user_id_with_a_much_longer_column_name')
+  })
 })

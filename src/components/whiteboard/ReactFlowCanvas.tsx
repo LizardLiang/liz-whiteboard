@@ -1237,19 +1237,29 @@ export function ReactFlowCanvas({
       null,
       relationsPreviewTableIdRef.current,
     ).nodes
-    setNodes(
-      parents.size === 0
-        ? highlighted
-        : highlighted.map((n) => {
-            const parent = parents.get(n.id)
-            if (!parent) return n
-            return {
-              ...n,
-              parentId: parent.id,
-              position: toRelative(n.position, parent),
-            }
-          }),
-    )
+    // Carry each node's measured size over: a rebuilt node without it stays
+    // hidden (and ignores the pointer) until React Flow measures it again, so
+    // a click that lands in that gap, such as the one that blur-commits a
+    // column name and presses a header button, would hit the pane.
+    setNodes((prev) => {
+      const measured = new Map(prev.map((n) => [n.id, n.measured]))
+      return (
+        parents.size === 0
+          ? highlighted
+          : highlighted.map((n) => {
+              const parent = parents.get(n.id)
+              if (!parent) return n
+              return {
+                ...n,
+                parentId: parent.id,
+                position: toRelative(n.position, parent),
+              }
+            })
+      ).map((n) => {
+        const size = measured.get(n.id)
+        return size && !n.measured ? { ...n, measured: size } : n
+      })
+    })
     // Keyed on the WHOLE `parentIndex`, positions included — not on membership
     // alone. A child's stored position is relative to its parent's ORIGIN, so
     // when an area moves its children must be re-anchored against the new

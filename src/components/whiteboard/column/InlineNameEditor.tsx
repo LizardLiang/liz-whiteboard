@@ -2,11 +2,12 @@
  * InlineNameEditor — inline text input for editing column name
  * Auto-focuses on mount, Enter commits, Escape cancels, blur commits.
  *
- * The editor takes the same width as the name text it replaces. A hidden copy
- * of that text sizes the slot and the input fills it, so opening or closing the
- * editor never resizes the table. A table that grew while editing would shrink
- * on the blur-commit that a click on a header button starts, move the button
- * from under the pointer, and the click would miss.
+ * The editor takes the width of the text it holds. A hidden copy of the typed
+ * text sizes the slot and the input fills it, so the whole name stays visible
+ * while typing, and a blur-commit (typed text == committed name) leaves the
+ * table width as it is. A table that changed width on the blur-commit that a
+ * click on a header button starts would move the button from under the
+ * pointer, and the click would miss.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -83,10 +84,10 @@ export function InlineNameEditor({
           display: 'block',
           visibility: 'hidden',
           overflow: 'hidden',
-          whiteSpace: 'nowrap',
+          whiteSpace: 'pre',
         }}
       >
-        {value}
+        {inputValue.trim() === '' ? value : inputValue}
       </span>
       <input
         ref={inputRef}
@@ -99,17 +100,19 @@ export function InlineNameEditor({
         style={{
           position: 'absolute',
           top: '50%',
-          left: 0,
+          // Border and padding (3px a side) hang outside the slot, so the
+          // text area is exactly as wide as the sizer text.
+          left: -3,
+          width: 'calc(100% + 6px)',
           transform: 'translateY(-50%)',
           fontSize: '13px',
           fontWeight: 'inherit',
-          padding: '1px 4px',
+          padding: '1px 2px',
           border: '1px solid var(--rf-edge-stroke-selected, #6366f1)',
           borderRadius: '3px',
           background: 'var(--rf-column-edit-bg, rgba(99,102,241,0.1))',
           color: 'var(--rf-table-text)',
           outline: 'none',
-          width: '100%',
           minWidth: 0,
           boxSizing: 'border-box',
         }}
