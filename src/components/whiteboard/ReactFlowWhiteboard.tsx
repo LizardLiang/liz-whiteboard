@@ -184,10 +184,10 @@ import { useColumnCollaboration } from '@/hooks/use-column-collaboration'
 import { useColumnMutations } from '@/hooks/use-column-mutations'
 import { useTableMutations } from '@/hooks/use-table-mutations'
 import {
-  hasDeferredWhiteboardRefetch,
-  patchTableFieldsInCache,
-  settleCancelledWhiteboardRefetch,
-} from '@/lib/react-flow/patch-table-fields-cache'
+  getBoardTables,
+  resyncBoardAfterReconnect,
+} from '@/lib/react-flow/board-resync'
+import { createTableEditSync } from '@/lib/react-flow/table-edit-sync'
 import { useRelationshipMutations } from '@/hooks/use-relationship-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
 import { useTableFocus } from '@/hooks/use-table-focus'
@@ -615,6 +615,38 @@ function ReactFlowWhiteboardInner({
     tableNameByIdRef.current = next
     return next
   }, [nodes])
+
+  // Unsaved and just-saved table names/notes (local edit or peer update) that a
+  // board reload may not carry yet. The initialNodes sync effect lays them over
+  // every rebuild; no reload is cancelled. See
+  // .claude/.Arena/flows/table-edit-sync.md.
+  const [tableEditSync] = useState(() =>
+    createTableEditSync({
+      queryClient,
+      whiteboardId,
+      onShown: (tableId, fields) =>
+        setNodes((prev) =>
+          prev.map((n) =>
+            n.id === tableId
+              ? {
+                  ...n,
+                  data: { ...n.data, table: { ...n.data.table, ...fields } },
+                }
+              : n,
+          ),
+        ),
+    }),
+  )
+  useEffect(() => tableEditSync.attach(), [tableEditSync])
+
+  // Port for useTableMutations: a local rename / note edit.
+  const tableEditPort = useMemo(
+    () => ({
+      begin: tableEditSync.beginLocal,
+      settle: tableEditSync.ackLocal,
+    }),
+    [tableEditSync],
+  )
 
   // Keep a stable ref to edges for use inside callbacks without stale closure
   const edgesRef = useRef(edges)
@@ -1142,47 +1174,16 @@ function ReactFlowWhiteboardInner({
   // Called when initialNodes changes (first load + reconnect refetch).
   // seedConfirmedOrderFromServer is idempotent — only sets baseline if not already present.
   //
-  // MEDIUM-01: On reconnect refetch (justReconnectedRef.current === true), also call
-  // onSyncReconcile so AC-08e/f toasts fire when the server order diverges from the
-  // last optimistic order (e.g. reorder was lost during disconnect). Per Cassandra LOW-03,
-  // refresh lastConfirmedOrderByTable unconditionally on reconnect so the stale pre-disconnect
-  // baseline does not cause false-positive toasts on the NEXT reconnect.
+  // A reconnect reconciles column order once its reload ends (see
+  // handleReconnect), not here: this effect only seeds the baseline.
   useEffect(() => {
-    // A table patch can cancel the reconnect refetch and re-run it later; until
-    // the re-run lands, initialNodes is only the patched stale cache, so keep
-    // the flag for the data the re-run brings.
-    const reconnectRefetchPending =
-      queryClient.isFetching({
-        queryKey: ['whiteboard', whiteboardId],
-        exact: true,
-      }) > 0 || hasDeferredWhiteboardRefetch(queryClient, whiteboardId)
-    const isReconnect = justReconnectedRef.current && !reconnectRefetchPending
-    if (isReconnect) {
-      justReconnectedRef.current = false
-    }
-
     initialNodes.forEach((node) => {
-      const tableId = node.data.table.id
-      const serverOrder = node.data.table.columns.map((c) => c.id)
-
-      if (isReconnect) {
-        // Refresh confirmed-order baseline so it reflects post-disconnect server state,
-        // then check if our optimistic order diverged (AC-08e/f).
-        // seedConfirmedOrderFromServer is idempotent (no-op if already seeded on first load),
-        // so we call onSyncReconcile directly and let the ack handler manage lastConfirmed.
-        stableOnSyncReconcile(tableId, serverOrder)
-      } else {
-        // Initial load: seed the baseline (idempotent)
-        stableSeedConfirmedOrderFromServer(tableId, serverOrder)
-      }
+      stableSeedConfirmedOrderFromServer(
+        node.data.table.id,
+        node.data.table.columns.map((c) => c.id),
+      )
     })
-  }, [
-    initialNodes,
-    stableOnSyncReconcile,
-    stableSeedConfirmedOrderFromServer,
-    queryClient,
-    whiteboardId,
-  ])
+  }, [initialNodes, stableSeedConfirmedOrderFromServer])
 
   // Update local state when initial data changes (and attach callbacks)
   // Preserve existing callbacks from prev nodes so that a TanStack Query refetch
@@ -1200,6 +1201,7 @@ function ReactFlowWhiteboardInner({
             ...node,
             data: {
               ...node.data,
+              table: tableEditSync.apply(node.data.table),
               onColumnCreate: handleColumnCreateRef.current,
               onColumnUpdate: handleColumnUpdateRef.current,
               onColumnDelete: handleColumnDeleteRef.current,
@@ -1253,7 +1255,7 @@ function ReactFlowWhiteboardInner({
           data: {
             ...node.data,
             table: {
-              ...node.data.table,
+              ...tableEditSync.apply(node.data.table),
               columns: [...baseColumns, ...optimisticColumns],
             },
             onColumnCreate: prev.data.onColumnCreate,
@@ -1279,7 +1281,7 @@ function ReactFlowWhiteboardInner({
         }
       })
     })
-  }, [initialNodes])
+  }, [initialNodes, tableEditSync])
 
   // A rename (local or from a peer) changes the live name map, not
   // initialNodes: push the new map into every node so relationship labels and
@@ -1365,8 +1367,9 @@ function ReactFlowWhiteboardInner({
       setDeletingTableId((prev) => (prev === tableId ? null : prev))
       // W4 (M10): clean up all per-table reorder state to prevent unbounded ref growth
       columnReorderMutations.forgetTable(tableId)
+      tableEditSync.dropTable(tableId)
     },
-    [columnReorderMutations],
+    [columnReorderMutations, tableEditSync],
   )
 
   // Callback for when a remote user creates a table (GH #125). Patches the
@@ -1462,27 +1465,6 @@ function ReactFlowWhiteboardInner({
     [findColumnOnBoard],
   )
 
-  const patchTableCache = useCallback(
-    (
-      tableId: string,
-      fields: { name?: string; description?: string },
-      rerunMode?: 'now' | 'defer',
-    ) => {
-      void patchTableFieldsInCache(
-        queryClient,
-        whiteboardId,
-        tableId,
-        fields,
-        rerunMode,
-      )
-    },
-    [queryClient, whiteboardId],
-  )
-
-  const settleTableCache = useCallback(() => {
-    settleCancelledWhiteboardRefetch(queryClient, whiteboardId)
-  }, [queryClient, whiteboardId])
-
   // Callback for when a remote user updates a table's comment/note
   // (table-comment). The hook already filters out self-originated events
   // (updatedBy === userId); this applies the inbound description to the
@@ -1490,34 +1472,16 @@ function ReactFlowWhiteboardInner({
   const onTableUpdated = useCallback(
     (data: { tableId: string; name?: string; description?: string }) => {
       if (data.name === undefined && data.description === undefined) return
-      // Keep the query cache in step so an older refetch cannot revert a peer's change.
-      patchTableCache(data.tableId, {
+      // The overlay keeps the peer's value over an older refetch and over a
+      // local edit that is still pending, and mirrors it into the query cache.
+      tableEditSync.applyPeer(data.tableId, {
         ...(data.name !== undefined && { name: data.name }),
         ...(data.description !== undefined && {
           description: data.description,
         }),
       })
-      setNodes((prev) =>
-        prev.map((n) =>
-          n.id === data.tableId
-            ? {
-                ...n,
-                data: {
-                  ...n.data,
-                  table: {
-                    ...n.data.table,
-                    ...(data.name !== undefined && { name: data.name }),
-                    ...(data.description !== undefined && {
-                      description: data.description,
-                    }),
-                  },
-                },
-              }
-            : n,
-        ),
-      )
     },
-    [patchTableCache],
+    [tableEditSync],
   )
 
   // Ref for onRelationshipError — breaks circular dependency between useWhiteboardCollaboration and useRelationshipMutations
@@ -1716,16 +1680,36 @@ function ReactFlowWhiteboardInner({
 
   // On WebSocket reconnect, re-fetch whiteboard data to replace any stale
   // optimistic state that was never confirmed before the disconnect.
-  // MEDIUM-01: flag set to true on reconnect so the initialNodes effect knows
-  // to call onSyncReconcile after the TanStack Query refetch settles.
-  const justReconnectedRef = useRef(false)
+  // MEDIUM-01: when the whiteboard reload ends, call onSyncReconcile once per
+  // table so AC-08e/f toasts fire when the server order diverges from the last
+  // optimistic order (e.g. a reorder was lost during the disconnect). Per
+  // Cassandra LOW-03 this also refreshes lastConfirmedOrderByTable so the stale
+  // pre-disconnect baseline does not cause false-positive toasts on the NEXT
+  // reconnect. A newer reconnect or an unmount makes an older one a no-op.
+  const reconnectGenRef = useRef(0)
+  useEffect(
+    () => () => {
+      reconnectGenRef.current++
+    },
+    [],
+  )
 
   const handleReconnect = useCallback(() => {
-    justReconnectedRef.current = true
-    queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
-    queryClient.invalidateQueries({ queryKey: ['relationships', whiteboardId] })
-    queryClient.invalidateQueries({ queryKey: ['areas', whiteboardId] })
-  }, [queryClient, whiteboardId])
+    const gen = ++reconnectGenRef.current
+    // An acknowledgement may have been lost during the disconnect: drop the
+    // unsaved local table edits so the reload shows the server's values.
+    tableEditSync.releasePending()
+    void queryClient.invalidateQueries({
+      queryKey: ['relationships', whiteboardId],
+    })
+    void queryClient.invalidateQueries({ queryKey: ['areas', whiteboardId] })
+    void resyncBoardAfterReconnect({
+      queryClient,
+      whiteboardId,
+      isCurrent: () => reconnectGenRef.current === gen,
+      reconcile: stableOnSyncReconcile,
+    })
+  }, [queryClient, whiteboardId, tableEditSync, stableOnSyncReconcile])
 
   // Ref for onReconnect — keeps the callback stable without re-registering socket listeners
   const onReconnectRef = useRef(handleReconnect)
@@ -1877,8 +1861,7 @@ function ReactFlowWhiteboardInner({
     emitTableDelete,
     isConnected,
     emitTableUpdate,
-    patchTableCache,
-    settleTableCache,
+    tableEditPort,
   )
 
   // Wire onTableError ref now that tableMutations is available
@@ -5051,10 +5034,7 @@ export function ReactFlowWhiteboard({
     // it arrives inside `.tables`. Filter those out here — they render through
     // the `externalTable` node type instead, and feeding one to TableNode
     // would offer editing affordances that cannot reach the file that owns it.
-    const referenceIds = new Set(
-      whiteboardData.tableReferences.map((r) => r.table.id),
-    )
-    const tables = whiteboardData.tables.filter((t) => !referenceIds.has(t.id))
+    const tables = getBoardTables(whiteboardData)
 
     if (tables.length === 0) {
       console.log('ReactFlowWhiteboard: No tables data or empty array')

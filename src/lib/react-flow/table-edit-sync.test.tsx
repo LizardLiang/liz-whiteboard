@@ -1,0 +1,379 @@
+// src/lib/react-flow/table-edit-sync.test.tsx
+// Real QueryClient + a real useQuery, rebuilt like the board's initialNodes
+// sync effect: unsaved table names/notes must survive reloads already in
+// flight, and no reload is cancelled or lost.
+import { createElement, useEffect, useState } from 'react'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+} from '@tanstack/react-query'
+import { act, renderHook, waitFor } from '@testing-library/react'
+import { createTableEditSync } from './table-edit-sync'
+import { resyncBoardAfterReconnect } from './board-resync'
+import type { ReactNode } from 'react'
+
+const WB = 'wb-1'
+const KEY = ['whiteboard', WB]
+
+interface Row {
+  id: string
+  name: string
+  description: string | null
+  columns: Array<{ id: string; order: number }>
+}
+interface Board {
+  tables: Array<Row>
+  tableReferences: Array<never>
+  relationships: Array<string>
+}
+
+/** Server state plus reloads the test resolves by hand; each reload reads the server when it STARTS. */
+function makeServer() {
+  const state = {
+    names: { t1: 'A', t2: 'X' } as Record<string, string>,
+    notes: {} as Record<string, string | null>,
+    relationships: [] as Array<string>,
+  }
+  const snapshot = (): Board => ({
+    tables: Object.entries(state.names).map(([id, name]) => ({
+      id,
+      name,
+      description: state.notes[id] ?? null,
+      columns: [{ id: `${id}-c1`, order: 0 }],
+    })),
+    tableReferences: [],
+    relationships: [...state.relationships],
+  })
+  const reloads: Array<{ resolve: () => void; promise: Promise<Board> }> = []
+  const queryFn = vi.fn(() => {
+    const data = snapshot()
+    let resolve!: () => void
+    const gate = new Promise<void>((r) => (resolve = r))
+    const promise = gate.then(() => data)
+    reloads.push({ resolve, promise })
+    return promise
+  })
+  return { state, queryFn, reloads }
+}
+
+function setup() {
+  const server = makeServer()
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  })
+  const cancelSpy = vi.spyOn(qc, 'cancelQueries')
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client: qc }, children)
+
+  const view = renderHook(
+    () => {
+      const { data } = useQuery({
+        queryKey: KEY,
+        queryFn: server.queryFn,
+        staleTime: 5 * 60_000,
+      })
+      const [shown, setShown] = useState<Record<string, Partial<Row>>>({})
+      const [sync] = useState(() =>
+        createTableEditSync({
+          queryClient: qc,
+          whiteboardId: WB,
+          onShown: (id, fields) =>
+            setShown((prev) => ({ ...prev, [id]: { ...prev[id], ...fields } })),
+        }),
+      )
+      useEffect(() => sync.attach(), [sync])
+      // Same as the board's initialNodes sync effect: rebuild from the data, lay the overlay over it.
+      useEffect(() => {
+        if (!data) return
+        setShown(
+          Object.fromEntries(data.tables.map((t) => [t.id, sync.apply(t)])),
+        )
+      }, [data, sync])
+      return { sync, shown, data, setShown }
+    },
+    { wrapper },
+  )
+
+  const row = (id: string) =>
+    view.result.current.shown[id] as Partial<Row> | undefined
+
+  const ctx = {
+    qc,
+    server,
+    view,
+    cancelSpy,
+    name: (id = 't1') => row(id)?.name,
+    note: (id = 't1') => row(id)?.description,
+    sync: () => view.result.current.sync,
+    /**
+     * Starts a reload the way invalidateQueries callers do. Each reload carries
+     * a new relationship, so its data always differs from the cache and the
+     * board rebuilds from it (equal data would keep the same reference).
+     */
+    reload: () => {
+      server.state.relationships.push(`r${server.reloads.length}`)
+      return qc.invalidateQueries({ queryKey: KEY })
+    },
+    /** Lets the oldest unresolved reload land. */
+    land: async (index: number) => {
+      await act(async () => {
+        server.reloads[index].resolve()
+        await server.reloads[index].promise.catch(() => undefined)
+      })
+      // Let the query notify its observers and React rebuild from the new data.
+      await waitFor(() => expect(qc.isFetching({ queryKey: KEY })).toBe(0))
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10))
+      })
+    },
+    local: (id: string, fields: { name?: string; description?: string }) => {
+      let editId = 0
+      act(() => {
+        editId = ctx.sync().beginLocal(id, fields)
+        // useTableMutations also shows the optimistic value on the node itself.
+        view.result.current.setShown((prev) => ({
+          ...prev,
+          [id]: { ...prev[id], ...fields },
+        }))
+      })
+      return editId
+    },
+    ack: (
+      editId: number,
+      id: string,
+      ok: boolean,
+      fields: { name?: string; description?: string },
+    ) => {
+      if (ok) {
+        if (fields.name !== undefined) server.state.names[id] = fields.name
+        if (fields.description !== undefined)
+          server.state.notes[id] = fields.description
+      }
+      act(() => ctx.sync().ackLocal(editId, id, ok, fields, {}))
+    },
+    peer: (id: string, fields: { name?: string; description?: string }) => {
+      if (fields.name !== undefined) server.state.names[id] = fields.name
+      act(() => ctx.sync().applyPeer(id, fields))
+    },
+  }
+
+  return ctx
+}
+
+async function loaded() {
+  const ctx = setup()
+  await waitFor(() => expect(ctx.server.reloads.length).toBe(1))
+  await ctx.land(0)
+  await waitFor(() => expect(ctx.name()).toBe('A'))
+  return ctx
+}
+
+describe('table edit sync (real QueryClient)', () => {
+  it('(1) a reload already in flight with the old name does not overwrite a pending rename', async () => {
+    const t = await loaded()
+    void t.reload()
+    await waitFor(() => expect(t.server.reloads.length).toBe(2))
+    t.local('t1', { name: 'B' })
+    expect(t.name()).toBe('B')
+
+    await t.land(1)
+
+    expect(t.name()).toBe('B')
+  })
+
+  it('(1) a pending note is kept over an older reload too', async () => {
+    const t = await loaded()
+    void t.reload()
+    await waitFor(() => expect(t.server.reloads.length).toBe(2))
+    t.local('t1', { description: 'my note' })
+    await t.land(1)
+    expect(t.note()).toBe('my note')
+  })
+
+  it('(2) a reload in flight lands with its new data and no reload is cancelled or re-run', async () => {
+    const t = await loaded()
+    void t.reload()
+    await waitFor(() => expect(t.server.reloads.length).toBe(2))
+    const calls = t.server.queryFn.mock.calls.length
+    const edit = t.local('t1', { name: 'B' })
+    t.ack(edit, 't1', true, { name: 'B' })
+
+    await t.land(1)
+
+    expect(t.qc.getQueryData<Board>(KEY)?.relationships).toEqual(['r1'])
+    expect(t.name()).toBe('B')
+    expect(t.cancelSpy).not.toHaveBeenCalled()
+    expect(t.server.queryFn.mock.calls.length).toBe(calls)
+  })
+
+  it('(3a) two quick renames of one table: the last one shows, also after an old reload lands', async () => {
+    const t = await loaded()
+    void t.reload()
+    await waitFor(() => expect(t.server.reloads.length).toBe(2))
+    const first = t.local('t1', { name: 'B' })
+    const second = t.local('t1', { name: 'C' })
+    t.ack(first, 't1', true, { name: 'B' })
+    expect(t.name()).toBe('C')
+    await t.land(1)
+    expect(t.name()).toBe('C')
+    t.ack(second, 't1', true, { name: 'C' })
+    expect(t.name()).toBe('C')
+  })
+
+  it('(3b) quick renames of two tables both survive an old reload', async () => {
+    const t = await loaded()
+    void t.reload()
+    await waitFor(() => expect(t.server.reloads.length).toBe(2))
+    const e1 = t.local('t1', { name: 'B' })
+    const e2 = t.local('t2', { name: 'Y' })
+    t.ack(e1, 't1', true, { name: 'B' })
+    await t.land(1)
+    expect(t.name('t1')).toBe('B')
+    expect(t.name('t2')).toBe('Y')
+    t.ack(e2, 't2', true, { name: 'Y' })
+    expect(t.name('t2')).toBe('Y')
+  })
+
+  it('(3c) a peer rename during a pending local edit reverts nothing', async () => {
+    const t = await loaded()
+    void t.reload()
+    await waitFor(() => expect(t.server.reloads.length).toBe(2))
+    const edit = t.local('t1', { name: 'B' })
+    t.peer('t1', { name: 'P' })
+    expect(t.name()).toBe('B')
+    await t.land(1)
+    expect(t.name()).toBe('B')
+    t.ack(edit, 't1', false, { name: 'B' })
+    expect(t.name()).toBe('P')
+  })
+
+  it('(3c) a peer rename is not reverted by an older reload in flight', async () => {
+    const t = await loaded()
+    void t.reload()
+    await waitFor(() => expect(t.server.reloads.length).toBe(2))
+    t.peer('t1', { name: 'P' })
+    await t.land(1)
+    expect(t.name()).toBe('P')
+  })
+
+  it('(3d) first rename ok, second rejected: the first value shows, also after an old reload lands', async () => {
+    const t = await loaded()
+    void t.reload()
+    await waitFor(() => expect(t.server.reloads.length).toBe(2))
+    const first = t.local('t1', { name: 'B' })
+    const second = t.local('t1', { name: 'C' })
+    t.ack(first, 't1', true, { name: 'B' })
+    t.ack(second, 't1', false, { name: 'C' })
+    expect(t.name()).toBe('B')
+    await t.land(1)
+    expect(t.name()).toBe('B')
+  })
+
+  it('a value the server holds is dropped once a reload that started after it lands', async () => {
+    const t = await loaded()
+    t.peer('t1', { name: 'P' })
+    void t.reload()
+    await waitFor(() => expect(t.server.reloads.length).toBe(2))
+    t.server.state.names.t1 = 'RESTORED'
+    await t.land(1)
+    await waitFor(() => expect(t.name()).toBe('P'))
+    // The reload started before RESTORED was written but after P, so P is
+    // dropped and the reload data (P) shows; a later reload shows RESTORED.
+    void t.reload()
+    await waitFor(() => expect(t.server.reloads.length).toBe(3))
+    await t.land(2)
+    await waitFor(() => expect(t.name()).toBe('RESTORED'))
+  })
+
+  it('(4) a lost ack does not stick: reconnect releases the pending edit and the reload shows the server value', async () => {
+    const t = await loaded()
+    t.local('t1', { name: 'B' })
+    expect(t.name()).toBe('B')
+    // The socket dropped: the server never saved B and no ack comes.
+    const reconcile = vi.fn()
+    act(() => t.sync().releasePending())
+    expect(t.name()).toBe('A')
+    const done = resyncBoardAfterReconnect({
+      queryClient: t.qc,
+      whiteboardId: WB,
+      isCurrent: () => true,
+      reconcile,
+    })
+    await waitFor(() => expect(t.server.reloads.length).toBe(2))
+    await t.land(1)
+    await done
+    expect(t.name()).toBe('A')
+  })
+
+  describe('(5) reconnect reconcile runs once per reconnect, when the reload ends', () => {
+    const reconnect = (t: Awaited<ReturnType<typeof loaded>>) => {
+      const reconcile = vi.fn()
+      let generation = 0
+      const start = () => {
+        const gen = ++generation
+        return resyncBoardAfterReconnect({
+          queryClient: t.qc,
+          whiteboardId: WB,
+          isCurrent: () => generation === gen,
+          reconcile,
+        })
+      }
+      return { reconcile, start }
+    }
+
+    it('equal reload data still reconciles once per table', async () => {
+      const t = await loaded()
+      const { reconcile, start } = reconnect(t)
+      const done = start()
+      await waitFor(() => expect(t.server.reloads.length).toBe(2))
+      expect(reconcile).not.toHaveBeenCalled()
+      await t.land(1)
+      await done
+      expect(reconcile).toHaveBeenCalledTimes(2)
+      expect(reconcile).toHaveBeenCalledWith('t1', ['t1-c1'])
+    })
+
+    it('a cache write during the reload does not reconcile; the reload end does, once', async () => {
+      const t = await loaded()
+      const { reconcile, start } = reconnect(t)
+      const done = start()
+      await waitFor(() => expect(t.server.reloads.length).toBe(2))
+      t.peer('t1', { name: 'P' })
+      expect(reconcile).not.toHaveBeenCalled()
+      await t.land(1)
+      await done
+      expect(reconcile.mock.calls.filter((c) => c[0] === 't1')).toHaveLength(1)
+    })
+
+    it('two reconnects in a row reconcile once, against the latest reload', async () => {
+      const t = await loaded()
+      const { reconcile, start } = reconnect(t)
+      const first = start()
+      await waitFor(() => expect(t.server.reloads.length).toBe(2))
+      const second = start()
+      await waitFor(() => expect(t.server.reloads.length).toBe(3))
+      await t.land(2)
+      await Promise.all([first, second])
+      expect(reconcile.mock.calls.filter((c) => c[0] === 't1')).toHaveLength(1)
+    })
+
+    it('does nothing once the board unmounts or the reload failed', async () => {
+      const t = await loaded()
+      const reconcile = vi.fn()
+      let alive = true
+      const done = resyncBoardAfterReconnect({
+        queryClient: t.qc,
+        whiteboardId: WB,
+        isCurrent: () => alive,
+        reconcile,
+      })
+      await waitFor(() => expect(t.server.reloads.length).toBe(2))
+      alive = false
+      await t.land(1)
+      await done
+      expect(reconcile).not.toHaveBeenCalled()
+    })
+  })
+})

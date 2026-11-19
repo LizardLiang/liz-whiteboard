@@ -24,6 +24,8 @@ type SetEdges = React.Dispatch<
 
 interface PendingTableMutation {
   type: 'delete' | 'update'
+  /** Overlay edit id of an 'update' (see TableEditPort). */
+  editId?: number
   rollback: () => void
 }
 
@@ -43,12 +45,21 @@ type EmitTableUpdate = (
   ack?: (ok: boolean) => void,
 ) => void
 
-/** Mirrors a field change into the whiteboard query cache so refetches agree with the canvas. */
-type PatchTableCache = (
-  tableId: string,
-  fields: UpdateTableFields,
-  rerunMode?: 'now' | 'defer',
-) => void
+/**
+ * The board's table edit overlay (see table-edit-sync.ts). `begin` keeps an
+ * unsaved value visible over reloads. `settle` reports the server's answer;
+ * `previous` is the display fallback when a failed edit has no other value.
+ */
+export interface TableEditPort {
+  begin: (tableId: string, fields: UpdateTableFields) => number
+  settle: (
+    editId: number,
+    tableId: string,
+    ok: boolean,
+    fields: UpdateTableFields,
+    previous: UpdateTableFields,
+  ) => void
+}
 
 export function useTableMutations(
   setNodes: SetNodes,
@@ -56,8 +67,7 @@ export function useTableMutations(
   emitTableDelete: ((tableId: string) => void) | null,
   isConnected: boolean,
   emitTableUpdate: EmitTableUpdate | null = null,
-  patchTableCache: PatchTableCache | null = null,
-  settleTableCache: (() => void) | null = null,
+  tableEditPort: TableEditPort | null = null,
 ) {
   /**
    * Track optimistic mutations for rollback on server error.
@@ -197,17 +207,19 @@ export function useTableMutations(
         }),
       )
 
-      // Deferred: the server has not committed yet, so a refetch the patch
-      // cancels is re-run from the ack below.
-      patchTableCache?.(tableId, data, 'defer')
+      const editId = tableEditPort?.begin(tableId, data) ?? 0
 
       // Store rollback
       pendingMutations.current.set(tableId, {
         type: 'update',
+        editId,
         rollback: () => {
           const toRestore = previousValues
           if (!toRestore) return
-          patchTableCache?.(tableId, toRestore)
+          if (tableEditPort) {
+            tableEditPort.settle(editId, tableId, false, data, toRestore)
+            return
+          }
           setNodes((prev) =>
             prev.map((node) =>
               node.id === tableId
@@ -227,26 +239,20 @@ export function useTableMutations(
         },
       })
 
-      // Emit via WebSocket. On ack success, clear the pending entry so a
+      // Emit via WebSocket. On ack, clear this edit's pending entry so a
       // later (unrelated) error event can't roll back a change the server
-      // already accepted.
+      // already accepted. A newer edit of the same table keeps its own entry.
       if (emitTableUpdate) {
         emitTableUpdate(tableId, data, (ok) => {
-          if (ok) {
+          const pending = pendingMutations.current.get(tableId)
+          if (ok && pending?.type === 'update' && pending.editId === editId) {
             pendingMutations.current.delete(tableId)
           }
-          settleTableCache?.()
+          tableEditPort?.settle(editId, tableId, ok, data, previousValues ?? {})
         })
       }
     },
-    [
-      isConnected,
-      setNodes,
-      emitTableUpdate,
-      patchTableCache,
-      settleTableCache,
-      t,
-    ],
+    [isConnected, setNodes, emitTableUpdate, tableEditPort, t],
   )
 
   /**

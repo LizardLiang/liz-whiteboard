@@ -556,8 +556,11 @@ describe('useTableMutations', () => {
       )
     })
 
-    it('rename: mirrors the name into the query cache, and restores it on rollback', () => {
-      const patchTableCache = vi.fn()
+    it('rename: starts an overlay edit, settles it on the ack, and settles a rejected edit with the previous name', () => {
+      const port = {
+        begin: vi.fn(() => 7),
+        settle: vi.fn(),
+      }
       const { result } = renderHook(() =>
         useTableMutations(
           setNodes,
@@ -565,7 +568,7 @@ describe('useTableMutations', () => {
           emitTableDelete,
           true,
           emitTableUpdate,
-          patchTableCache,
+          port,
         ),
       )
       const before = nodes.find((n) => n.id === 'tbl-001')?.data.table.name
@@ -573,11 +576,7 @@ describe('useTableMutations', () => {
       act(() => {
         result.current.updateTable('tbl-001', { name: 'renamed' })
       })
-      expect(patchTableCache).toHaveBeenLastCalledWith(
-        'tbl-001',
-        { name: 'renamed' },
-        'defer',
-      )
+      expect(port.begin).toHaveBeenCalledWith('tbl-001', { name: 'renamed' })
 
       act(() => {
         result.current.onTableUpdateError({
@@ -585,13 +584,30 @@ describe('useTableMutations', () => {
           tableId: 'tbl-001',
         })
       })
-      expect(patchTableCache).toHaveBeenLastCalledWith('tbl-001', {
-        name: before,
-      })
+      expect(port.settle).toHaveBeenLastCalledWith(
+        7,
+        'tbl-001',
+        false,
+        { name: 'renamed' },
+        { name: before },
+      )
+
+      const ack = emitTableUpdate.mock.calls.at(-1)?.[2] as (
+        ok: boolean,
+      ) => void
+      ack(true)
+      expect(port.settle).toHaveBeenLastCalledWith(
+        7,
+        'tbl-001',
+        true,
+        { name: 'renamed' },
+        { name: before },
+      )
     })
 
-    it('rename: settles the cache refetch on the table:update ack, ok or not', () => {
-      const settleTableCache = vi.fn()
+    it('rename: an older edit ack does not clear a newer edit rollback slot', () => {
+      let id = 0
+      const port = { begin: vi.fn(() => ++id), settle: vi.fn() }
       const { result } = renderHook(() =>
         useTableMutations(
           setNodes,
@@ -599,20 +615,18 @@ describe('useTableMutations', () => {
           emitTableDelete,
           true,
           emitTableUpdate,
-          vi.fn(),
-          settleTableCache,
+          port,
         ),
       )
       act(() => {
-        result.current.updateTable('tbl-001', { name: 'renamed' })
+        result.current.updateTable('tbl-001', { name: 'first' })
+        result.current.updateTable('tbl-001', { name: 'second' })
       })
-      expect(settleTableCache).not.toHaveBeenCalled()
-      const ack = emitTableUpdate.mock.calls.at(-1)?.[2] as (
+      const ackFirst = emitTableUpdate.mock.calls[0]?.[2] as (
         ok: boolean,
       ) => void
-      ack(false)
-      ack(true)
-      expect(settleTableCache).toHaveBeenCalledTimes(2)
+      ackFirst(true)
+      expect(result.current.pendingMutations.current.has('tbl-001')).toBe(true)
     })
 
     it('TC-TU-06: onTableUpdateError shows a toast error', () => {
