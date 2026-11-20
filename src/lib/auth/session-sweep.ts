@@ -1,0 +1,34 @@
+// src/lib/auth/session-sweep.ts
+// Deletes expired login sessions: once at boot, then every hour. Mirrors the
+// interval-with-unref pattern of the OAuth sweeps (codes.ts, pending-consent.ts).
+// Expired rows are already refused at validation time; this keeps the Session
+// table from growing forever.
+
+import { deleteExpiredSessions } from '@/lib/auth/session'
+
+const SESSION_SWEEP_INTERVAL_MS = 60 * 60 * 1000
+let sweepTimer: ReturnType<typeof setInterval> | null = null
+
+async function sweepOnce(): Promise<void> {
+  try {
+    const deleted = await deleteExpiredSessions()
+    if (deleted > 0) console.log(`[auth] Deleted ${deleted} expired sessions`)
+  } catch (error) {
+    console.error('[auth] Failed to delete expired sessions:', error)
+  }
+}
+
+/** Sweep now and on an hourly timer. Safe to call more than once. */
+export function startSessionSweep(): void {
+  if (sweepTimer) return
+  void sweepOnce()
+  sweepTimer = setInterval(() => void sweepOnce(), SESSION_SWEEP_INTERVAL_MS)
+  // Don't keep Node.js alive just for cleanup.
+  sweepTimer.unref()
+}
+
+/** Stop the timer. For tests only. */
+export function _stopSessionSweepForTests(): void {
+  if (sweepTimer) clearInterval(sweepTimer)
+  sweepTimer = null
+}

@@ -111,6 +111,7 @@ import {
   guardSocketHandlers,
   safeConnectionHandler,
 } from '@/lib/socket-safe'
+import { startSessionSweep } from '@/lib/auth/session-sweep'
 import { admitUserConnection, refuseConnection } from '@/lib/socket-rate-limit'
 import { db } from '@/db'
 import {
@@ -293,6 +294,9 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
   // and would deny every canvas event as not-found. Registered here so both
   // server.dev.ts and server.prod.ts pick it up from one call site.
   setupCanvasNamespace(io)
+
+  // Delete expired login sessions at boot and hourly.
+  startSessionSweep()
 
   // Cleanup stale sessions every 5 minutes
   setInterval(
