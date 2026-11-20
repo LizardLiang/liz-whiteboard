@@ -72,11 +72,13 @@ import {
   findConnectorById,
 } from '@/data/connector'
 import {
+  cascadeSourceColumnIds,
   createColumn,
   deleteColumn,
   duplicateColumn,
   findColumnById,
   findColumnsByTableId,
+  foreignKeyStates,
   reorderColumns,
   updateColumn,
 } from '@/data/column'
@@ -140,6 +142,8 @@ type AckResult =
         columns?: number
         connectors?: number
       }
+      /** Columns whose `isForeignKey` flag the write changed. */
+      columnUpdates?: Array<ForeignKeyState>
     }
   | {
       ok: false
@@ -179,6 +183,30 @@ function broadcastCommitted(event: string, emit: () => void): void {
   } catch (error) {
     console.error(`Failed to broadcast ${event}:`, error)
   }
+}
+
+type ForeignKeyState = ReturnType<typeof foreignKeyStates>[number]
+
+/**
+ * Tell every client that a relationship write changed a column's
+ * `isForeignKey` flag, in the shape of a `column:updated` broadcast. Peers get
+ * the sender's id as `updatedBy`. The sender gets the same event under
+ * `updatedBy: 'system'`, so its client does not skip it as its own echo.
+ */
+function emitForeignKeyChanges(
+  socket: {
+    emit: (e: string, p: any) => void
+    broadcast: { emit: (e: string, p: any) => void }
+  },
+  userId: string,
+  states: Array<ForeignKeyState>,
+): void {
+  broadcastCommitted('column:updated', () => {
+    for (const state of states) {
+      socket.broadcast.emit('column:updated', { ...state, updatedBy: userId })
+      socket.emit('column:updated', { ...state, updatedBy: 'system' })
+    }
+  })
 }
 
 /**
@@ -1133,7 +1161,9 @@ export function setupCollaborationEventHandlers(
           !isSystemContext(accepted) && accepted.batchId
             ? withBatch(accepted, accepted.batchId, 'table-delete')
             : ensureBatch(accepted, 'table-delete')
+        const survivingSources = cascadeSourceColumnIds({ tableId })
         await deleteDiagramTable(tableId, deleteCtx)
+        const columnUpdates = foreignKeyStates(survivingSources)
 
         // GH #106: drop the deleted table from any subject area's membership so
         // no area keeps a dangling member id, and tell peers about the change.
@@ -1155,6 +1185,7 @@ export function setupCollaborationEventHandlers(
           tableId,
           deletedBy: userId,
         })
+        emitForeignKeyChanges(socket, userId, columnUpdates)
 
         // GH #110: tell every client (including the deleter) that these
         // cascade-deleted comment threads are gone. Unlike a direct
@@ -2181,7 +2212,11 @@ export function setupCollaborationEventHandlers(
         )
 
         // Delete column from database (cascade deletes relationships)
+        const survivingSources = cascadeSourceColumnIds({
+          columnId: data.columnId,
+        })
         await deleteColumn(data.columnId, ctxFor(data))
+        const columnUpdates = foreignKeyStates(survivingSources)
 
         // Broadcast to other users
         socket.broadcast.emit('column:deleted', {
@@ -2189,12 +2224,14 @@ export function setupCollaborationEventHandlers(
           tableId: column.tableId,
           deletedBy: userId,
         })
+        emitForeignKeyChanges(socket, userId, columnUpdates)
 
         // FR-022: ack to sender with cascade count
         cb?.({
           ok: true,
           entity: { id: data.columnId },
           cascade: { relationships: relationshipCount },
+          columnUpdates,
         })
       } catch (error) {
         console.error('Failed to delete column:', error)
@@ -2471,6 +2508,7 @@ export function setupCollaborationEventHandlers(
 
         // Create relationship in database
         const relationship = await createRelationship(validated, ctxFor(data))
+        const columnUpdates = foreignKeyStates([relationship.sourceColumnId])
 
         // Broadcast to other users
         broadcastCommitted('relationship:created', () =>
@@ -2479,9 +2517,10 @@ export function setupCollaborationEventHandlers(
             createdBy: userId,
           }),
         )
+        emitForeignKeyChanges(socket, userId, columnUpdates)
 
         // FR-022: ack to sender
-        cb?.({ ok: true, entity: relationship })
+        cb?.({ ok: true, entity: relationship, columnUpdates })
       } catch (error) {
         ackCreateFailure(
           socket,
@@ -2610,6 +2649,10 @@ export function setupCollaborationEventHandlers(
           validated,
           ctxFor(data),
         )
+        const columnUpdates = foreignKeyStates([
+          relationship.sourceColumnId,
+          updatedRelationship.sourceColumnId,
+        ])
 
         // Broadcast to other users
         socket.broadcast.emit('relationship:updated', {
@@ -2617,9 +2660,10 @@ export function setupCollaborationEventHandlers(
           ...validated,
           updatedBy: userId,
         })
+        emitForeignKeyChanges(socket, userId, columnUpdates)
 
         // FR-022: ack to sender
-        cb?.({ ok: true, entity: updatedRelationship })
+        cb?.({ ok: true, entity: updatedRelationship, columnUpdates })
       } catch (error) {
         console.error('Failed to update relationship:', error)
         const message = clientErrorMessage(
@@ -2719,15 +2763,17 @@ export function setupCollaborationEventHandlers(
 
         // Delete relationship from database
         await deleteRelationship(relationshipId, ctxFor(data))
+        const columnUpdates = foreignKeyStates([relationship.sourceColumnId])
 
         // Broadcast to other users
         socket.broadcast.emit('relationship:deleted', {
           relationshipId,
           deletedBy: userId,
         })
+        emitForeignKeyChanges(socket, userId, columnUpdates)
 
         // FR-022: ack to sender
-        cb?.({ ok: true, entity: { id: relationshipId } })
+        cb?.({ ok: true, entity: { id: relationshipId }, columnUpdates })
       } catch (error) {
         console.error('Failed to delete relationship:', error)
         const message = 'Failed to delete relationship'

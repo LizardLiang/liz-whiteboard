@@ -3,6 +3,7 @@
 
 import { createRelationshipSchema, updateRelationshipSchema } from './schema'
 import { claimClientId, refuseTakenIdAfterInsertError } from './already-exists'
+import { syncForeignKeyFlag } from './column'
 import type { CreateRelationship, UpdateRelationship } from './schema'
 import type { Column, DiagramTable, Relationship } from './models'
 import type { ChangeContext } from '@/lib/schema-changelog'
@@ -213,6 +214,7 @@ export async function createRelationship(
         action: 'create',
         after: eventRow(created),
       })
+      syncForeignKeyFlag(created.sourceColumnId, ctx)
       return created
     })
   } catch (error) {
@@ -403,6 +405,8 @@ export async function updateRelationship(
         after,
         RELATIONSHIP_EVENT_FIELDS,
       )
+      syncForeignKeyFlag(beforeRow.sourceColumnId, ctx)
+      syncForeignKeyFlag(after.sourceColumnId, ctx)
       return after
     })
   } catch (error) {
@@ -433,6 +437,7 @@ export async function deleteRelationship(
         before: eventRow(existing),
       })
       db.prepare('DELETE FROM "Relationship" WHERE "id" = ?').run(id)
+      syncForeignKeyFlag(existing.sourceColumnId, ctx)
       return existing
     })
   } catch (error) {

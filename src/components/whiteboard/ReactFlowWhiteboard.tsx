@@ -2159,7 +2159,15 @@ function ReactFlowWhiteboardInner({
     mutationFn: async (data: CreateRelationship) => {
       return await createRelationshipFn({ data })
     },
-    onSuccess: () => {
+    onSuccess: (_relationship, variables) => {
+      // The server turned the source column's FK flag on. Show the badge now;
+      // the whiteboard refetch below carries the same state.
+      onColumnUpdated({
+        columnId: variables.sourceColumnId,
+        tableId: variables.sourceTableId,
+        isForeignKey: true,
+        updatedBy: 'system',
+      })
       queryClient.invalidateQueries({
         queryKey: ['relationships', whiteboardId],
       })

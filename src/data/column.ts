@@ -76,6 +76,90 @@ function writeColumnUpdate(
   })
 }
 
+/**
+ * Make a column's `isForeignKey` flag follow its relationships: on while the
+ * column is the source of at least one relationship, off otherwise. Records a
+ * column update only when the flag changes. The caller owns the transaction.
+ * @returns the updated column, or null when nothing changed
+ */
+export function syncForeignKeyFlag(
+  columnId: string,
+  ctx: ChangeContext,
+): Column | null {
+  const before = readColumn(columnId)
+  if (!before) return null
+  const isSource =
+    db
+      .prepare(
+        'SELECT 1 FROM "Relationship" WHERE "sourceColumnId" = ? LIMIT 1',
+      )
+      .get(columnId) !== undefined
+  if (before.isForeignKey === isSource) return null
+  update('Column', columnId, {
+    isForeignKey: toDbBool(isSource),
+    updatedAt: nowMs(),
+  })
+  const after = readColumn(columnId)!
+  recordUpdate(
+    ctx,
+    {
+      entityType: 'column',
+      entityId: columnId,
+      entityName: after.name,
+      tableId: after.tableId,
+      tableName: tableNameOf(after.tableId),
+    },
+    before,
+    after,
+    COLUMN_EVENT_FIELDS,
+  )
+  return after
+}
+
+/**
+ * Ids of the columns that source a relationship a delete will cascade away
+ * while surviving the delete themselves. Read before the delete, pass the ids
+ * to `syncForeignKeyFlag` after it.
+ */
+export function cascadeSourceColumnIds(
+  scope: { columnId: string } | { tableId: string },
+): Array<string> {
+  const rows =
+    'columnId' in scope
+      ? db
+          .prepare(
+            'SELECT DISTINCT "sourceColumnId" AS id FROM "Relationship" WHERE "targetColumnId" = ? AND "sourceColumnId" != ?',
+          )
+          .all(scope.columnId, scope.columnId)
+      : db
+          .prepare(
+            'SELECT DISTINCT "sourceColumnId" AS id FROM "Relationship" WHERE "targetTableId" = ? AND "sourceTableId" != ?',
+          )
+          .all(scope.tableId, scope.tableId)
+  return (rows as Array<{ id: string }>).map((r) => r.id)
+}
+
+/** The `isForeignKey` state of columns, shaped as a `column:updated` payload. */
+export function foreignKeyStates(
+  columnIds: Array<string>,
+): Array<{ columnId: string; tableId: string; isForeignKey: boolean }> {
+  const states: Array<{
+    columnId: string
+    tableId: string
+    isForeignKey: boolean
+  }> = []
+  for (const id of new Set(columnIds)) {
+    const column = readColumn(id)
+    if (column)
+      states.push({
+        columnId: id,
+        tableId: column.tableId,
+        isForeignKey: column.isForeignKey,
+      })
+  }
+  return states
+}
+
 /** A column create's id claim: it writes to the whiteboard of its table. */
 function columnClaim(validated: CreateColumn): IdClaim {
   return {
@@ -292,7 +376,9 @@ export async function deleteColumn(
         tableName: tableNameOf(existing.tableId),
         before: eventRow(existing),
       })
+      const survivingSources = cascadeSourceColumnIds({ columnId: id })
       db.prepare('DELETE FROM "Column" WHERE "id" = ?').run(id)
+      for (const sourceId of survivingSources) syncForeignKeyFlag(sourceId, ctx)
       return existing
     })
   } catch (error) {

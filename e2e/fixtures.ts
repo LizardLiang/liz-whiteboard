@@ -315,6 +315,18 @@ export const IDS = {
   handleVisUsersId: '90000000-0000-4000-8000-000000000004',
   handleVisOrdersUserId: '90000000-0000-4000-8000-000000000005',
 
+  // Dedicated board for relationship-auto-fk.spec.ts: orders (source side),
+  // customers and segments (targets), each with a realistic column list and
+  // NO relationship and NO FK flag. The spec creates relationships live.
+  autoFkWhiteboard: 'b1000000-0000-4000-8000-000000000001',
+  autoFkOrdersTable: 'b1000000-0000-4000-8000-000000000002',
+  autoFkCustomersTable: 'b1000000-0000-4000-8000-000000000003',
+  autoFkSegmentsTable: 'b1000000-0000-4000-8000-000000000004',
+  autoFkOrdersId: 'b1000000-0000-4000-8000-000000000005',
+  autoFkOrdersCustomerId: 'b1000000-0000-4000-8000-000000000006',
+  autoFkCustomersId: 'b1000000-0000-4000-8000-000000000007',
+  autoFkSegmentsId: 'b1000000-0000-4000-8000-000000000008',
+
   // Dedicated board for canvas-search.spec.ts (canvas-cmd-k-search-panel
   // tactical plan). Reuses IDS.canvasProject (not a new project) — this
   // suite adds no ProjectMember, so the Share-panel member-list layout

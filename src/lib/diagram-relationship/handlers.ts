@@ -9,11 +9,12 @@
 // the browser bundle.
 import type { AuthContext } from '@/lib/auth/middleware'
 import type { CreateRelationship } from '@/data/schema'
+import type { ClientBatch } from '@/lib/schema-changelog/client-batch'
+import { foreignKeyStates } from '@/data/column'
 import { createRelationship } from '@/data/relationship'
 import { getWhiteboardProjectId } from '@/data/resolve-project'
 import { requireServerFnRole } from '@/lib/auth/require-role'
 import { emitToWhiteboard } from '@/routes/api/collaboration'
-import type { ClientBatch } from '@/lib/schema-changelog/client-batch'
 import { userContext, withClientBatch } from '@/lib/schema-changelog'
 
 /**
@@ -47,6 +48,14 @@ export async function createRelationshipHandler(
       ...relationship,
       createdBy: user.id,
     })
+    // The create turned the source column's FK flag on. Sent as a plain
+    // column update from 'system', so the creator's own client applies it too.
+    for (const state of foreignKeyStates([relationship.sourceColumnId])) {
+      emitToWhiteboard(data.whiteboardId, 'column:updated', {
+        ...state,
+        updatedBy: 'system',
+      })
+    }
   } catch (broadcastError) {
     console.error(
       'relationship:created broadcast failed (relationship was created):',

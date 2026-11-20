@@ -2,6 +2,7 @@
 // Data access layer for DiagramTable entity
 
 import { createTableSchema, updateTableSchema } from './schema'
+import { cascadeSourceColumnIds, syncForeignKeyFlag } from './column'
 import {
   claimClientId,
   isUniqueViolation,
@@ -458,7 +459,10 @@ export async function deleteDiagramTable(
         ...own,
         before: eventRow(existing),
       })
+      const survivingSources = cascadeSourceColumnIds({ tableId: id })
       db.prepare('DELETE FROM "DiagramTable" WHERE "id" = ?').run(id)
+      for (const sourceId of survivingSources)
+        syncForeignKeyFlag(sourceId, batchCtx)
       return existing
     })
   } catch (error) {

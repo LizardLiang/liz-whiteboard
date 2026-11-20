@@ -2,6 +2,7 @@
 // Every data write function records its SchemaChangeEvent in the same
 // transaction as the write. Runs against the in-memory database.
 
+import { randomUUID } from 'node:crypto'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
@@ -29,6 +30,7 @@ import {
   deleteColumn,
   duplicateColumn,
   reorderColumns,
+  syncForeignKeyFlag,
   updateColumn,
   updateColumnOrder,
 } from '@/data/column'
@@ -313,6 +315,7 @@ describe('tables', () => {
     const added = events(whiteboardId).slice(before)
     expect(added.map((e) => `${e.entityType}:${e.action}`).sort()).toEqual([
       'column:delete',
+      'column:update',
       'relationship:delete',
       'table:delete',
     ])
@@ -322,7 +325,16 @@ describe('tables', () => {
     expect(new Set(added.map((e) => e.batchKind))).toEqual(
       new Set(['table-delete']),
     )
-    expect(added.every((e) => e.tableName === 'Users')).toBe(true)
+    // The surviving source column's FK change is logged under its own table.
+    expect(
+      added
+        .filter((e) => `${e.entityType}:${e.action}` !== 'column:update')
+        .every((e) => e.tableName === 'Users'),
+    ).toBe(true)
+    expect(
+      added.find((e) => `${e.entityType}:${e.action}` === 'column:update')
+        ?.tableName,
+    ).toBe('Orders')
   })
 
   it('keeps the event after the table is deleted', async () => {
@@ -421,10 +433,45 @@ describe('relationships', () => {
     )
     await updateRelationship(rel.id, { cardinality: 'ONE_TO_ONE' }, ctx)
     await deleteRelationship(rel.id, ctx)
-    const rows = events(whiteboardId)
+    const all = events(whiteboardId)
+    const rows = all.filter((e) => e.entityType === 'relationship')
     expect(rows.map((e) => e.action)).toEqual(['create', 'update', 'delete'])
     expect(rows[0].entityName).toBe('Orders.user_id -> Users.id')
     expect(json(rows[1].after)).toEqual({ cardinality: 'ONE_TO_ONE' })
+    // The source column's FK flag followed the relationship on and off.
+    const flags = all.filter((e) => e.entityType === 'column')
+    expect(flags.map((e) => json(e.after))).toEqual([
+      { isForeignKey: true },
+      { isForeignKey: false },
+    ])
+  })
+
+  it('logs a source column FK flag change through syncForeignKeyFlag', async () => {
+    const { ctx, whiteboardId } = setup()
+    const a = makeTable({ whiteboardId, name: 'Orders' })
+    const b = makeTable({ whiteboardId, name: 'Users' })
+    const ac = makeColumn({ tableId: a.id, name: 'user_id' })
+    const bc = makeColumn({ tableId: b.id, name: 'id' })
+    const ts = Date.now()
+    db.prepare(
+      'INSERT INTO "Relationship" ("id","whiteboardId","sourceTableId","targetTableId","sourceColumnId","targetColumnId","cardinality","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?)',
+    ).run(
+      randomUUID(),
+      whiteboardId,
+      a.id,
+      b.id,
+      ac.id,
+      bc.id,
+      'MANY_TO_ONE',
+      ts,
+      ts,
+    )
+
+    expect(syncForeignKeyFlag(ac.id, ctx)?.isForeignKey).toBe(true)
+    expect(syncForeignKeyFlag(ac.id, ctx)).toBeNull()
+    expect(syncForeignKeyFlag(bc.id, ctx)).toBeNull()
+    const flags = events(whiteboardId).filter((e) => e.entityType === 'column')
+    expect(flags.map((e) => json(e.after))).toEqual([{ isForeignKey: true }])
   })
 
   it('logs an edge path drag as a layout move', async () => {
