@@ -20,7 +20,7 @@ const GENERIC_AUTH_ERROR = 'Invalid email or password'
 /**
  * Register a new user.
  * Anti-enumeration: duplicate email returns same success-shaped response.
- * First user: assigns all existing ownerless projects to them.
+ * Never assigns ownerless projects (see src/lib/auth/register-user.ts).
  *
  * @requires unauthenticated
  */
@@ -28,7 +28,6 @@ export const registerUser = createServerFn({ method: 'POST' })
   .validator((data: unknown) => registerInputSchema.parse(data))
   .handler(async ({ data }) => {
     const { setResponseHeader } = await import('@tanstack/react-start/server')
-    const { transaction, db, genId, nowMs, mapUser } = await import('@/db')
     const { hashPassword } = await import('@/lib/auth/password')
     const { createUserSession } = await import('@/lib/auth/session')
     const { buildSetCookieHeader } = await import('@/lib/auth/cookies')
@@ -73,27 +72,11 @@ export const registerUser = createServerFn({ method: 'POST' })
     // Hash password (SHA-256 pre-hash + bcrypt)
     const passwordHash = await hashPassword(data.password)
 
-    // Create user and optionally migrate ownerless projects (atomic transaction)
-    const user = transaction(() => {
-      const userCount = Number(
-        (db.prepare('SELECT count(*) AS c FROM "User"').get() as { c: number })
-          .c,
-      )
-
-      const id = genId()
-      const ts = nowMs()
-      db.prepare(
-        'INSERT INTO "User" ("id", "username", "email", "passwordHash", "failedLoginAttempts", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, 0, ?, ?)',
-      ).run(id, data.username, data.email, passwordHash, ts, ts)
-
-      // First user: assign all ownerless projects
-      if (userCount === 0) {
-        db.prepare(
-          'UPDATE "Project" SET "ownerId" = ?, "updatedAt" = ? WHERE "ownerId" IS NULL',
-        ).run(id, ts)
-      }
-
-      return mapUser(db.prepare('SELECT * FROM "User" WHERE "id" = ?').get(id))!
+    const { insertRegisteredUser } = await import('@/lib/auth/register-user')
+    const user = insertRegisteredUser({
+      username: data.username,
+      email: data.email,
+      passwordHash,
     })
 
     // Create session and set cookie

@@ -23,7 +23,7 @@ import {
 } from 'vitest'
 
 import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
-import { db, genId, mapUser, nowMs, toDbDate, transaction } from '@/db'
+import { db, toDbDate } from '@/db'
 import { findUserByEmail } from '@/data/user'
 import { findProjectById } from '@/data/project'
 import { deleteAuthSession } from '@/data/session'
@@ -38,6 +38,7 @@ import {
   buildSetCookieHeader,
   parseSessionCookie,
 } from '@/lib/auth/cookies'
+import { insertRegisteredUser } from '@/lib/auth/register-user'
 import { checkCredentials } from '@/lib/auth/login-flow'
 import { makeProject, makeUser, resetDb } from '@/test/db-helpers'
 
@@ -70,23 +71,10 @@ async function registerUserHandler(data: {
 
   const passwordHash = await hashPassword(data.password)
 
-  const user = transaction(() => {
-    const userCount = Number(
-      (db.prepare('SELECT count(*) AS c FROM "User"').get() as { c: number }).c,
-    )
-    const id = genId()
-    const ts = nowMs()
-    db.prepare(
-      'INSERT INTO "User" ("id", "username", "email", "passwordHash", "failedLoginAttempts", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, 0, ?, ?)',
-    ).run(id, data.username, data.email, passwordHash, ts, ts)
-
-    if (userCount === 0) {
-      db.prepare(
-        'UPDATE "Project" SET "ownerId" = ?, "updatedAt" = ? WHERE "ownerId" IS NULL',
-      ).run(id, ts)
-    }
-
-    return mapUser(db.prepare('SELECT * FROM "User" WHERE "id" = ?').get(id))!
+  const user = insertRegisteredUser({
+    username: data.username,
+    email: data.email,
+    passwordHash,
   })
 
   const { token } = await createUserSession(user.id, false)
@@ -271,9 +259,8 @@ describe('registerUser', () => {
     expect(typeof dupeResult.redirect).toBe('string')
   })
 
-  // TC-P3-03b: first registered user adopts ownerless projects
-  it('TC-P3-03b: first registered user triggers ownerless project migration', async () => {
-    // DB is empty of users; seed two ownerless projects.
+  // TC-P3-03b: the first registrant must NOT take ownerless projects
+  it('TC-P3-03b: first registered user does NOT adopt ownerless projects', async () => {
     const p1 = makeProject({ name: 'P1' })
     const p2 = makeProject({ name: 'P2' })
 
@@ -285,10 +272,8 @@ describe('registerUser', () => {
 
     const user = await findUserByEmail('first@example.com')
     expect(user).not.toBeNull()
-    const proj1 = await findProjectById(p1.id)
-    const proj2 = await findProjectById(p2.id)
-    expect(proj1?.ownerId).toBe(user!.id)
-    expect(proj2?.ownerId).toBe(user!.id)
+    expect((await findProjectById(p1.id))?.ownerId).toBeNull()
+    expect((await findProjectById(p2.id))?.ownerId).toBeNull()
   })
 
   it('TC-P3-03c: a later registered user does NOT adopt existing projects', async () => {
