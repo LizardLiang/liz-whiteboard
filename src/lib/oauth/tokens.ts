@@ -143,6 +143,23 @@ export function getRefreshTokenResource(refreshToken: string): string | null {
   return row ? row.resource : null
 }
 
+/**
+ * Returns the client_id a stored, unexpired refresh token was issued to, or
+ * null if the token is unknown or expired. Rotated rows inside the replay grace
+ * window still count (their row exists until swept).
+ */
+export function getRefreshTokenClientId(refreshToken: string): string | null {
+  const row = db
+    .prepare(
+      `SELECT clientId, expiresAt FROM "OauthRefreshToken" WHERE tokenHash = ?`,
+    )
+    .get(hashToken(refreshToken)) as
+    | { clientId: string; expiresAt: number }
+    | undefined
+  if (!row || row.expiresAt < nowMs()) return null
+  return row.clientId
+}
+
 /** Sign a fresh RS256 access token bound to the given grant attributes. */
 async function signAccessToken(
   params: { userId: string; scope: string; resource: string },

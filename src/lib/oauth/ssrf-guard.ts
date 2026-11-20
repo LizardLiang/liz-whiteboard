@@ -19,6 +19,11 @@
 // exact URL it was fetched from, so a rebound host cannot vouch for another
 // identity — it can only reveal that something answered.
 //
+// REACHABILITY: the CIMD fetch is reachable only after a logged-in session
+// (/authorize) or proof of a known client (/token: a live auth code or
+// refresh token already bound to that client_id). Anonymous requests cannot
+// trigger it, which is what keeps this accepted TOCTOU cost small.
+//
 // This module performs DNS only. It never opens a connection.
 
 import { isIP } from 'node:net'

@@ -81,6 +81,18 @@ export function consumeAuthCode(code: string): AuthCode | null {
   return entry
 }
 
+/**
+ * Look up an authorization code WITHOUT consuming it. Returns the AuthCode if
+ * it exists, is unused and unexpired; otherwise null. Used by /token to prove a
+ * client is known before any network work; consumeAuthCode stays the only
+ * mutation and remains atomic.
+ */
+export function peekAuthCode(code: string): AuthCode | null {
+  const entry = codeStore.get(code)
+  if (!entry || entry.used || entry.expiresAt < Date.now()) return null
+  return entry
+}
+
 /** Reset the store (for testing only) */
 export function _resetCodesForTests(): void {
   codeStore.clear()
