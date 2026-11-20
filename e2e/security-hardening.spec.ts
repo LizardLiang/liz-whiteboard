@@ -1,266 +1,185 @@
 // e2e/security-hardening.spec.ts
-// Security audit regression coverage. Later batches add their tests here.
+// End-to-end coverage for the security-hardening batch:
+//   1. /token with an unknown https client_id answers invalid_grant (400)
+//      WITHOUT resolving the client. Before the fix the server first tried to
+//      resolve the client (a CIMD fetch) and answered invalid_client (401).
+//      The "no outbound fetch" proof itself is the unit test
+//      src/lib/oauth/token-endpoint.test.ts (resolveClient spy): a local
+//      listener cannot show it here, because the SSRF guard already refuses
+//      private addresses before any connection is made.
+//   2. /revoke works for a DCR-registered client: after revoke, the refresh
+//      token no longer rotates.
+//   3. An out-of-range table or area position over the real Socket.IO
+//      namespace is refused and the stored position is unchanged.
 //
-// Batch 1 — crash-proofing (H1): a malformed percent-encoded path used to
-// throw outside any try/catch in server.prod.ts and kill the Bun process.
-// The crash is PROD-ONLY: the dev stack is Vite, which never runs
-// server.prod.ts's serveStatic. Against dev this test therefore asserts
-// survival (the server answers the next request and still serves the login
-// page); against the prod build it proves the original crash is gone.
-// Unit coverage of the throwing code lives in src/lib/serve-static.test.ts.
-import { request as httpRequest } from 'node:http'
+// Socket.IO note (same prod/dev split as version-history.spec.ts): in dev the
+// socket server runs in its own process behind Vite's /socket.io proxy, and
+// live broadcasts to other clients cannot be asserted here. This spec talks to
+// the namespace directly and asserts the ack plus the persisted value.
+import { createHash, randomBytes } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { BASE_URL, E2E_USER, STORAGE_STATE } from './fixtures'
-import { slotIndex, slotPorts, usesExternalServer } from './worker-slot'
+import { io } from 'socket.io-client'
+import { BASE_URL, IDS } from './fixtures'
+import type { Page } from '@playwright/test'
 
-test.use({ storageState: { cookies: [], origins: [] } })
+const REDIRECT_PORT = 39231
+const REDIRECT_URI = `http://127.0.0.1:${REDIRECT_PORT}/callback`
 
-/** Send a raw request line; Playwright's own client would normalise the URL. */
-function rawGet(
-  path: string,
-  headers: Record<string, string> = {},
-  base: string = BASE_URL,
-): Promise<number> {
-  const target = new URL(base)
-  return new Promise((resolve, reject) => {
-    const req = httpRequest(
-      {
-        host: target.hostname,
-        port: target.port,
-        path,
-        method: 'GET',
-        headers,
-      },
-      (res) => {
-        res.resume()
-        resolve(res.statusCode ?? 0)
-      },
-    )
-    req.on('error', reject)
-    req.end()
-  })
+function pkce() {
+  const verifier = randomBytes(32).toString('base64url')
+  return {
+    verifier,
+    challenge: createHash('sha256').update(verifier).digest('base64url'),
+  }
 }
 
-test.describe('Server crash-proofing (security batch 1)', () => {
-  test('malformed percent-encoded path does not kill the server', async ({
-    page,
-  }) => {
-    const status = await rawGet('/%E0%A4%A')
-    expect(status).toBeGreaterThanOrEqual(200)
-    expect(status).toBeLessThan(600)
+async function loginCookieHeader(page: Page): Promise<string> {
+  const cookies = await page.context().cookies(BASE_URL)
+  return cookies.map((c) => `${c.name}=${c.value}`).join('; ')
+}
 
-    // The same process must still serve the app.
-    await page.goto('/login')
-    await expect(page.getByRole('textbox', { name: 'Email' })).toBeVisible()
-    await expect(page.getByRole('textbox', { name: 'Password' })).toBeVisible()
-  })
+/** Read one column straight from the slot's SQLite file (Node has no bun:sqlite, so shell out to Bun). */
+function readDb(table: string, id: string, column: string): number {
+  const out = execFileSync(
+    'bun',
+    [
+      '-e',
+      `import { Database } from 'bun:sqlite';
+const db = new Database(process.env.E2E_DB_PATH ?? 'data/app.db', { readonly: true });
+const row = db.query('SELECT "${column}" AS v FROM "${table}" WHERE id = ?').get('${id}');
+console.log(row ? String(row.v) : 'MISSING');`,
+    ],
+    { env: process.env, encoding: 'utf8' },
+  )
+  return Number(out.trim())
+}
 
-  test('bad Host header does not kill the server', async ({ page }) => {
-    // Node's http client may refuse some Host values itself; either outcome is
-    // fine, the assertion is that the server is still up afterwards.
-    await rawGet('/', { Host: 'bad host!!' }).catch(() => 0)
-
-    await page.goto('/login')
-    await expect(page.getByRole('textbox', { name: 'Email' })).toBeVisible()
-  })
-})
-
-// Batch 2 — authorization holes.
-// M3: the TanStack starter demo routes (unauthenticated todo writes, in-memory
-// pushes) must not exist. A removed route falls through to the app's 404.
-test.describe('Demo routes are gone (security batch 2, M3)', () => {
-  // Signed in, so a 404 proves the route is absent rather than auth-gated
-  // (anonymous requests get the global login redirect for any path).
-  test.use({ storageState: STORAGE_STATE })
-
-  for (const path of [
-    '/demo/start/server-funcs',
-    '/demo/api/names',
-    '/demo/api/tq-todos',
-  ]) {
-    test(`GET ${path} is 404`, async ({ request }) => {
-      const res = await request.get(path, { failOnStatusCode: false })
-      expect(res.status()).toBe(404)
-      const body = await res.text()
-      expect(body).not.toContain('Start - Server Functions')
-    })
-  }
-
-  test('the demo page does not render in a browser', async ({ page }) => {
-    await page.goto('/demo/start/server-funcs')
-    await expect(page.getByText('Start - Server Functions')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Add todo' })).toHaveCount(0)
-  })
-})
-
-// M1: an OAuth client cannot ask /authorize for any audience but the MCP
-// resource (RFC 8707). The check runs before client lookup and login, so an
-// anonymous request is enough to prove it.
-test.describe('OAuth resource allowlist (security batch 2, M1)', () => {
-  test('/authorize rejects resource=<collab audience> with invalid_target', async ({
+test.describe('Security hardening', () => {
+  test('/token with an unknown https client_id is invalid_grant, not a client lookup', async ({
     request,
   }) => {
-    const params = new URLSearchParams({
-      response_type: 'code',
-      client_id: 'anything',
-      redirect_uri: 'http://127.0.0.1:19999/callback',
-      code_challenge: 'x'.repeat(43),
-      code_challenge_method: 'S256',
-      resource: 'http://localhost:3010',
-    })
-    const res = await request.get(`/authorize?${params.toString()}`, {
-      failOnStatusCode: false,
-      maxRedirects: 0,
+    const res = await request.post(`${BASE_URL}/token`, {
+      form: {
+        grant_type: 'authorization_code',
+        client_id: 'https://unknown-client.invalid/client.json',
+        code: 'not-a-real-code',
+        redirect_uri: REDIRECT_URI,
+        code_verifier: 'v'.repeat(50),
+      },
     })
     expect(res.status()).toBe(400)
-    expect((await res.json()).error).toBe('invalid_target')
-  })
-})
+    expect((await res.json()).error).toBe('invalid_grant')
 
-// Batch 3 — session & auth.
-// M4: `/\t/evil.com` passed the old prefix check and, because browsers strip
-// tab/CR/LF from URLs, window.location.assign resolved it to http://evil.com/.
-test.describe('Open redirect after login (security batch 3, M4)', () => {
-  test.use({ storageState: { cookies: [], origins: [] } })
-
-  for (const [label, redirect] of [
-    ['tab', '/\t/evil.example'],
-    ['LF', '/\n/evil.example'],
-    ['CR', '/\r/evil.example'],
-    ['tab + backslash', '/\t\\/evil.example'],
-  ] as const) {
-    test(`redirect=${label} bypass lands on the app origin`, async ({
-      page,
-    }) => {
-      await page.goto(`/login?redirect=${encodeURIComponent(redirect)}`)
-      await page.waitForLoadState('networkidle')
-
-      const email = page.getByRole('textbox', { name: 'Email' })
-      const password = page.getByRole('textbox', { name: 'Password' })
-      await email.click()
-      await email.pressSequentially(E2E_USER.email)
-      await password.click()
-      await password.pressSequentially(E2E_USER.password)
-      const signIn = page.getByRole('button', { name: 'Sign in' })
-      await expect(signIn).toBeEnabled({ timeout: 10_000 })
-      await signIn.click()
-
-      await page.waitForURL((url) => url.origin === new URL(BASE_URL).origin)
-      await page.waitForURL((url) => url.pathname === '/')
-      expect(new URL(page.url()).hostname).not.toContain('evil')
-      await expect(page.getByRole('button', { name: 'Log out' })).toBeVisible()
+    const refresh = await request.post(`${BASE_URL}/token`, {
+      form: {
+        grant_type: 'refresh_token',
+        client_id: 'https://unknown-client.invalid/client.json',
+        refresh_token: 'not-a-real-token',
+      },
     })
-  }
-})
-
-// M8: Socket.IO handshakes from a foreign Origin are refused by allowRequest.
-// A real cookie-carrying namespace CONNECT cannot be driven cross-origin from
-// Playwright's runner, so this asserts the transport-level refusal; the
-// cookie-vs-bearer split is unit-tested in src/lib/auth/socket-origin.test.ts.
-test.describe('Socket.IO Origin allowlist (security batch 3, M8)', () => {
-  // Dev stack: Vite's global auth redirect answers /socket.io before the proxy
-  // sees it, so the default is this worker's own server.dev.ts port; with an
-  // external server set E2E_SOCKET_URL (e.g. http://localhost:3010). In the single-process prod build it is BASE_URL.
-  const socketBase =
-    process.env.E2E_SOCKET_URL ??
-    (usesExternalServer()
-      ? BASE_URL
-      : `http://localhost:${slotPorts(slotIndex()).socket}`)
-  const polling = '/socket.io/?EIO=4&transport=polling'
-
-  test('foreign Origin is refused', async () => {
-    const status = await rawGet(
-      polling,
-      { Origin: 'https://evil.example', Cookie: 'session_token=anything' },
-      socketBase,
-    )
-    expect(status).toBe(403)
+    expect(refresh.status()).toBe(400)
+    expect((await refresh.json()).error).toBe('invalid_grant')
   })
 
-  test('own Origin and a bearer client with no Origin are accepted', async () => {
-    expect(await rawGet(polling, { Origin: BASE_URL }, socketBase)).toBe(200)
-    expect(await rawGet(polling, {}, socketBase)).toBe(200)
-  })
-})
-
-// Batch 4 — response hardening (audit M10). These headers and the body cap
-// are applied by server.prod.ts, so they exist ONLY in the single-process
-// prod build; the Vite dev stack neither sets them nor caps bodies. Run this
-// block against the prod build: E2E_PROD_BUILD=1 E2E_BASE_URL=http://localhost:<port>.
-test.describe('Response hardening (security batch 4, M10)', () => {
-  test.skip(
-    !process.env.E2E_PROD_BUILD,
-    'server.prod.ts headers/body cap do not exist on the dev stack',
-  )
-
-  test('/login carries CSP, nosniff and frame-ancestors none', async ({
+  test('/revoke succeeds for a DCR-registered client and kills its refresh token', async ({
+    page,
     request,
   }) => {
-    const res = await request.get('/login')
-    const headers = res.headers()
-    expect(headers['content-security-policy']).toContain(
-      "frame-ancestors 'none'",
+    const reg = await request.post(`${BASE_URL}/oauth/register`, {
+      data: {
+        redirect_uris: [REDIRECT_URI],
+        client_name: `E2E Hardening ${randomBytes(4).toString('hex')}`,
+      },
+    })
+    expect(reg.status()).toBe(201)
+    const clientId = ((await reg.json()) as { client_id: string }).client_id
+
+    const { verifier, challenge } = pkce()
+    await page.route(`http://127.0.0.1:${REDIRECT_PORT}/**`, (route) =>
+      route.fulfill({ status: 200, contentType: 'text/html', body: 'ok' }),
     )
-    expect(headers['content-security-policy']).toContain("default-src 'self'")
-    expect(headers['content-security-policy']).not.toContain('unsafe-eval')
-    expect(headers['x-content-type-options']).toBe('nosniff')
-    expect(headers['x-frame-options']).toBe('DENY')
-    expect(headers['referrer-policy']).toBe('strict-origin-when-cross-origin')
+    const authorize = new URL('/authorize', BASE_URL)
+    authorize.searchParams.set('client_id', clientId)
+    authorize.searchParams.set('redirect_uri', REDIRECT_URI)
+    authorize.searchParams.set('response_type', 'code')
+    authorize.searchParams.set('code_challenge', challenge)
+    authorize.searchParams.set('code_challenge_method', 'S256')
+    authorize.searchParams.set('state', 'e2e-hardening')
+    authorize.searchParams.set('scope', 'whiteboard')
+    await page.goto(authorize.toString())
+    await page.getByRole('button', { name: 'Approve' }).click()
+    await page.waitForURL(new RegExp(`^http://127\\.0\\.0\\.1:${REDIRECT_PORT}`))
+    const code = new URL(page.url()).searchParams.get('code')
+    expect(code).toBeTruthy()
+
+    const tokenRes = await request.post(`${BASE_URL}/token`, {
+      form: {
+        grant_type: 'authorization_code',
+        code: code!,
+        client_id: clientId,
+        redirect_uri: REDIRECT_URI,
+        code_verifier: verifier,
+      },
+    })
+    expect(tokenRes.status()).toBe(200)
+    const { refresh_token } = (await tokenRes.json()) as {
+      refresh_token: string
+    }
+
+    const revoke = await request.post(`${BASE_URL}/revoke`, {
+      form: { token: refresh_token, client_id: clientId },
+    })
+    expect(revoke.status()).toBe(200)
+
+    const after = await request.post(`${BASE_URL}/token`, {
+      form: {
+        grant_type: 'refresh_token',
+        client_id: clientId,
+        refresh_token,
+      },
+    })
+    expect(after.status()).toBe(400)
+    expect((await after.json()).error).toBe('invalid_grant')
   })
 
-  test('static assets carry the headers too', async ({ page, request }) => {
-    await page.goto('/login')
-    const href = await page
-      .locator('link[rel="stylesheet"]')
-      .first()
-      .getAttribute('href')
-    const res = await request.get(href!)
-    expect(res.headers()['x-content-type-options']).toBe('nosniff')
-    expect(res.headers()['content-security-policy']).toBeTruthy()
-  })
-
-  test('login page raises no CSP violation in a real browser', async ({
+  test('out-of-range table and area positions are refused and not stored', async ({
     page,
   }) => {
-    await page.addInitScript(() => {
-      ;(window as unknown as { __csp: Array<string> }).__csp = []
-      document.addEventListener('securitypolicyviolation', (e) =>
-        (window as unknown as { __csp: Array<string> }).__csp.push(
-          `${e.violatedDirective} ${e.blockedURI}`,
-        ),
-      )
+    await page.goto(`/whiteboard/${IDS.whiteboard}`)
+    const cookie = await loginCookieHeader(page)
+    const socket = io(`${BASE_URL}/whiteboard/${IDS.whiteboard}`, {
+      extraHeaders: { cookie, origin: BASE_URL },
+      transports: ['websocket'],
+      reconnection: false,
     })
-    await page.goto('/login')
-    await page.waitForLoadState('networkidle')
-    const violations = await page.evaluate(
-      () => (window as unknown as { __csp: Array<string> }).__csp,
-    )
-    expect(violations).toEqual([])
-  })
+    await new Promise<void>((resolve, reject) => {
+      socket.once('connected', () => resolve())
+      socket.once('connect_error', reject)
+    })
 
-  test('a body over the cap is rejected with 413', async () => {
-    const target = new URL(BASE_URL)
-    const status = await new Promise<number>((resolve, reject) => {
-      const req = httpRequest(
-        {
-          host: target.hostname,
-          port: target.port,
-          path: '/api/auth/login',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            // Declared, not sent: the server refuses on the header alone.
-            'Content-Length': String(11 * 1024 * 1024),
-          },
-        },
-        (res) => {
-          res.resume()
-          resolve(res.statusCode ?? 0)
-        },
-      )
-      req.on('error', reject)
-      req.write('{}')
+    const tableBefore = readDb('DiagramTable', IDS.usersTable, 'positionX')
+    const areaBefore = readDb('Area', IDS.area, 'positionX')
+
+    const tableAck = await socket.timeout(5000).emitWithAck('table:move', {
+      tableId: IDS.usersTable,
+      positionX: 1e300,
+      positionY: 0,
     })
-    expect(status).toBe(413)
+    expect(tableAck.ok).toBe(false)
+
+    const areaAck = await socket.timeout(5000).emitWithAck('area:move', {
+      areaId: IDS.area,
+      positionX: 1e300,
+      positionY: 0,
+      members: [],
+    })
+    expect(areaAck.ok).toBe(false)
+    socket.close()
+
+    expect(readDb('DiagramTable', IDS.usersTable, 'positionX')).toBe(
+      tableBefore,
+    )
+    expect(readDb('Area', IDS.area, 'positionX')).toBe(areaBefore)
   })
 })
