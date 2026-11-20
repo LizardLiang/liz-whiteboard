@@ -9,6 +9,28 @@ import {
 } from '@/lib/canvas-engine/scene'
 import { MAX_TEXT_RUNS } from '@/lib/canvas-engine/text-runs'
 
+/**
+ * Hard magnitude bound on any persisted flow coordinate (tech-spec §3, M7).
+ * `.finite()` alone accepts values like `1e300`; with `fitView` enabled
+ * (ReactFlowCanvas.tsx), a single shape persisted at an extreme coordinate
+ * forces every collaborator's viewport to zoom out until the board is
+ * unusable — a board-wide DoS reachable from one ordinary payload. 1e7 flow
+ * units is ~10,000 screens wide at 1:1 — far past any real board.
+ *
+ * Applied to every position, offset and routing-point field in this file
+ * (same bound as table:move in src/lib/socket-payload.ts).
+ */
+export const MAX_BOARD_COORD = 10_000_000
+
+/** Bound on any persisted width/height (same 100_000 the shape schemas use). */
+export const MAX_BOARD_SIZE = 100_000
+
+const boardCoordSchema = z
+  .number()
+  .finite()
+  .min(-MAX_BOARD_COORD)
+  .max(MAX_BOARD_COORD)
+
 // ============================================================================
 // JSON Sub-Schemas (for nested JSON fields)
 // ============================================================================
@@ -25,30 +47,48 @@ export const MAX_DESCRIPTION_LENGTH = 5000
 /** `limit` accepted by getRecentWhiteboards. */
 export const recentBoardsLimitSchema = z.number().int().min(1).max(100)
 
+/** Viewport offset = -position * zoom, so bounded by MAX_BOARD_COORD * max zoom (5). */
+const viewportOffsetSchema = z
+  .number()
+  .finite()
+  .min(-MAX_BOARD_COORD * 5)
+  .max(MAX_BOARD_COORD * 5)
+
 export const canvasStateSchema = z.object({
   zoom: z.number().min(0.1).max(5),
-  offsetX: z.number().finite(),
-  offsetY: z.number().finite(),
+  offsetX: viewportOffsetSchema,
+  offsetY: viewportOffsetSchema,
 })
+
+/**
+ * Cap on routing points per relationship. The UI never persists any (edge
+ * routes are computed on the fly by src/lib/react-flow/orthogonal-router.ts and
+ * routingPoints is always null). The longest path that router can return is a
+ * staircase across its search grid, which holds at most MAX_GRID_CELLS (160_000)
+ * cells, i.e. about 400 x 400, so at most ~800 bends. 1000 sits just above that.
+ */
+export const MAX_ROUTING_POINTS = 1000
 
 /**
  * Routing points for relationship arrows
  * Used in Relationship.routingPoints
  */
-export const routingPointsSchema = z.array(
-  z.object({
-    x: z.number().finite(),
-    y: z.number().finite(),
-  }),
-)
+export const routingPointsSchema = z
+  .array(
+    z.object({
+      x: boardCoordSchema,
+      y: boardCoordSchema,
+    }),
+  )
+  .max(MAX_ROUTING_POINTS)
 
 /**
  * Cursor position for collaboration
  * Used in CollaborationSession.cursor
  */
 export const cursorSchema = z.object({
-  x: z.number().finite(),
-  y: z.number().finite(),
+  x: boardCoordSchema,
+  y: boardCoordSchema,
 })
 
 // ============================================================================
@@ -192,10 +232,10 @@ export const createTableSchema = z.object({
   whiteboardId: z.string().uuid(),
   name: z.string().min(1).max(255),
   description: z.string().max(MAX_DESCRIPTION_LENGTH).optional(),
-  positionX: z.number().finite().optional(),
-  positionY: z.number().finite().optional(),
-  width: z.number().positive().optional(),
-  height: z.number().positive().optional(),
+  positionX: boardCoordSchema.optional(),
+  positionY: boardCoordSchema.optional(),
+  width: z.number().finite().positive().max(MAX_BOARD_SIZE).optional(),
+  height: z.number().finite().positive().max(MAX_BOARD_SIZE).optional(),
 })
 
 /**
@@ -302,10 +342,10 @@ export const createAreaSchema = z.object({
   whiteboardId: z.string().uuid(),
   name: z.string().min(1).max(255),
   color: areaColorSchema,
-  positionX: z.number().finite(),
-  positionY: z.number().finite(),
-  width: z.number().positive(),
-  height: z.number().positive(),
+  positionX: boardCoordSchema,
+  positionY: boardCoordSchema,
+  width: z.number().finite().positive().max(MAX_BOARD_SIZE),
+  height: z.number().finite().positive().max(MAX_BOARD_SIZE),
   memberTableIds: z.array(z.string().uuid()).max(1000).default([]),
 })
 
@@ -317,10 +357,10 @@ export const createAreaSchema = z.object({
 export const updateAreaSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   color: areaColorSchema.optional(),
-  positionX: z.number().finite().optional(),
-  positionY: z.number().finite().optional(),
-  width: z.number().positive().optional(),
-  height: z.number().positive().optional(),
+  positionX: boardCoordSchema.optional(),
+  positionY: boardCoordSchema.optional(),
+  width: z.number().finite().positive().max(MAX_BOARD_SIZE).optional(),
+  height: z.number().finite().positive().max(MAX_BOARD_SIZE).optional(),
   memberTableIds: z.array(z.string().uuid()).max(1000).optional(),
 })
 
@@ -353,8 +393,8 @@ export const createCommentSchema = z
     parentId: z.string().uuid().nullish(),
     targetType: commentTargetTypeSchema.optional(),
     targetTableId: z.string().uuid().optional(),
-    positionX: z.number().finite().optional(),
-    positionY: z.number().finite().optional(),
+    positionX: boardCoordSchema.optional(),
+    positionY: boardCoordSchema.optional(),
     body: z.string().min(1).max(2000),
   })
   .superRefine((data, ctx) => {
@@ -806,10 +846,10 @@ export type RedeemInvite = z.infer<typeof redeemInviteSchema>
 /** Position and size of one area, as written by Auto Layout. */
 export const areaBoundsSchema = z.object({
   id: z.string().uuid(),
-  positionX: z.number().finite(),
-  positionY: z.number().finite(),
-  width: z.number().finite().positive(),
-  height: z.number().finite().positive(),
+  positionX: boardCoordSchema,
+  positionY: boardCoordSchema,
+  width: z.number().finite().positive().max(MAX_BOARD_SIZE),
+  height: z.number().finite().positive().max(MAX_BOARD_SIZE),
 })
 
 export type AreaBounds = z.infer<typeof areaBoundsSchema>
@@ -827,8 +867,8 @@ export const bulkUpdatePositionsSchema = z.object({
     .array(
       z.object({
         id: z.string().uuid(),
-        positionX: z.number().finite(),
-        positionY: z.number().finite(),
+        positionX: boardCoordSchema,
+        positionY: boardCoordSchema,
       }),
     )
     .min(1)
@@ -859,8 +899,8 @@ export const tableMoveBulkBroadcastSchema = z.object({
     .array(
       z.object({
         tableId: z.string().uuid(),
-        positionX: z.number().finite(),
-        positionY: z.number().finite(),
+        positionX: boardCoordSchema,
+        positionY: boardCoordSchema,
       }),
     )
     .min(1)
@@ -886,14 +926,14 @@ export type TableMoveBulkBroadcast = z.infer<
  */
 export const areaMoveBroadcastSchema = z.object({
   areaId: z.string().uuid(),
-  positionX: z.number().finite(),
-  positionY: z.number().finite(),
+  positionX: boardCoordSchema,
+  positionY: boardCoordSchema,
   members: z
     .array(
       z.object({
         tableId: z.string().uuid(),
-        positionX: z.number().finite(),
-        positionY: z.number().finite(),
+        positionX: boardCoordSchema,
+        positionY: boardCoordSchema,
       }),
     )
     .max(500),
@@ -931,28 +971,9 @@ export type AreaMoveBroadcast = z.infer<typeof areaMoveBroadcastSchema>
 // Shape / Connector Schemas (Phase 1 — shapes and connectors)
 // ============================================================================
 
-/**
- * Hard magnitude bound on any persisted flow coordinate (tech-spec §3, M7).
- * `.finite()` alone accepts values like `1e300`; with `fitView` enabled
- * (ReactFlowCanvas.tsx), a single shape persisted at an extreme coordinate
- * forces every collaborator's viewport to zoom out until the board is
- * unusable — a board-wide DoS reachable from one ordinary payload. 1e7 flow
- * units is ~10,000 screens wide at 1:1 — far past any real board.
- *
- * This is a deliberate tightening for the NEW shape/connector entities, not
- * an existing repo convention — every pre-existing coordinate schema in this
- * file uses bare `.finite()`. Retrofitting those is out of Phase 1 scope.
- */
-export const MAX_BOARD_COORD = 10_000_000
-
 /** FR-038's text cap for a shape's label, enforced here and as `<textarea maxLength>`. */
 export const SHAPE_LABEL_MAX_LENGTH = 500
 
-const boardCoordSchema = z
-  .number()
-  .finite()
-  .min(-MAX_BOARD_COORD)
-  .max(MAX_BOARD_COORD)
 
 /**
  * A 1|2|4 stroke width — a fixed set, not a free number, per tech-spec §3.
