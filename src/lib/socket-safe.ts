@@ -8,7 +8,10 @@
 //
 // guardSocketHandlers wraps socket.on once per socket so that every listener
 // gets (a) a function-or-undefined ack and (b) a catch-all that logs and acks
-// an error. One wrapper keeps the ~40 handlers' own logic untouched.
+// an error, and (c) a per-socket rate limit (src/lib/socket-rate-limit.ts). One
+// wrapper keeps the ~40 handlers' own logic untouched.
+
+import { createSocketEventLimiter } from '@/lib/socket-rate-limit'
 
 const UNGUARDED_EVENTS = new Set(['disconnect', 'disconnecting', 'error'])
 const GUARDED = Symbol.for('liz.socketGuarded')
@@ -31,6 +34,7 @@ export function guardSocketHandlers(socket: any): void {
   if (target[GUARDED]) return
   target[GUARDED] = true
   const originalOn = target.on.bind(target)
+  const allow = createSocketEventLimiter()
 
   target.on = (event: string, listener: (...args: Array<any>) => any) => {
     if (UNGUARDED_EVENTS.has(event)) return originalOn(event, listener)
@@ -44,6 +48,22 @@ export function guardSocketHandlers(socket: any): void {
         typeof args[args.length - 1] === 'function'
           ? (args[args.length - 1] as (res: unknown) => void)
           : undefined
+      const verdict = allow(event)
+      if (!verdict.ok) {
+        if (verdict.sample) {
+          console.warn(`[socket] rate limit: refused '${event}' (sampled)`)
+        }
+        try {
+          ack?.({
+            ok: false,
+            code: 'RATE_LIMITED',
+            message: 'Too many requests, slow down',
+          })
+        } catch {
+          // the client's ack itself failed; nothing more to do
+        }
+        return
+      }
       try {
         await listener(...safeArgs)
       } catch (error) {

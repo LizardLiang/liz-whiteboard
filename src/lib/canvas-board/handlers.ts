@@ -51,6 +51,7 @@ import {
   guardSocketHandlers,
   safeConnectionHandler,
 } from '@/lib/socket-safe'
+import { admitUserConnection, refuseConnection } from '@/lib/socket-rate-limit'
 import {
   RevisionMismatchError,
   createCanvasElement,
@@ -712,6 +713,11 @@ export function setupCanvasNamespace(ioServer: SocketIOServer): void {
 
       if (!userId) {
         socket.disconnect(true)
+        return
+      }
+
+      if (!admitUserConnection(socket, userId)) {
+        refuseConnection(socket, userId)
         return
       }
 

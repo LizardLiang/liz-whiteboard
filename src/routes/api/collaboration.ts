@@ -111,6 +111,7 @@ import {
   guardSocketHandlers,
   safeConnectionHandler,
 } from '@/lib/socket-safe'
+import { admitUserConnection, refuseConnection } from '@/lib/socket-rate-limit'
 import { db } from '@/db'
 import {
   createEventLimiter,
@@ -362,6 +363,11 @@ function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
 
       if (!userId) {
         socket.disconnect(true)
+        return
+      }
+
+      if (!admitUserConnection(socket, userId)) {
+        refuseConnection(socket, userId)
         return
       }
 
