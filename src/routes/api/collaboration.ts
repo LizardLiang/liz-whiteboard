@@ -2584,10 +2584,11 @@ export function setupCollaborationEventHandlers(
           try {
             await assertRelationshipEndpointsValid(mergedEndpoints)
           } catch (integrityError) {
-            const message =
-              integrityError instanceof Error
-                ? integrityError.message
-                : 'Referential integrity violation'
+            console.error('relationship:update integrity check failed:', integrityError)
+            const message = clientErrorMessage(
+              integrityError,
+              'Referential integrity violation',
+            )
             socket.emit('error', {
               event: 'relationship:update',
               error: 'VALIDATION_ERROR',
