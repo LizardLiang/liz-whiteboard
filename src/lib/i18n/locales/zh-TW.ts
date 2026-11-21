@@ -43,6 +43,8 @@ export const zhTW: DeepStringRecord<Dictionary> = {
       register: '註冊',
       emptyFields: '請輸入電子郵件和密碼。',
       noscript: '登入需要啟用 JavaScript。',
+      challengeRequired: '失敗次數過多。請完成下方驗證後再登入。',
+      challengeNotConfigured: '尚未設定驗證功能，請聯絡管理員。',
     },
     register: {
       subtitle: '建立您的帳號',

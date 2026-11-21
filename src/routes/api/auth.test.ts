@@ -23,7 +23,7 @@ import {
 } from 'vitest'
 
 import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
-import { db, toDbDate } from '@/db'
+import { db } from '@/db'
 import { findUserByEmail } from '@/data/user'
 import { findProjectById } from '@/data/project'
 import { deleteAuthSession } from '@/data/session'
@@ -40,7 +40,10 @@ import {
 } from '@/lib/auth/cookies'
 import { insertRegisteredUser } from '@/lib/auth/register-user'
 import { checkCredentials } from '@/lib/auth/login-flow'
-import { _resetLoginFailuresForTests } from '@/lib/auth/rate-limit'
+import {
+  _resetLoginFailuresForTests,
+  isLoginChallengeRequired,
+} from '@/lib/auth/rate-limit'
 import { makeProject, makeUser, resetDb } from '@/test/db-helpers'
 
 const GENERIC_AUTH_ERROR = 'Invalid email or password'
@@ -95,7 +98,7 @@ async function loginUserHandler(data: {
     ip: '1.1.1.1',
   })
   if (!result.ok) {
-    if (result.reason === 'challenge') {
+    if (result.reason === 'challenge' || isLoginChallengeRequired(data.email)) {
       return {
         success: false,
         error: 'CHALLENGE_REQUIRED',
@@ -377,9 +380,13 @@ describe('loginUser', () => {
       passwordHash: VALID_HASH,
     })
     for (const email of ['alice@example.com', 'ghost@example.com']) {
-      for (let i = 0; i < 5; i++) {
-        await loginUserHandler({ email, password: 'bad', rememberMe: false })
+      for (let i = 0; i < 4; i++) {
+        const r = await loginUserHandler({ email, password: 'bad', rememberMe: false })
+        expect(r.error).toBe('AUTH_FAILED')
       }
+      // The 5th failure already answers with the challenge, for both emails.
+      const fifth = await loginUserHandler({ email, password: 'bad', rememberMe: false })
+      expect(fifth.error).toBe('CHALLENGE_REQUIRED')
     }
 
     const real = await loginUserHandler({

@@ -13,9 +13,9 @@ import {
 } from './auth-limits'
 import { hashPassword } from './password'
 import * as passwordMod from './password'
+import { _resetLoginFailuresForTests } from './rate-limit'
 import { db } from '@/db'
 import { loginInputSchema, registerInputSchema } from '@/data/schema'
-import { _resetLoginFailuresForTests } from './rate-limit'
 import { makeUser, resetDb } from '@/test/db-helpers'
 
 const PASSWORD = 'correctPassword123'
@@ -31,7 +31,7 @@ beforeEach(() => {
 })
 
 vi.mock('./turnstile', () => ({
-  verifyTurnstile: vi.fn(async (token: string | null | undefined) => token === 'good-token'),
+  verifyTurnstile: vi.fn((token: string | null | undefined) => Promise.resolve(token === 'good-token')),
 }))
 
 const CHALLENGE = { turnstileToken: undefined, ip: '1.1.1.1' }

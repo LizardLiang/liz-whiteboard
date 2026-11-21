@@ -42,6 +42,8 @@ export const en = {
       register: 'Register',
       emptyFields: 'Enter your email and password.',
       noscript: 'JavaScript is required to sign in.',
+      challengeRequired: 'Too many failed attempts. Complete the check below, then sign in again.',
+      challengeNotConfigured: 'Verification is not set up. Contact the administrator.',
     },
     register: {
       subtitle: 'Create your account',

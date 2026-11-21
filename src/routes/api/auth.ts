@@ -109,6 +109,7 @@ export const loginUser = createServerFn({ method: 'POST' })
     const { createUserSession } = await import('@/lib/auth/session')
     const { buildSetCookieHeader } = await import('@/lib/auth/cookies')
     const { checkCredentials } = await import('@/lib/auth/login-flow')
+    const { isLoginChallengeRequired } = await import('@/lib/auth/rate-limit')
     const { checkLoginIpRateLimit } = await import('@/lib/auth/auth-limits')
     const { extractClientIp } = await import('@/lib/rate-limit')
 
@@ -133,7 +134,13 @@ export const loginUser = createServerFn({ method: 'POST' })
       ip,
     })
     if (!result.ok) {
-      if (result.reason === 'challenge') {
+      // The failure that reaches the threshold already answers CHALLENGE_REQUIRED
+      // so the form shows the widget at once. The counter covers every email,
+      // so this reply is identical for registered and unknown emails.
+      if (
+        result.reason === 'challenge' ||
+        isLoginChallengeRequired(data.email)
+      ) {
         return {
           success: false,
           error: AUTH_ERROR_CODES.CHALLENGE_REQUIRED,

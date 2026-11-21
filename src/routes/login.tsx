@@ -4,7 +4,10 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 import { z } from 'zod'
-import { loginUser } from './api/auth'
+import { getTurnstileSiteKey, loginUser } from './api/auth'
+import type { TurnstileWidgetHandle } from '@/components/auth/TurnstileWidget'
+import { TurnstileWidget } from '@/components/auth/TurnstileWidget'
+import { AUTH_ERROR_CODES } from '@/lib/auth/errors'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -28,11 +31,17 @@ const searchSchema = z.object({
 
 export const Route = createFileRoute('/login')({
   validateSearch: searchSchema,
+  loader: async () => {
+    const { siteKey } = await getTurnstileSiteKey()
+    return { siteKey }
+  },
   component: LoginPage,
 })
 
 function LoginPage() {
   const t = useT()
+  const { siteKey } = Route.useLoaderData()
+  const widgetRef = useRef<TurnstileWidgetHandle>(null)
   const { redirect: rawRedirect, reset } = Route.useSearch()
   // S1: reject any redirect that isn't same-origin-relative (blocks
   // "//evil.com" and "/\evil.com" open-redirect payloads) before it's ever
@@ -50,6 +59,9 @@ function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // Set once the server answers CHALLENGE_REQUIRED (5 failures for the email).
+  const [challengeRequired, setChallengeRequired] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   // False in the server-rendered HTML and until React hydrates. A submit in
   // that window has no onSubmit handler, so the browser would run the form's
   // native submit and reload /login — the user had to log in twice.
@@ -85,6 +97,8 @@ function LoginPage() {
       return
     }
 
+    if (challengeRequired && !turnstileToken) return
+
     // Keep the controlled inputs in step with what we actually submitted.
     if (submittedEmail !== email) setEmail(submittedEmail)
     if (submittedPassword !== password) setPassword(submittedPassword)
@@ -98,6 +112,7 @@ function LoginPage() {
           email: submittedEmail,
           password: submittedPassword,
           rememberMe,
+          ...(challengeRequired && turnstileToken ? { turnstileToken } : {}),
         },
       })
 
@@ -110,7 +125,15 @@ function LoginPage() {
         // /authorize additionally needs this so its server-only GET handler runs.
         const target = redirect || '/'
         window.location.assign(target)
+      } else if (result.error === AUTH_ERROR_CODES.CHALLENGE_REQUIRED) {
+        // A Turnstile token is single-use: always fetch a fresh one.
+        widgetRef.current?.reset()
+        setTurnstileToken(null)
+        setChallengeRequired(true)
+        setError(t('auth.login.challengeRequired'))
       } else {
+        widgetRef.current?.reset()
+        setTurnstileToken(null)
         setError(tError(t, result))
       }
     } catch {
@@ -214,6 +237,24 @@ function LoginPage() {
             </p>
           </div>
 
+          {challengeRequired && (
+            <div className="mb-4" data-testid="login-challenge">
+              {siteKey ? (
+                <TurnstileWidget
+                  ref={widgetRef}
+                  siteKey={siteKey}
+                  onVerify={setTurnstileToken}
+                  onExpire={() => setTurnstileToken(null)}
+                  onError={() => setTurnstileToken(null)}
+                />
+              ) : (
+                <p className="text-xs text-destructive">
+                  {t('auth.login.challengeNotConfigured')}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Remember me */}
           <div className="mb-6 flex items-center gap-2">
             <Switch
@@ -238,7 +279,11 @@ function LoginPage() {
           <Button
             type="submit"
             className="w-full"
-            disabled={isSubmitting || !hydrated}
+            disabled={
+              isSubmitting ||
+              !hydrated ||
+              (challengeRequired && !turnstileToken)
+            }
           >
             {isSubmitting ? t('auth.login.submitting') : t('auth.login.submit')}
           </Button>
