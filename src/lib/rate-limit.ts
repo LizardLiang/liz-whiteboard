@@ -158,6 +158,13 @@ interface RateLimitEntry {
 export interface RateLimiter {
   /** Returns true if `ip` is within the configured limit, false if it exceeds it. */
   check: (ip: string) => boolean
+  /**
+   * Current count for `ip` in its live window, without counting a request.
+   * A key that lives in the overflow shards reports its shard's count.
+   */
+  peek: (ip: string) => number
+  /** Forgets `ip` so its next check() starts a new window. */
+  clear: (ip: string) => void
   /** Clears all tracked windows. For tests only. */
   reset: () => void
   /** Number of tracked keys. For tests only. */
@@ -267,6 +274,20 @@ export function createFixedWindowRateLimiter(opts: {
       entry.count += 1
       map.set(key, entry)
       return entry.count <= opts.max
+    },
+    peek(rawKey: string): number {
+      const key = normalizeRateLimitKey(rawKey)
+      const now = Date.now()
+      const entry = map.get(key)
+      if (entry) {
+        return now - entry.windowStart >= opts.windowMs ? 0 : entry.count
+      }
+      if (map.size < maxKeys) return 0
+      const shard = shards[overflowShardIndex(key)]
+      return shard && now - shard.windowStart < opts.windowMs ? shard.count : 0
+    },
+    clear(rawKey: string): void {
+      map.delete(normalizeRateLimitKey(rawKey))
     },
     reset(): void {
       map.clear()

@@ -560,6 +560,9 @@ export const loginInputSchema = z.object({
   email: z.string().trim().toLowerCase().email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
   rememberMe: z.boolean().default(false),
+  // Cloudflare Turnstile token; required by the server only once the email has
+  // failed 5 logins (see src/lib/auth/login-flow.ts).
+  turnstileToken: z.string().min(1).optional(),
 })
 
 // ============================================================================

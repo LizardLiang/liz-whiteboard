@@ -40,6 +40,7 @@ import {
 } from '@/lib/auth/cookies'
 import { insertRegisteredUser } from '@/lib/auth/register-user'
 import { checkCredentials } from '@/lib/auth/login-flow'
+import { _resetLoginFailuresForTests } from '@/lib/auth/rate-limit'
 import { makeProject, makeUser, resetDb } from '@/test/db-helpers'
 
 const GENERIC_AUTH_ERROR = 'Invalid email or password'
@@ -87,9 +88,20 @@ async function loginUserHandler(data: {
   email: string
   password: string
   rememberMe: boolean
+  turnstileToken?: string
 }) {
-  const result = await checkCredentials(data.email, data.password)
+  const result = await checkCredentials(data.email, data.password, {
+    turnstileToken: data.turnstileToken,
+    ip: '1.1.1.1',
+  })
   if (!result.ok) {
+    if (result.reason === 'challenge') {
+      return {
+        success: false,
+        error: 'CHALLENGE_REQUIRED',
+        message: GENERIC_AUTH_ERROR,
+      }
+    }
     return {
       success: false,
       error: 'AUTH_FAILED',
@@ -162,6 +174,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   resetDb()
+  _resetLoginFailuresForTests()
   vi.clearAllMocks()
 })
 
@@ -325,8 +338,8 @@ describe('loginUser', () => {
     expect(cookieValue).not.toContain('Secure')
   })
 
-  // TC-P3-09: wrong password returns a generic error and records a failed attempt
-  it('TC-P3-09: wrong password returns generic error and increments failed attempts', async () => {
+  // TC-P3-09: wrong password returns a generic error and no session
+  it('TC-P3-09: wrong password returns generic error', async () => {
     const user = makeUser({
       email: 'alice@example.com',
       passwordHash: VALID_HASH,
@@ -342,10 +355,6 @@ describe('loginUser', () => {
     expect(result.message).toBe(GENERIC_AUTH_ERROR)
     expect(setResponseHeader).not.toHaveBeenCalled()
     expect(countSessionsForUser(user.id)).toBe(0)
-
-    // Real effect of recordFailedLogin: the counter was bumped on the user row.
-    const updated = await findUserByEmail('alice@example.com')
-    expect(updated!.failedLoginAttempts).toBe(1)
   })
 
   // TC-P3-10: non-existent email returns generic error; nothing recorded/created
@@ -361,26 +370,32 @@ describe('loginUser', () => {
     expect(setResponseHeader).not.toHaveBeenCalled()
   })
 
-  // TC-P3-11: locked account returns lockout message without creating a session
-  it('TC-P3-11: locked account returns the generic failure (no LOCKED oracle), no session created', async () => {
+  // TC-P3-11: after 5 failures the challenge replaces the lock
+  it('TC-P3-11: 5 failures require the challenge, same reply for a registered and an unknown email', async () => {
     const user = makeUser({
       email: 'alice@example.com',
       passwordHash: VALID_HASH,
     })
-    // Lock the account: 5 failed attempts + future lockedUntil.
-    db.prepare(
-      'UPDATE "User" SET "failedLoginAttempts" = 5, "lockedUntil" = ? WHERE "id" = ?',
-    ).run(toDbDate(new Date(Date.now() + 900_000)), user.id)
+    for (const email of ['alice@example.com', 'ghost@example.com']) {
+      for (let i = 0; i < 5; i++) {
+        await loginUserHandler({ email, password: 'bad', rememberMe: false })
+      }
+    }
 
-    const result = await loginUserHandler({
-      // Even the correct password must be rejected while locked.
+    const real = await loginUserHandler({
+      // Even the correct password is refused without a Turnstile token.
       email: 'alice@example.com',
       password: VALID_PASSWORD,
       rememberMe: false,
     })
+    const ghost = await loginUserHandler({
+      email: 'ghost@example.com',
+      password: VALID_PASSWORD,
+      rememberMe: false,
+    })
 
-    expect(result.error).toBe('AUTH_FAILED')
-    expect(result.message).toBe(GENERIC_AUTH_ERROR)
+    expect(real).toEqual(ghost)
+    expect(real.error).toBe('CHALLENGE_REQUIRED')
     expect(countSessionsForUser(user.id)).toBe(0)
     expect(setResponseHeader).not.toHaveBeenCalled()
   })

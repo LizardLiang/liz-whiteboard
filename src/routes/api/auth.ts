@@ -96,7 +96,8 @@ export const registerUser = createServerFn({ method: 'POST' })
 /**
  * Login with email and password.
  * Generic error on any failure (anti-enumeration).
- * Account lockout after 5 failed attempts.
+ * After 5 failed attempts for an email (registered or not), login needs a
+ * Turnstile pass: the CHALLENGE_REQUIRED reply is identical for every email.
  *
  * @requires unauthenticated
  */
@@ -124,12 +125,20 @@ export const loginUser = createServerFn({ method: 'POST' })
       }
     }
 
-    // Unknown email, wrong password and locked account all return the same
-    // generic failure (no account-state oracle for unauthenticated callers).
-    const result = await checkCredentials(data.email, data.password)
+    // Unknown email and wrong password return the same generic failure; a
+    // missing or bad Turnstile token returns CHALLENGE_REQUIRED (same for every
+    // email). Neither is an account-state oracle for unauthenticated callers.
+    const result = await checkCredentials(data.email, data.password, {
+      turnstileToken: data.turnstileToken,
+      ip,
+    })
     if (!result.ok) {
-      if (result.reason === 'locked') {
-        console.warn('[auth] Login refused: account locked')
+      if (result.reason === 'challenge') {
+        return {
+          success: false,
+          error: AUTH_ERROR_CODES.CHALLENGE_REQUIRED,
+          message: GENERIC_AUTH_ERROR,
+        }
       }
       return {
         success: false,
@@ -139,7 +148,7 @@ export const loginUser = createServerFn({ method: 'POST' })
     }
     const user = { id: result.userId }
 
-    // Success: create session, set cookie (lockout already cleared)
+    // Success: create session, set cookie (failure counter already cleared)
     const { token } = await createUserSession(user.id, data.rememberMe)
 
     setResponseHeader(
