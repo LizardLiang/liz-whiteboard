@@ -573,6 +573,8 @@ CREATE TABLE IF NOT EXISTS "ProjectEmailInvite" (
 CREATE UNIQUE INDEX IF NOT EXISTS "ProjectEmailInvite_tokenHash_key" ON "ProjectEmailInvite"("tokenHash");
 CREATE INDEX IF NOT EXISTS "ProjectEmailInvite_projectId_email_idx" ON "ProjectEmailInvite"("projectId", "email");
 CREATE INDEX IF NOT EXISTS "ProjectEmailInvite_expiresAt_idx" ON "ProjectEmailInvite"("expiresAt");
+CREATE INDEX IF NOT EXISTS "ProjectEmailInvite_email_createdAt_idx" ON "ProjectEmailInvite"("email", "createdAt");
+CREATE INDEX IF NOT EXISTS "ProjectEmailInvite_invitedByUserId_createdAt_idx" ON "ProjectEmailInvite"("invitedByUserId", "createdAt");
 
 -- Tombstones for ids a client may choose (RetiredId). A create can name its own
 -- id, so a deleted row's id must not be claimable from another whiteboard: a

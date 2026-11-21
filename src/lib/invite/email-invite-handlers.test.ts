@@ -13,6 +13,7 @@ import {
 } from './email-invite-handlers'
 import type { AuthContext } from '@/lib/auth/middleware'
 import { findEffectiveRole, upsertProjectMember } from '@/data/permission'
+import { createEmailInvite } from '@/data/project-email-invite'
 import { db } from '@/db'
 import { makeProject, makeUser, resetDb } from '@/test/db-helpers'
 
@@ -53,6 +54,30 @@ const grant = (
   role: 'VIEWER' | 'EDITOR' | 'ADMIN',
   c = asAdmin(),
 ) => grantPermissionHandler(c, { projectId, email, role })
+
+/** Move every invite row back in time so the send cooldown no longer applies. */
+function age(ms: number) {
+  db.prepare(
+    'UPDATE "ProjectEmailInvite" SET "createdAt" = "createdAt" - ?',
+  ).run(ms)
+}
+
+const MIN = 60_000
+
+function seedRows(
+  n: number,
+  over: { email?: (i: number) => string; by?: string; projectId?: string },
+) {
+  for (let i = 0; i < n; i++) {
+    createEmailInvite({
+      projectId: over.projectId ?? projectId,
+      email: over.email ? over.email(i) : `seed${i}@example.com`,
+      role: 'VIEWER',
+      tokenHash: `seed-${Math.random()}`,
+      invitedByUserId: over.by ?? admin.id,
+    })
+  }
+}
 
 function sentToken(call = 0): string {
   const text = sendEmail.mock.calls[call][0].text as string
@@ -144,6 +169,7 @@ describe('grantPermission by email', () => {
 
   it('voids the older pending invite of the same address', async () => {
     await grant('nobody@example.com', 'VIEWER')
+    age(11 * MIN)
     await grant('nobody@example.com', 'EDITOR')
     const target = makeUser({ email: 'nobody@example.com' })
     const old = await acceptEmailInviteHandler(
@@ -156,6 +182,100 @@ describe('grantPermission by email', () => {
       { token: sentToken(1) },
     )
     expect(fresh).toMatchObject({ success: true, role: 'EDITOR' })
+  })
+})
+
+describe('send limits', () => {
+  it('inside the (project, address) cooldown the reply is the same and nothing is sent', async () => {
+    const first = await grant('nobody@example.com', 'VIEWER')
+    const again = await grant('nobody@example.com', 'EDITOR')
+    expect(again).toEqual(first)
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+    expect(
+      Number(
+        (
+          db
+            .prepare('SELECT count(*) AS c FROM "ProjectEmailInvite"')
+            .get() as { c: number }
+        ).c,
+      ),
+    ).toBe(1)
+    age(11 * MIN)
+    await grant('nobody@example.com', 'EDITOR')
+    expect(sendEmail).toHaveBeenCalledTimes(2)
+  })
+
+  it('per inviter: 20 per hour', async () => {
+    seedRows(20, {})
+    const result = await grant('fresh@example.com', 'VIEWER')
+    expect(result).toMatchObject({ error: 'RATE_LIMITED', status: 429 })
+    expect(sendEmail).not.toHaveBeenCalled()
+  })
+
+  it('per inviter: 100 per 24 hours, counting voided and accepted rows', async () => {
+    seedRows(100, {})
+    db.prepare(
+      'UPDATE "ProjectEmailInvite" SET "createdAt" = "createdAt" - ?, "revokedAt" = 1',
+    ).run(2 * 60 * MIN)
+    const result = await grant('fresh@example.com', 'VIEWER')
+    expect(result).toMatchObject({ error: 'RATE_LIMITED' })
+  })
+
+  it('per inviter: other inviters are not affected', async () => {
+    seedRows(20, {})
+    const other = makeUser({ email: 'o2@example.com', username: 'o2' })
+    await upsertProjectMember({ projectId, userId: other.id, role: 'ADMIN' })
+    const result = await grant(
+      'fresh@example.com',
+      'VIEWER',
+      ctx({ id: other.id, email: 'o2@example.com' }),
+    )
+    expect(result).toEqual({ success: true, invited: true })
+  })
+
+  it('per recipient: 3 per hour across projects and inviters', async () => {
+    for (let i = 0; i < 3; i++) {
+      const p = makeProject({ ownerId: owner.id }).id
+      seedRows(1, {
+        projectId: p,
+        by: owner.id,
+        email: () => 'victim@example.com',
+      })
+    }
+    const result = await grant('victim@example.com', 'VIEWER')
+    expect(result).toMatchObject({ error: 'RATE_LIMITED', status: 429 })
+    expect(result).toHaveProperty(
+      'message',
+      'Too many invites to this address recently.',
+    )
+    expect(sendEmail).not.toHaveBeenCalled()
+  })
+
+  it('per recipient: 10 per 24 hours', async () => {
+    for (let i = 0; i < 10; i++) {
+      const p = makeProject({ ownerId: owner.id }).id
+      seedRows(1, {
+        projectId: p,
+        by: owner.id,
+        email: () => 'victim@example.com',
+      })
+    }
+    age(2 * 60 * MIN)
+    const result = await grant('victim@example.com', 'VIEWER')
+    expect(result).toMatchObject({ error: 'RATE_LIMITED' })
+  })
+
+  it('the limit message is the same for a registered and an unregistered recipient', async () => {
+    makeUser({ email: 'known@example.com' })
+    for (const email of ['known@example.com', 'ghost@example.com']) {
+      for (let i = 0; i < 3; i++) {
+        const p = makeProject({ ownerId: owner.id }).id
+        seedRows(1, { projectId: p, by: owner.id, email: () => email })
+      }
+    }
+    const a = await grant('known@example.com', 'VIEWER')
+    const b = await grant('ghost@example.com', 'VIEWER')
+    expect(a).toEqual(b)
   })
 })
 
@@ -201,6 +321,7 @@ describe('accept', () => {
       await acceptEmailInviteHandler(c, { token: sentToken(0) }),
     ).toMatchObject({ success: false, error: 'EXPIRED' })
 
+    age(11 * MIN)
     await grant('known@example.com', 'EDITOR')
     const list = await listEmailInvitesHandler(asAdmin(), projectId)
     await revokeEmailInviteHandler(asAdmin(), {

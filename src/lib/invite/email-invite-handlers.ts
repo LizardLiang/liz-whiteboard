@@ -34,11 +34,11 @@ import {
   claimEmailInvite,
   classifyEmailInvite,
   countPendingEmailInvites,
-  createEmailInvite,
   findEmailInviteByTokenHash,
   findPendingEmailInvites,
   releaseEmailInvite,
   revokeEmailInvite,
+  tryCreateEmailInvite,
 } from '@/data/project-email-invite'
 import { generateInviteToken, hashInviteToken } from '@/lib/auth/invite-token'
 import { INVITE_DENIAL_MESSAGES } from '@/lib/invite/denial-reasons'
@@ -57,6 +57,10 @@ async function requestOrigin(): Promise<string | null> {
 
 function forbidden(message: string) {
   return { error: 'FORBIDDEN' as const, status: 403, message }
+}
+
+function rateLimited(message: string) {
+  return { error: 'RATE_LIMITED' as const, status: 429, message }
 }
 
 function deny(reason: InviteDenialReason) {
@@ -142,13 +146,26 @@ export async function grantPermissionHandler(
   }
 
   const rawToken = generateInviteToken()
-  createEmailInvite({
+  const created = tryCreateEmailInvite({
     projectId: data.projectId,
     email: data.email,
     role: data.role,
     tokenHash: hashInviteToken(rawToken),
     invitedByUserId: user.id,
   })
+  // Inside the (project, address) cooldown the reply is the same as for a
+  // send, so it cannot be told apart; nothing goes out.
+  if (created.status === 'cooldown') {
+    return { success: true as const, invited: true as const }
+  }
+  // These limits describe the inviter's own sending, or the volume sent to an
+  // address; neither says whether the address has an account.
+  if (created.status === 'inviter_limit') {
+    return rateLimited('Too many invites sent. Try again later.')
+  }
+  if (created.status === 'recipient_limit') {
+    return rateLimited('Too many invites to this address recently.')
+  }
 
   const baseUrl = resolveBaseUrl(await requestOrigin())
   if (!baseUrl) {
@@ -290,7 +307,10 @@ export async function previewEmailInviteHandler(
   if (!checked.ok) {
     return {
       valid: false as const,
-      reason: checked.denial.error,
+      reason:
+        checked.denial.error === 'FORBIDDEN'
+          ? ('INVALID' as const)
+          : checked.denial.error,
       message: checked.denial.message,
     }
   }
