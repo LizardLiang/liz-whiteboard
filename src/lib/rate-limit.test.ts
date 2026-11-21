@@ -72,16 +72,28 @@ describe('createFixedWindowRateLimiter', () => {
       expect(limiter.check('victim')).toBe(false)
     })
 
+    it('a key at count == max is not evicted by a 10,000+ new-key flood', () => {
+      const limiter = createFixedWindowRateLimiter({
+        max: 2,
+        windowMs: 60_000,
+      })
+      limiter.check('spent')
+      limiter.check('spent') // count 2 == max: budget used up
+      for (let i = 0; i < 10_500; i++) limiter.check(`flood-${i}`)
+      expect(limiter.check('spent')).toBe(false)
+    })
+
     it('a new legitimate key still gets its own window after under-limit keys fill the map', () => {
       const limiter = createFixedWindowRateLimiter({
-        max: 1,
+        max: 2,
         windowMs: 60_000,
       })
       for (let i = 0; i < 10_000; i++) limiter.check(`attacker-${i}`)
       expect(limiter.size()).toBe(10_000)
       expect(limiter.check('legit')).toBe(true)
       expect(limiter.size()).toBe(10_000)
-      // Its own window: the second hit counts against it, not a shared bucket.
+      // Its own window: hits count against it, not a shared bucket.
+      expect(limiter.check('legit')).toBe(true)
       expect(limiter.check('legit')).toBe(false)
       expect(limiter.check('legit-2')).toBe(true)
     })

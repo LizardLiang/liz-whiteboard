@@ -203,10 +203,10 @@ export function overflowShardIndex(key: string): number {
  * Memory is bounded: the map never holds more than `maxKeys` keys. Entries are
  * re-inserted on every touch, so Map order is least-recently-used first. For a
  * new key at the cap, a bounded scan from the LRU end deletes expired windows
- * and picks the first live entry that is not blocked (count <= max) as the
- * eviction candidate. A blocked entry is never evicted before its window ends,
- * so flooding new keys cannot flush a block. If no candidate exists (every
- * scanned entry is blocked), the key falls into one of 64 overflow shards that
+ * and picks the first live entry with count === 1 (and below max) as the
+ * eviction candidate. An entry with count >= 2 is never evicted before its
+ * window ends, so flooding new keys cannot reset a key that has spent budget. If no candidate exists (every
+ * scanned entry has count >= 2), the key falls into one of 64 overflow shards that
  * each apply the normal max/window; one shard's flood leaves the others usable.
  */
 export function createFixedWindowRateLimiter(opts: {
@@ -228,7 +228,7 @@ export function createFixedWindowRateLimiter(opts: {
       if (scanned++ >= EVICTION_SCAN_LIMIT) break
       if (now - entry.windowStart >= opts.windowMs) {
         map.delete(key)
-      } else if (candidate === null && entry.count <= opts.max) {
+      } else if (candidate === null && entry.count === 1 && opts.max > 1) {
         candidate = key
       }
     }
