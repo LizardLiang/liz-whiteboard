@@ -255,6 +255,7 @@ export const requestPasswordReset = createServerFn({ method: 'POST' })
     const { generateResetToken, hashResetToken } =
       await import('@/lib/auth/reset-token')
     const { sendEmail } = await import('@/lib/email/resend')
+    const { buildResetEmailHtml } = await import('@/lib/auth/escape-html')
 
     const { getRequestLocale } = await import('@/lib/i18n/server-locale')
     const { translate } = await import('@/lib/i18n/translate')
@@ -302,7 +303,11 @@ export const requestPasswordReset = createServerFn({ method: 'POST' })
             to: user.email,
             subject: translate(locale, 'email.resetSubject'),
             text: translate(locale, 'email.resetText', { link }),
-            html: `<p>${translate(locale, 'email.resetHtmlIntro')}</p><p><a href="${link}">${link}</a></p><p>${translate(locale, 'email.resetHtmlOutro')}</p>`,
+            html: buildResetEmailHtml({
+              intro: translate(locale, 'email.resetHtmlIntro'),
+              link,
+              outro: translate(locale, 'email.resetHtmlOutro'),
+            }),
           }).catch((err: unknown) => {
             console.error('[password-reset] sendEmail failed:', err)
           })
