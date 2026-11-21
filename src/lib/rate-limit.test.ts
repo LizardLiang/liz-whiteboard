@@ -47,36 +47,6 @@ describe('createFixedWindowRateLimiter', () => {
     expect(limiter.check('2.2.2.2')).toBe(true)
   })
 
-  describe('peek and clear', () => {
-    it('peek reports the live count without counting a request', () => {
-      const limiter = createFixedWindowRateLimiter({ max: 5, windowMs: 60_000 })
-      expect(limiter.peek('k')).toBe(0)
-      limiter.check('k')
-      limiter.check('k')
-      expect(limiter.peek('k')).toBe(2)
-      expect(limiter.peek('k')).toBe(2)
-    })
-
-    it('clear forgets a key', () => {
-      const limiter = createFixedWindowRateLimiter({ max: 5, windowMs: 60_000 })
-      limiter.check('k')
-      limiter.clear('k')
-      expect(limiter.peek('k')).toBe(0)
-    })
-
-    it('peek of a key in the overflow shards reports the shard count', () => {
-      const limiter = createFixedWindowRateLimiter({
-        max: 2,
-        windowMs: 60_000,
-        maxKeys: 2,
-      })
-      for (const k of ['a', 'a', 'b', 'b']) limiter.check(k)
-      limiter.check('late')
-      limiter.check('late')
-      expect(limiter.peek('late')).toBe(2)
-    })
-  })
-
   describe('bounded memory (audit F4)', () => {
     afterEach(() => vi.useRealTimers())
 

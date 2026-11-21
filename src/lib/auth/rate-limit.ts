@@ -6,41 +6,87 @@
 // login. After LOGIN_CHALLENGE_THRESHOLD failures inside the window, login
 // asks for a Turnstile pass instead. The counter lives in memory, is keyed by
 // the lower-cased email, and counts EVERY email (registered or not), so the
-// challenge never reveals whether an account exists. It is bounded by the
-// fixed-window limiter (key cap, eviction, overflow shards).
-
-import { createFixedWindowRateLimiter } from '@/lib/rate-limit'
+// challenge never reveals whether an account exists.
+//
+// It is its own structure, not the IP fixed-window limiter: the keys are
+// attacker-chosen emails, so the map must never evict a live entry (that would
+// let an attacker flood new emails to erase a victim's count). It holds at most
+// LOGIN_FAILURE_MAX_KEYS entries and deletes only expired ones. When the map
+// is full and an email is not tracked, recording is a no-op and the challenge
+// is required (fail closed).
 
 export const LOGIN_CHALLENGE_THRESHOLD = 5
 export const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
+export const LOGIN_FAILURE_MAX_KEYS = 10_000
 
-const failureCounter = createFixedWindowRateLimiter({
-  max: LOGIN_CHALLENGE_THRESHOLD,
-  windowMs: LOGIN_FAILURE_WINDOW_MS,
-})
+interface FailureEntry {
+  count: number
+  windowStart: number
+}
+
+const failures = new Map<string, FailureEntry>()
+
+/** Cap-time sweeps are throttled so a full map cannot force a scan per call. */
+const SWEEP_MIN_INTERVAL_MS = 1000
+let lastSweep = 0
 
 function failureKey(email: string): string {
   return email.trim().toLowerCase()
 }
 
-/** True once `email` has failed LOGIN_CHALLENGE_THRESHOLD logins in the window. */
+function isExpired(entry: FailureEntry, now: number): boolean {
+  return now - entry.windowStart >= LOGIN_FAILURE_WINDOW_MS
+}
+
+function sweepExpired(now: number): void {
+  lastSweep = now
+  for (const [key, entry] of failures) {
+    if (isExpired(entry, now)) failures.delete(key)
+  }
+}
+
+/**
+ * True once `email` has failed LOGIN_CHALLENGE_THRESHOLD logins in the window.
+ * Also true for an untracked email while the map is full.
+ */
 export function isLoginChallengeRequired(email: string): boolean {
-  return failureCounter.peek(failureKey(email)) >= LOGIN_CHALLENGE_THRESHOLD
+  const key = failureKey(email)
+  const now = Date.now()
+  const entry = failures.get(key)
+  if (entry && !isExpired(entry, now)) {
+    return entry.count >= LOGIN_CHALLENGE_THRESHOLD
+  }
+  if (failures.size < LOGIN_FAILURE_MAX_KEYS) return false
+  if (now - lastSweep >= SWEEP_MIN_INTERVAL_MS) sweepExpired(now)
+  return failures.size >= LOGIN_FAILURE_MAX_KEYS
 }
 
 /** Count one failed login for `email`, whether or not an account exists. */
 export function recordLoginFailure(email: string): void {
-  failureCounter.check(failureKey(email))
+  const key = failureKey(email)
+  const now = Date.now()
+  const entry = failures.get(key)
+  if (entry && !isExpired(entry, now)) {
+    entry.count += 1
+    return
+  }
+  if (failures.size >= LOGIN_FAILURE_MAX_KEYS) {
+    if (now - lastSweep >= SWEEP_MIN_INTERVAL_MS) sweepExpired(now)
+    else if (entry) failures.delete(key)
+    if (failures.size >= LOGIN_FAILURE_MAX_KEYS) return
+  }
+  failures.set(key, { count: 1, windowStart: now })
 }
 
 /** Forget the failures for `email` after a successful login. */
 export function clearLoginFailures(email: string): void {
-  failureCounter.clear(failureKey(email))
+  failures.delete(failureKey(email))
 }
 
 /** Empty the counter. For tests only. */
 export function _resetLoginFailuresForTests(): void {
-  failureCounter.reset()
+  failures.clear()
+  lastSweep = 0
 }
 
 const emailChains = new Map<string, Promise<unknown>>()
