@@ -488,7 +488,9 @@ describe('loginUser', () => {
     expect(real.error).toBe('CHALLENGE_REQUIRED')
     expect(countSessionsForUser(user.id)).toBe(0)
     expect(setResponseHeader).not.toHaveBeenCalled()
-  })
+    // 10 sequential real bcrypt (cost 12) verifies: about 2.5 s on an idle
+    // machine, past the 5 s default when the full suite runs in parallel.
+  }, 30_000)
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
