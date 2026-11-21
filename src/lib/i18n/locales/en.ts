@@ -42,8 +42,10 @@ export const en = {
       register: 'Register',
       emptyFields: 'Enter your email and password.',
       noscript: 'JavaScript is required to sign in.',
-      challengeRequired: 'Too many failed attempts. Complete the check below, then sign in again.',
-      challengeNotConfigured: 'Verification is not set up. Contact the administrator.',
+      challengeRequired:
+        'Too many failed attempts. Complete the check below, then sign in again.',
+      challengeNotConfigured:
+        'Verification is not set up. Contact the administrator.',
     },
     register: {
       subtitle: 'Create your account',
@@ -86,7 +88,8 @@ export const en = {
     checkEmail: {
       title: 'Check your email',
       body: 'If this email can be used to sign up, a link to finish creating your account is on its way. It expires in 24 hours.',
-      bodyWithEmail: 'We sent a message to {email}. Open the link in it to finish signing up. The link expires in 24 hours.',
+      bodyWithEmail:
+        'We sent a message to {email}. Open the link in it to finish signing up. The link expires in 24 hours.',
       resend: 'Resend email',
       resending: 'Sending...',
       resent: 'If that email can be used, a new message is on its way.',
@@ -371,11 +374,16 @@ export const en = {
     share: {
       title: 'Share Project',
       description: 'Manage who has access to this project and their roles.',
-      addPerson: 'Add a person',
+      addPerson: 'Invite a person by email',
       emailAria: 'Email address to add',
       selectRole: 'Select role',
-      adding: 'Adding...',
-      add: 'Add',
+      adding: 'Sending...',
+      add: 'Send invite',
+      inviteSent: 'Invite sent',
+      pendingInvites: 'Pending invites',
+      pendingInvitesAria: 'Pending email invites',
+      noPendingInvites: 'No pending invites.',
+      revokePendingAria: 'Revoke invite for {email}',
       addFailed: 'Failed to add user',
       currentAccess: 'Current access',
       membersAria: 'Project members',
@@ -486,6 +494,8 @@ export const en = {
     inviteNoLongerValid: 'This invite link is no longer valid.',
     inviteWrongAccount:
       'This invite was sent to a different email address. Log in with the invited address.',
+    tooManyInvitesSent: 'Too many invites sent. Try again later.',
+    tooManyInvitesToAddress: 'Too many invites to this address recently.',
     tooManyPendingInvites:
       'Too many pending invites. Revoke some before sending more.',
     shareInvalid: 'This shared link is invalid.',

@@ -33,6 +33,7 @@ import { Route as SettingsConnectionsRouteImport } from './routes/settings/conne
 import { Route as ShareTokenRouteImport } from './routes/share.$token'
 import { Route as SignupTokenRouteImport } from './routes/signup.$token'
 import { Route as WhiteboardWhiteboardIdRouteImport } from './routes/whiteboard/$whiteboardId'
+import { Route as InviteEmailTokenRouteImport } from './routes/invite.email.$token'
 import { Route as ProjectProjectIdIndexRouteImport } from './routes/project.$projectId.index'
 import { Route as RenderCanvasTokenRouteImport } from './routes/render.canvas.$token'
 import { Route as RenderWhiteboardTokenRouteImport } from './routes/render.whiteboard.$token'
@@ -158,6 +159,11 @@ const WhiteboardWhiteboardIdRoute = WhiteboardWhiteboardIdRouteImport.update({
   path: '/whiteboard/$whiteboardId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InviteEmailTokenRoute = InviteEmailTokenRouteImport.update({
+  id: '/invite/email/$token',
+  path: '/invite/email/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectProjectIdIndexRoute = ProjectProjectIdIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -205,6 +211,7 @@ export interface FileRoutesByFullPath {
   '/share/$token': typeof ShareTokenRoute
   '/signup/$token': typeof SignupTokenRoute
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
+  '/invite/email/$token': typeof InviteEmailTokenRoute
   '/render/canvas/$token': typeof RenderCanvasTokenRoute
   '/render/whiteboard/$token': typeof RenderWhiteboardTokenRoute
   '/project/$projectId/': typeof ProjectProjectIdIndexRoute
@@ -234,6 +241,7 @@ export interface FileRoutesByTo {
   '/share/$token': typeof ShareTokenRoute
   '/signup/$token': typeof SignupTokenRoute
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
+  '/invite/email/$token': typeof InviteEmailTokenRoute
   '/render/canvas/$token': typeof RenderCanvasTokenRoute
   '/render/whiteboard/$token': typeof RenderWhiteboardTokenRoute
   '/project/$projectId': typeof ProjectProjectIdIndexRoute
@@ -265,6 +273,7 @@ export interface FileRoutesById {
   '/share/$token': typeof ShareTokenRoute
   '/signup/$token': typeof SignupTokenRoute
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
+  '/invite/email/$token': typeof InviteEmailTokenRoute
   '/render/canvas/$token': typeof RenderCanvasTokenRoute
   '/render/whiteboard/$token': typeof RenderWhiteboardTokenRoute
   '/project/$projectId/': typeof ProjectProjectIdIndexRoute
@@ -297,6 +306,7 @@ export interface FileRouteTypes {
     | '/share/$token'
     | '/signup/$token'
     | '/whiteboard/$whiteboardId'
+    | '/invite/email/$token'
     | '/render/canvas/$token'
     | '/render/whiteboard/$token'
     | '/project/$projectId/'
@@ -326,6 +336,7 @@ export interface FileRouteTypes {
     | '/share/$token'
     | '/signup/$token'
     | '/whiteboard/$whiteboardId'
+    | '/invite/email/$token'
     | '/render/canvas/$token'
     | '/render/whiteboard/$token'
     | '/project/$projectId'
@@ -356,6 +367,7 @@ export interface FileRouteTypes {
     | '/share/$token'
     | '/signup/$token'
     | '/whiteboard/$whiteboardId'
+    | '/invite/email/$token'
     | '/render/canvas/$token'
     | '/render/whiteboard/$token'
     | '/project/$projectId/'
@@ -387,6 +399,7 @@ export interface RootRouteChildren {
   ShareTokenRoute: typeof ShareTokenRoute
   SignupTokenRoute: typeof SignupTokenRoute
   WhiteboardWhiteboardIdRoute: typeof WhiteboardWhiteboardIdRoute
+  InviteEmailTokenRoute: typeof InviteEmailTokenRoute
   RenderCanvasTokenRoute: typeof RenderCanvasTokenRoute
   RenderWhiteboardTokenRoute: typeof RenderWhiteboardTokenRoute
 }
@@ -561,6 +574,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WhiteboardWhiteboardIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/invite/email/$token': {
+      id: '/invite/email/$token'
+      path: '/invite/email/$token'
+      fullPath: '/invite/email/$token'
+      preLoaderRoute: typeof InviteEmailTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/project/$projectId/': {
       id: '/project/$projectId/'
       path: '/'
@@ -630,6 +650,7 @@ const rootRouteChildren: RootRouteChildren = {
   ShareTokenRoute: ShareTokenRoute,
   SignupTokenRoute: SignupTokenRoute,
   WhiteboardWhiteboardIdRoute: WhiteboardWhiteboardIdRoute,
+  InviteEmailTokenRoute: InviteEmailTokenRoute,
   RenderCanvasTokenRoute: RenderCanvasTokenRoute,
   RenderWhiteboardTokenRoute: RenderWhiteboardTokenRoute,
 }

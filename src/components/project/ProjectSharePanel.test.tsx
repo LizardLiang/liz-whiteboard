@@ -7,6 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { ProjectSharePanel } from './ProjectSharePanel'
 import type { ReactNode } from 'react'
 
@@ -26,6 +27,17 @@ import {
   revokeShareLink,
 } from '@/routes/api/share'
 import { getWhiteboardsByProject } from '@/routes/api/whiteboards'
+import {
+  listPendingEmailInvites,
+  revokeEmailInvite,
+} from '@/routes/api/email-invites'
+
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+
+vi.mock('@/routes/api/email-invites', () => ({
+  listPendingEmailInvites: vi.fn(),
+  revokeEmailInvite: vi.fn(),
+}))
 
 vi.mock('@/routes/api/permissions', () => ({
   listProjectPermissions: vi.fn(),
@@ -77,6 +89,7 @@ describe('ProjectSharePanel', () => {
     // hang.
     vi.mocked(getWhiteboardsByProject).mockResolvedValue([])
     vi.mocked(listShareLinks).mockResolvedValue({ links: [] })
+    vi.mocked(listPendingEmailInvites).mockResolvedValue({ invites: [] })
   })
 
   it('does not call listProjectPermissions while closed', () => {
@@ -145,11 +158,86 @@ describe('ProjectSharePanel', () => {
     const emailInput = await screen.findByLabelText(/email address to add/i)
     fireEvent.change(emailInput, { target: { value: 'new@example.com' } })
 
-    const addButton = await screen.findByRole('button', { name: /^add$/i })
+    const addButton = await screen.findByRole('button', {
+      name: /^send invite$/i,
+    })
     fireEvent.click(addButton)
 
     await waitFor(() => {
       expect(grantPermission).toHaveBeenCalled()
+    })
+  })
+
+  it('says "Invite sent" after a grant and shows no member add', async () => {
+    vi.mocked(listProjectPermissions).mockResolvedValue({
+      owner: null,
+      members: [],
+    })
+    vi.mocked(grantPermission).mockResolvedValue({
+      success: true,
+      invited: true,
+    } as any)
+
+    render(
+      <Wrapper>
+        <ProjectSharePanel
+          projectId="proj-1"
+          open={true}
+          onOpenChange={() => {}}
+        />
+      </Wrapper>,
+    )
+
+    fireEvent.change(await screen.findByLabelText(/email address to add/i), {
+      target: { value: 'new@example.com' },
+    })
+    fireEvent.click(
+      await screen.findByRole('button', { name: /^send invite$/i }),
+    )
+
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith('Invite sent')
+    })
+  })
+
+  it('lists pending email invites and revokes one', async () => {
+    vi.mocked(listProjectPermissions).mockResolvedValue({
+      owner: null,
+      members: [],
+    })
+    vi.mocked(listPendingEmailInvites).mockResolvedValue({
+      invites: [
+        {
+          id: 'inv-1',
+          email: 'pending@example.com',
+          role: 'EDITOR',
+          expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    } as any)
+    vi.mocked(revokeEmailInvite).mockResolvedValue({ success: true })
+
+    render(
+      <Wrapper>
+        <ProjectSharePanel
+          projectId="proj-1"
+          open={true}
+          onOpenChange={() => {}}
+        />
+      </Wrapper>,
+    )
+
+    expect(await screen.findByText('pending@example.com')).toBeTruthy()
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: /revoke invite for pending@example.com/i,
+      }),
+    )
+    await waitFor(() => {
+      expect(revokeEmailInvite).toHaveBeenCalledWith({
+        data: { projectId: 'proj-1', inviteId: 'inv-1' },
+      })
     })
   })
 
@@ -177,7 +265,9 @@ describe('ProjectSharePanel', () => {
     const emailInput = await screen.findByLabelText(/email address to add/i)
     fireEvent.change(emailInput, { target: { value: 'missing@example.com' } })
 
-    const addButton = await screen.findByRole('button', { name: /^add$/i })
+    const addButton = await screen.findByRole('button', {
+      name: /^send invite$/i,
+    })
     fireEvent.click(addButton)
 
     expect(

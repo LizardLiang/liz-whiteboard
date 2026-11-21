@@ -38,6 +38,10 @@ import {
   revokeInvite,
 } from '@/routes/api/invites'
 import {
+  listPendingEmailInvites,
+  revokeEmailInvite,
+} from '@/routes/api/email-invites'
+import {
   createShareLink,
   listShareLinks,
   revokeShareLink,
@@ -85,6 +89,15 @@ interface InviteListItem {
   createdAt: string | Date
   createdByUserId: string
   createdByUsername: string | null
+}
+
+/** Pending email invite from listPendingEmailInvites (tokenHash is never sent). */
+interface PendingEmailInvite {
+  id: string
+  email: string
+  role: ProjectRole
+  expiresAt: string | Date
+  createdAt: string | Date
 }
 
 /** Whiteboard picker option, from getWhiteboardsByProject. */
@@ -153,6 +166,12 @@ export function ProjectSharePanel({
     enabled: open,
   })
 
+  const { data: pendingData, isLoading: isPendingLoading } = useQuery({
+    queryKey: ['project-email-invites', projectId],
+    queryFn: () => listPendingEmailInvites({ data: projectId }),
+    enabled: open,
+  })
+
   const { data: whiteboardsData, isLoading: isWhiteboardsLoading } = useQuery({
     queryKey: ['project-whiteboards', projectId],
     queryFn: () => getWhiteboardsByProject({ data: projectId }),
@@ -168,6 +187,12 @@ export function ProjectSharePanel({
   const invalidate = () => {
     queryClient.invalidateQueries({
       queryKey: ['project-permissions', projectId],
+    })
+  }
+
+  const invalidatePending = () => {
+    queryClient.invalidateQueries({
+      queryKey: ['project-email-invites', projectId],
     })
   }
 
@@ -196,7 +221,8 @@ export function ProjectSharePanel({
       setAddEmail('')
       setAddRole('VIEWER')
       setAddError(null)
-      invalidate()
+      toast.success(t('project.share.inviteSent'))
+      invalidatePending()
     },
     onError: () => setAddError(''),
   })
@@ -232,6 +258,12 @@ export function ProjectSharePanel({
       setCopied(false)
       invalidateInvites()
     },
+  })
+
+  const revokePendingMutation = useMutation({
+    mutationFn: (inviteId: string) =>
+      revokeEmailInvite({ data: { projectId, inviteId } }),
+    onSuccess: invalidatePending,
   })
 
   const revokeInviteMutation = useMutation({
@@ -305,6 +337,9 @@ export function ProjectSharePanel({
 
   const permissions =
     data && !('error' in data) ? data : { owner: null, members: [] }
+
+  const pendingInvites: Array<PendingEmailInvite> =
+    pendingData && !('error' in pendingData) ? pendingData.invites : []
 
   const invites: Array<InviteListItem> =
     invitesData && !('error' in invitesData) ? invitesData.invites : []
@@ -459,6 +494,66 @@ export function ProjectSharePanel({
                 {permissions.members.length === 0 && !permissions.owner && (
                   <li className="text-sm text-muted-foreground py-2">
                     {t('project.share.noMembers')}
+                  </li>
+                )}
+              </ul>
+            )}
+          </div>
+
+          {/* Pending email invites */}
+          <div>
+            <Label className="text-sm font-medium">
+              {t('project.share.pendingInvites')}
+            </Label>
+            {isPendingLoading ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                {t('common.loading')}
+              </p>
+            ) : (
+              <ul
+                className="mt-2 space-y-2"
+                aria-label={t('project.share.pendingInvitesAria')}
+              >
+                {pendingInvites.map((invite) => (
+                  <li
+                    key={invite.id}
+                    className="flex items-center gap-2 rounded-md border px-3 py-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {invite.email}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <Badge variant="secondary">
+                          {t(`invite.roles.${invite.role}`)}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {t('project.share.expiresOn', {
+                            date: new Date(invite.expiresAt).toLocaleDateString(
+                              locale,
+                            ),
+                          })}
+                        </span>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 shrink-0 px-2 text-xs text-muted-foreground hover:text-destructive"
+                      onClick={() => revokePendingMutation.mutate(invite.id)}
+                      aria-label={t('project.share.revokePendingAria', {
+                        email: invite.email,
+                      })}
+                      disabled={revokePendingMutation.isPending}
+                    >
+                      {t('project.share.revoke')}
+                    </Button>
+                  </li>
+                ))}
+
+                {pendingInvites.length === 0 && (
+                  <li className="py-2 text-sm text-muted-foreground">
+                    {t('project.share.noPendingInvites')}
                   </li>
                 )}
               </ul>
