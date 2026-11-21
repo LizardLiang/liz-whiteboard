@@ -1,17 +1,18 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import {
-  CONTENT_SECURITY_POLICY,
+  CSP_NONCE_HEADER,
   DEFAULT_MAX_BODY_BYTES,
+  buildContentSecurityPolicy,
   buildSecurityHeaders,
   checkBodyLimit,
+  generateCspNonce,
   maxBodyBytes,
 } from './security-headers'
 
 describe('buildSecurityHeaders', () => {
   it('always sends CSP, nosniff, frame and referrer protections', () => {
-    const h = buildSecurityHeaders({})
-    expect(h['Content-Security-Policy']).toBe(CONTENT_SECURITY_POLICY)
+    const h = buildSecurityHeaders({}, 'abc')
     expect(h['Content-Security-Policy']).toContain("frame-ancestors 'none'")
     expect(h['Content-Security-Policy']).toContain("object-src 'none'")
     expect(h['Content-Security-Policy']).not.toContain('unsafe-eval')
@@ -64,5 +65,41 @@ describe('body limit', () => {
     expect(checkBodyLimit('POST', { 'content-length': 'nope' }, 100)).toBe(
       'length-required',
     )
+  })
+})
+
+describe('CSP nonce (audit F9)', () => {
+  const scriptSrc = (csp: string) =>
+    csp.split('; ').find((d) => d.startsWith('script-src')) ?? ''
+
+  it('script-src carries the nonce and no unsafe-inline', () => {
+    const src = scriptSrc(buildContentSecurityPolicy('N0nce', {}))
+    expect(src).toContain("'nonce-N0nce'")
+    expect(src).not.toContain('unsafe-inline')
+  })
+
+  it('every generated nonce is unique and the header uses it', () => {
+    const a = generateCspNonce()
+    const b = generateCspNonce()
+    expect(a).not.toBe(b)
+    expect(a.length).toBeGreaterThanOrEqual(22)
+    expect(
+      scriptSrc(buildSecurityHeaders({}, a)['Content-Security-Policy']),
+    ).toContain(`'nonce-${a}'`)
+  })
+
+  it('connect-src names the wss origin from APP_BASE_URL, not blanket ws:/wss:', () => {
+    const csp = buildContentSecurityPolicy('n', {
+      APP_BASE_URL: 'https://app.example.com/',
+    })
+    const connect = csp.split('; ').find((d) => d.startsWith('connect-src'))
+    expect(connect).toBe(
+      "connect-src 'self' wss://app.example.com https://challenges.cloudflare.com",
+    )
+    expect(csp).not.toMatch(/ ws: | wss: /)
+  })
+
+  it('exports the header name the SSR handler reads', () => {
+    expect(CSP_NONCE_HEADER).toBe('x-csp-nonce')
   })
 })

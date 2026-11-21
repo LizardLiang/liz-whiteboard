@@ -19,7 +19,9 @@ import { stampPeerIp } from './src/lib/rate-limit'
 import {
   buildSecurityHeaders,
   checkBodyLimit,
+  generateCspNonce,
   maxBodyBytes,
+  stampCspNonce,
 } from './src/lib/security-headers'
 
 const port = Number(process.env.PORT) || 3000
@@ -31,7 +33,6 @@ const host = process.env.HOST || '0.0.0.0'
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const publicDir = join(scriptDir, '.output', 'public')
 
-const securityHeaders = buildSecurityHeaders()
 const bodyLimit = maxBodyBytes()
 
 const server = createServer(async (req, res) => {
@@ -42,7 +43,14 @@ const server = createServer(async (req, res) => {
     stampPeerIp(req)
 
     // Security headers on every response (static and SSR, errors included).
-    for (const [name, value] of Object.entries(securityHeaders)) {
+    // The CSP nonce is fresh per request and handed to the SSR handler in a
+    // request header (overwriting any client value) so the router stamps it
+    // on every inline script it streams.
+    const nonce = generateCspNonce()
+    stampCspNonce(req, nonce)
+    for (const [name, value] of Object.entries(
+      buildSecurityHeaders(process.env, nonce),
+    )) {
       res.setHeader(name, value)
     }
 

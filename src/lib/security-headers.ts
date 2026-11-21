@@ -3,39 +3,88 @@
 
 const TURNSTILE = 'https://challenges.cloudflare.com'
 
+/** Request header that carries the per-request CSP nonce to the SSR handler. */
+export const CSP_NONCE_HEADER = 'x-csp-nonce'
+
+interface HeaderStampTarget {
+  headers: Record<string, string | Array<string> | undefined>
+  rawHeaders: Array<string>
+}
+
+/**
+ * Set the nonce request header, replacing any value the client sent, in both
+ * `headers` and `rawHeaders` (the web Request is built from `rawHeaders`).
+ */
+export function stampCspNonce(req: HeaderStampTarget, nonce: string): void {
+  req.headers[CSP_NONCE_HEADER] = nonce
+  for (let i = req.rawHeaders.length - 2; i >= 0; i -= 2) {
+    if (req.rawHeaders[i].toLowerCase() === CSP_NONCE_HEADER) {
+      req.rawHeaders.splice(i, 2)
+    }
+  }
+  req.rawHeaders.push(CSP_NONCE_HEADER, nonce)
+}
+
+/** A fresh, unguessable per-request nonce (server side only). */
+export function generateCspNonce(): string {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Buffer.from(bytes).toString('base64')
+}
+
+/** ws/wss origin that matches APP_BASE_URL, or null when it is unset/invalid. */
+function websocketOrigin(baseUrl: string | undefined): string | null {
+  if (!baseUrl?.trim()) return null
+  try {
+    const url = new URL(baseUrl.trim())
+    if (url.protocol === 'https:') return `wss://${url.host}`
+    if (url.protocol === 'http:') return `ws://${url.host}`
+  } catch {
+    return null
+  }
+  return null
+}
+
 /**
  * Content-Security-Policy.
  *
- * script-src needs 'unsafe-inline': TanStack Start streams inline <script>
- * tags for SSR hydration/dehydration and the app ships an inline theme
- * bootstrap. Nonces would need router-level support for every streamed
- * script; until then, inline script is allowed while eval, remote origins
- * (other than Turnstile), objects and framing stay blocked.
+ * script-src carries a per-request nonce instead of 'unsafe-inline': TanStack
+ * Start stamps the nonce on every inline <script> it streams (router
+ * `ssr.nonce`). The nonce is generated per request by server.prod.ts.
+ * connect-src names the websocket origin from APP_BASE_URL instead of the
+ * blanket `ws: wss:`.
  * style-src 'unsafe-inline': Tailwind/React Flow set inline style attributes.
  * form-action 'self' is safe: the OAuth consent page leaves through
  * window.location.assign(), not a form post, so redirects to registered
  * client redirect_uris are not subject to form-action.
  */
-export const CONTENT_SECURITY_POLICY = [
-  "default-src 'self'",
-  `script-src 'self' 'unsafe-inline' ${TURNSTILE}`,
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  `connect-src 'self' ws: wss: ${TURNSTILE}`,
-  `frame-src ${TURNSTILE}`,
-  "worker-src 'self' blob:",
-  "object-src 'none'",
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-].join('; ')
+export function buildContentSecurityPolicy(
+  nonce: string,
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const ws = websocketOrigin(env.APP_BASE_URL)
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' ${TURNSTILE}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    `connect-src 'self' ${ws ? `${ws} ` : ''}${TURNSTILE}`,
+    `frame-src ${TURNSTILE}`,
+    "worker-src 'self' blob:",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join('; ')
+}
 
 export function buildSecurityHeaders(
   env: Record<string, string | undefined> = process.env,
+  nonce: string = generateCspNonce(),
 ): Record<string, string> {
   const headers: Record<string, string> = {
-    'Content-Security-Policy': CONTENT_SECURITY_POLICY,
+    'Content-Security-Policy': buildContentSecurityPolicy(nonce, env),
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Frame-Options': 'DENY',
