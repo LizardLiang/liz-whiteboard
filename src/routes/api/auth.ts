@@ -112,10 +112,10 @@ export const validateSignupToken = createServerFn({ method: 'GET' })
     return token
   })
   .handler(async ({ data: token }) => {
-    const { hashSignupToken } = await import('@/lib/auth/signup-token')
+    const { hashOpaqueToken } = await import('@/lib/auth/opaque-token')
     const { getSignupTokenState } = await import('@/data/signup-token')
 
-    const { state, token: row } = getSignupTokenState(hashSignupToken(token))
+    const { state, token: row } = getSignupTokenState(hashOpaqueToken(token))
     return {
       state,
       username: state === 'valid' && row ? row.username : null,
@@ -136,12 +136,12 @@ export const completeSignup = createServerFn({ method: 'POST' })
     const { hashPassword } = await import('@/lib/auth/password')
     const { createUserSession } = await import('@/lib/auth/session')
     const { buildSetCookieHeader } = await import('@/lib/auth/cookies')
-    const { hashSignupToken } = await import('@/lib/auth/signup-token')
+    const { hashOpaqueToken } = await import('@/lib/auth/opaque-token')
     const { completeSignup: completeSignupRow, getSignupTokenState } =
       await import('@/data/signup-token')
     const { sanitizeRedirect } = await import('@/lib/safe-redirect')
 
-    const tokenHash = hashSignupToken(data.token)
+    const tokenHash = hashOpaqueToken(data.token)
     if (getSignupTokenState(tokenHash).state !== 'valid') {
       return { success: false as const, error: AUTH_ERROR_CODES.INVALID_TOKEN }
     }
@@ -258,14 +258,14 @@ export const logoutUser = createServerFn({ method: 'POST' }).handler(
     const { parseSessionCookie, buildClearCookieHeader } =
       await import('@/lib/auth/cookies')
     const { deleteAuthSession } = await import('@/data/session')
-    const { hashToken } = await import('@/lib/auth/session')
+    const { hashOpaqueToken } = await import('@/lib/auth/opaque-token')
 
     const request = getRequest()
     const cookieHeader = request.headers.get('cookie')
     const token = parseSessionCookie(cookieHeader)
 
     if (token) {
-      const tokenHash = hashToken(token)
+      const tokenHash = hashOpaqueToken(token)
       // Find and delete the session
       const session = db
         .prepare('SELECT "id", "userId" FROM "Session" WHERE "tokenHash" = ?')
@@ -345,8 +345,8 @@ export const requestPasswordReset = createServerFn({ method: 'POST' })
       deleteResetTokensOlderThan,
       tryCreateResetToken,
     } = await import('@/data/password-reset')
-    const { generateResetToken, hashResetToken } =
-      await import('@/lib/auth/reset-token')
+    const { generateOpaqueToken, hashOpaqueToken } =
+      await import('@/lib/auth/opaque-token')
     const { sendEmail } = await import('@/lib/email/resend')
     const { resolveBaseUrl } = await import('@/lib/email/base-url')
     const { buildLinkEmailHtml } = await import('@/lib/auth/escape-html')
@@ -379,8 +379,8 @@ export const requestPasswordReset = createServerFn({ method: 'POST' })
 
     const user = await findUserByEmail(data.email)
     if (user) {
-      const rawToken = generateResetToken()
-      const tokenHash = hashResetToken(rawToken)
+      const rawToken = generateOpaqueToken()
+      const tokenHash = hashOpaqueToken(rawToken)
       const created = tryCreateResetToken(user.id, tokenHash)
 
       if (created) {
@@ -422,13 +422,13 @@ export const resetPassword = createServerFn({ method: 'POST' })
   .validator((data: unknown) => resetPasswordInputSchema.parse(data))
   .handler(async ({ data }) => {
     const { setResponseHeader } = await import('@tanstack/react-start/server')
-    const { hashResetToken } = await import('@/lib/auth/reset-token')
+    const { hashOpaqueToken } = await import('@/lib/auth/opaque-token')
     const { completePasswordReset, findValidResetToken } =
       await import('@/data/password-reset')
     const { hashPassword } = await import('@/lib/auth/password')
     const { buildClearCookieHeader } = await import('@/lib/auth/cookies')
 
-    const tokenHash = hashResetToken(data.token)
+    const tokenHash = hashOpaqueToken(data.token)
     const resetToken = await findValidResetToken(tokenHash)
     if (!resetToken) {
       return { success: false as const, error: AUTH_ERROR_CODES.INVALID_TOKEN }
@@ -460,10 +460,10 @@ export const validateResetToken = createServerFn({ method: 'GET' })
     return token
   })
   .handler(async ({ data: token }) => {
-    const { hashResetToken } = await import('@/lib/auth/reset-token')
+    const { hashOpaqueToken } = await import('@/lib/auth/opaque-token')
     const { findValidResetToken } = await import('@/data/password-reset')
 
-    const tokenHash = hashResetToken(token)
+    const tokenHash = hashOpaqueToken(token)
     const resetToken = await findValidResetToken(tokenHash)
     return { valid: resetToken !== null }
   })

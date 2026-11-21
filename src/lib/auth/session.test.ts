@@ -7,10 +7,9 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   createUserSession,
-  generateSessionToken,
-  hashToken,
   validateSessionToken,
 } from './session'
+import { generateOpaqueToken, hashOpaqueToken } from '@/lib/auth/opaque-token'
 import { db } from '@/db'
 import { createAuthSession } from '@/data/session'
 import { makeUser, resetDb } from '@/test/db-helpers'
@@ -27,24 +26,24 @@ function findSessionRowByHash(tokenHash: string) {
 }
 
 describe('session token', () => {
-  // TC-P2-04: generateSessionToken does not use crypto.randomUUID
-  describe('TC-P2-04: generateSessionToken', () => {
+  // TC-P2-04: generateOpaqueToken does not use crypto.randomUUID
+  describe('TC-P2-04: generateOpaqueToken', () => {
     it('returns a 64-character hex string', () => {
-      const token = generateSessionToken()
+      const token = generateOpaqueToken()
 
       expect(token).toHaveLength(64)
       expect(token).toMatch(/^[0-9a-f]{64}$/)
     })
 
     it('returns different tokens on each call', () => {
-      const t1 = generateSessionToken()
-      const t2 = generateSessionToken()
+      const t1 = generateOpaqueToken()
+      const t2 = generateOpaqueToken()
 
       expect(t1).not.toBe(t2)
     })
 
     it('is NOT a UUID format (confirms randomBytes not randomUUID)', () => {
-      const token = generateSessionToken()
+      const token = generateOpaqueToken()
       const uuidPattern =
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
@@ -52,21 +51,21 @@ describe('session token', () => {
     })
   })
 
-  // TC-P2-04: hashToken
-  describe('hashToken', () => {
+  // TC-P2-04: hashOpaqueToken
+  describe('hashOpaqueToken', () => {
     it('returns a 64-character SHA-256 hex string', () => {
-      const hash = hashToken('sometoken')
+      const hash = hashOpaqueToken('sometoken')
 
       expect(hash).toHaveLength(64)
       expect(hash).toMatch(/^[0-9a-f]{64}$/)
     })
 
     it('is deterministic for the same input', () => {
-      expect(hashToken('abc')).toBe(hashToken('abc'))
+      expect(hashOpaqueToken('abc')).toBe(hashOpaqueToken('abc'))
     })
 
     it('differs for different inputs', () => {
-      expect(hashToken('abc')).not.toBe(hashToken('def'))
+      expect(hashOpaqueToken('abc')).not.toBe(hashOpaqueToken('def'))
     })
   })
 })
@@ -136,8 +135,8 @@ describe('session management', () => {
       const { id: userId } = makeUser()
 
       // Seed an already-expired session directly via the data layer.
-      const rawToken = generateSessionToken()
-      const tokenHash = hashToken(rawToken)
+      const rawToken = generateOpaqueToken()
+      const tokenHash = hashOpaqueToken(rawToken)
       const session = await createAuthSession({
         tokenHash,
         userId,
@@ -159,7 +158,7 @@ describe('session management', () => {
       const { id: userId } = makeUser()
       // A valid, unrelated session that must survive the unknown-token lookup.
       const { token: goodToken } = await createUserSession(userId, false)
-      const goodHash = hashToken(goodToken)
+      const goodHash = hashOpaqueToken(goodToken)
 
       const result = await validateSessionToken('unknowntoken')
 
@@ -190,7 +189,7 @@ describe('session management', () => {
     it('keeps a valid session in the DB after validation', async () => {
       const { id: userId } = makeUser()
       const { token } = await createUserSession(userId, false)
-      const hash = hashToken(token)
+      const hash = hashOpaqueToken(token)
 
       await validateSessionToken(token)
 

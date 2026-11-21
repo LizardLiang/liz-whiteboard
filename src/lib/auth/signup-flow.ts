@@ -15,7 +15,7 @@ import {
   buildAccountExistsEmailHtml,
   buildLinkEmailHtml,
 } from '@/lib/auth/escape-html'
-import { generateSignupToken, hashSignupToken } from '@/lib/auth/signup-token'
+import { generateOpaqueToken, hashOpaqueToken } from '@/lib/auth/opaque-token'
 import { resolveBaseUrl } from '@/lib/email/base-url'
 import { sendEmail } from '@/lib/email/resend'
 import { translate } from '@/lib/i18n/translate'
@@ -43,12 +43,12 @@ export async function issueSignupEmail(params: {
     username = latest?.username ?? ''
   }
 
-  const rawToken = generateSignupToken()
+  const rawToken = generateOpaqueToken()
   const created = tryCreateSignupToken({
     email,
     username,
     redirectTo,
-    tokenHash: hashSignupToken(rawToken),
+    tokenHash: hashOpaqueToken(rawToken),
     voided: user !== null,
   })
   if (!created) return

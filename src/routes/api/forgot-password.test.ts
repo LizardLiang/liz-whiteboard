@@ -25,7 +25,7 @@ import {
   findValidResetToken,
   tryCreateResetToken,
 } from '@/data/password-reset'
-import { generateResetToken, hashResetToken } from '@/lib/auth/reset-token'
+import { generateOpaqueToken, hashOpaqueToken } from '@/lib/auth/opaque-token'
 import { hashPassword, verifyPassword } from '@/lib/auth/password'
 import { buildClearCookieHeader } from '@/lib/auth/cookies'
 import { sendEmail } from '@/lib/email/resend'
@@ -74,8 +74,8 @@ async function requestPasswordResetHandler(data: {
 
   const user = await findUserByEmail(data.email)
   if (user) {
-    const rawToken = generateResetToken()
-    const tokenHash = hashResetToken(rawToken)
+    const rawToken = generateOpaqueToken()
+    const tokenHash = hashOpaqueToken(rawToken)
     const created = tryCreateResetToken(user.id, tokenHash)
 
     if (created) {
@@ -99,7 +99,7 @@ async function resetPasswordHandler(data: {
   token: string
   password: string
 }) {
-  const tokenHash = hashResetToken(data.token)
+  const tokenHash = hashOpaqueToken(data.token)
   const resetToken = await findValidResetToken(tokenHash)
   if (!resetToken) {
     return { success: false, error: 'INVALID_TOKEN' }
@@ -237,8 +237,8 @@ describe('resetPassword', () => {
 
   it('changes the password, clears the session cookie, and returns the login redirect for a valid token', async () => {
     const user = makeUser({ passwordHash: await hashPassword('oldPassword123') })
-    const rawToken = generateResetToken()
-    await createResetToken(user.id, hashResetToken(rawToken))
+    const rawToken = generateOpaqueToken()
+    await createResetToken(user.id, hashOpaqueToken(rawToken))
 
     const result = await resetPasswordHandler({
       token: rawToken,
@@ -261,8 +261,8 @@ describe('resetPassword', () => {
 
   it('a used token cannot be replayed', async () => {
     const user = makeUser()
-    const rawToken = generateResetToken()
-    await createResetToken(user.id, hashResetToken(rawToken))
+    const rawToken = generateOpaqueToken()
+    await createResetToken(user.id, hashOpaqueToken(rawToken))
 
     const first = await resetPasswordHandler({
       token: rawToken,

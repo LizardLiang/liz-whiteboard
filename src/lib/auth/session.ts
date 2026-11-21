@@ -1,7 +1,7 @@
 // src/lib/auth/session.ts
 // Session token generation, validation, and management
 
-import { createHash, randomBytes } from 'node:crypto'
+import { generateOpaqueToken, hashOpaqueToken } from '@/lib/auth/opaque-token'
 import {
   createAuthSession,
   deleteAuthSession,
@@ -24,28 +24,6 @@ export interface AuthSession {
 }
 
 /**
- * Generate a secure session token.
- * Uses Node's crypto.randomBytes (no secure context required — works over HTTP).
- * Never uses crypto.randomUUID() which requires HTTPS/localhost.
- *
- * @returns 64-character hex string (32 bytes)
- */
-export function generateSessionToken(): string {
-  return randomBytes(32).toString('hex')
-}
-
-/**
- * Hash a session token with SHA-256.
- * The raw token goes to the cookie; the hash is stored in the DB.
- *
- * @param token - Raw session token
- * @returns SHA-256 hex digest (64 chars)
- */
-export function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex')
-}
-
-/**
  * Create a new auth session for a user.
  *
  * @param userId - User UUID
@@ -56,8 +34,8 @@ export async function createUserSession(
   userId: string,
   rememberMe: boolean,
 ): Promise<{ session: AuthSession; token: string }> {
-  const token = generateSessionToken()
-  const tokenHash = hashToken(token)
+  const token = generateOpaqueToken()
+  const tokenHash = hashOpaqueToken(token)
   const expiresAt = new Date(
     Date.now() +
       (rememberMe ? SESSION_EXPIRY_REMEMBER : SESSION_EXPIRY_DEFAULT),
@@ -81,7 +59,7 @@ export async function createUserSession(
 export async function validateSessionToken(
   token: string,
 ): Promise<{ user: AuthUser; session: AuthSession } | null> {
-  const tokenHash = hashToken(token)
+  const tokenHash = hashOpaqueToken(token)
   const record = await findAuthSessionByTokenHash(tokenHash)
 
   if (!record) return null

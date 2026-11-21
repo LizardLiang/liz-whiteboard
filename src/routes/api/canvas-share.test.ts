@@ -15,7 +15,7 @@ import {
   listCanvasShareLinksHandler,
   revokeCanvasShareLinkHandler,
 } from '@/lib/share/canvas-handlers'
-import { hashInviteToken } from '@/lib/auth/invite-token'
+import { hashOpaqueToken } from '@/lib/auth/opaque-token'
 import { createCanvasBoardShareLink } from '@/data/canvas-board-share-link'
 import { createCanvasBoard, updateCanvasBoardSettings } from '@/data/canvas-board'
 import { createCanvasElement } from '@/data/canvas-element'
@@ -72,7 +72,7 @@ describe('createCanvasShareLinkHandler', () => {
       .all() as Array<{ tokenHash: string }>
     expect(rows).toHaveLength(1)
     expect(rows[0].tokenHash).not.toBe(result.token)
-    expect(rows[0].tokenHash).toBe(hashInviteToken(result.token))
+    expect(rows[0].tokenHash).toBe(hashOpaqueToken(result.token))
   })
 
   it('refuses an EDITOR', async () => {
@@ -312,13 +312,13 @@ describe('getSharedCanvasBoardHandler', () => {
     const token = 'expired-token-value'
     await createCanvasBoardShareLink({
       canvasBoardId: board.id,
-      tokenHash: hashInviteToken(token),
+      tokenHash: hashOpaqueToken(token),
       createdByUserId: owner.id,
       expiresInHours: 1,
     })
     db.prepare(
       'UPDATE "CanvasBoardShareLink" SET "expiresAt" = ? WHERE "tokenHash" = ?',
-    ).run(Date.now() - 1_000, hashInviteToken(token))
+    ).run(Date.now() - 1_000, hashOpaqueToken(token))
 
     const read = await getSharedCanvasBoardHandler(token)
     expect(read.valid).toBe(false)

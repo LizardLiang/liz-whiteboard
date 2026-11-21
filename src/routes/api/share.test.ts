@@ -20,7 +20,7 @@ import {
   listShareLinksHandler,
   revokeShareLinkHandler,
 } from '@/lib/share/handlers'
-import { generateInviteToken, hashInviteToken } from '@/lib/auth/invite-token'
+import { generateOpaqueToken, hashOpaqueToken } from '@/lib/auth/opaque-token'
 import { createWhiteboardShareLink } from '@/data/whiteboard-share-link'
 import { upsertProjectMember } from '@/data/permission'
 import {
@@ -368,10 +368,10 @@ describe('getSharedWhiteboardHandler', () => {
   })
 
   it('EXPIRED: expired link', async () => {
-    const rawToken = generateInviteToken()
+    const rawToken = generateOpaqueToken()
     await createWhiteboardShareLink({
       whiteboardId: WHITEBOARD_ID,
-      tokenHash: hashInviteToken(rawToken),
+      tokenHash: hashOpaqueToken(rawToken),
       createdByUserId: ADMIN_ID,
       expiresInHours: -1,
     })

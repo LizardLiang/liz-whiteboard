@@ -42,7 +42,7 @@ import {
   findProjectInvites,
   revokeProjectInvite,
 } from '@/data/project-invite'
-import { generateInviteToken, hashInviteToken } from '@/lib/auth/invite-token'
+import { generateOpaqueToken, hashOpaqueToken } from '@/lib/auth/opaque-token'
 import { INVITE_DENIAL_MESSAGES } from '@/lib/invite/denial-reasons'
 import { db, genId, nowMs, transaction } from '@/db'
 
@@ -125,8 +125,8 @@ export async function createProjectInviteHandler(
   })
   if (adminDenial) return adminDenial
 
-  const rawToken = generateInviteToken()
-  const tokenHash = hashInviteToken(rawToken)
+  const rawToken = generateOpaqueToken()
+  const tokenHash = hashOpaqueToken(rawToken)
 
   const invite = await createProjectInviteRow({
     projectId: data.projectId,
@@ -236,7 +236,7 @@ export async function redeemInviteHandler(
   { user }: AuthContext,
   data: RedeemInvite,
 ) {
-  const tokenHash = hashInviteToken(data.token)
+  const tokenHash = hashOpaqueToken(data.token)
 
   return transaction(() => {
     const row = db
@@ -324,7 +324,7 @@ export async function redeemInviteHandler(
  * disclosed pre-auth is the target project's display name and offered role.
  */
 export async function getInvitePreviewHandler(token: string) {
-  const tokenHash = hashInviteToken(token)
+  const tokenHash = hashOpaqueToken(token)
   const invite = await findActiveInviteByTokenHash(tokenHash)
 
   if (!invite) {

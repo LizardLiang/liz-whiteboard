@@ -30,7 +30,6 @@ import { deleteAuthSession } from '@/data/session'
 import { hashPassword, verifyPassword } from '@/lib/auth/password'
 import {
   createUserSession,
-  hashToken,
   validateSessionToken,
 } from '@/lib/auth/session'
 import {
@@ -39,7 +38,7 @@ import {
   parseSessionCookie,
 } from '@/lib/auth/cookies'
 import { issueSignupEmail } from '@/lib/auth/signup-flow'
-import { hashSignupToken } from '@/lib/auth/signup-token'
+import { hashOpaqueToken } from '@/lib/auth/opaque-token'
 import { isSafeRedirect, sanitizeRedirect } from '@/lib/safe-redirect'
 import {
   completeSignup as completeSignupRow,
@@ -88,7 +87,7 @@ async function completeSignupHandler(data: {
   username: string
   password: string
 }) {
-  const tokenHash = hashSignupToken(data.token)
+  const tokenHash = hashOpaqueToken(data.token)
   if (getSignupTokenState(tokenHash).state !== 'valid') {
     return { success: false as const, error: 'INVALID_TOKEN' }
   }
@@ -160,7 +159,7 @@ async function logoutUserHandler() {
   const token = parseSessionCookie(cookieHeader)
 
   if (token) {
-    const tokenHash = hashToken(token)
+    const tokenHash = hashOpaqueToken(token)
     const session = db
       .prepare('SELECT "id", "userId" FROM "Session" WHERE "tokenHash" = ?')
       .get(tokenHash) as { id: string; userId: string } | undefined

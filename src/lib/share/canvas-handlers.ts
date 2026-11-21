@@ -32,7 +32,7 @@ import {
   findCanvasShareLinksByBoardId,
   revokeCanvasBoardShareLinkById,
 } from '@/data/canvas-board-share-link'
-import { generateInviteToken, hashInviteToken } from '@/lib/auth/invite-token'
+import { generateOpaqueToken, hashOpaqueToken } from '@/lib/auth/opaque-token'
 
 /**
  * Classify a mapped link row against the current time. Returns null when the
@@ -103,8 +103,8 @@ export async function createCanvasShareLinkHandler(
   )
   if (denial) return denial
 
-  const rawToken = generateInviteToken()
-  const tokenHash = hashInviteToken(rawToken)
+  const rawToken = generateOpaqueToken()
+  const tokenHash = hashOpaqueToken(rawToken)
 
   const link = await createCanvasBoardShareLink({
     canvasBoardId: data.canvasBoardId,
@@ -208,7 +208,7 @@ export async function listCanvasShareLinksHandler(
  * what is needed to render the board read-only.
  */
 export async function getSharedCanvasBoardHandler(token: string) {
-  const tokenHash = hashInviteToken(token)
+  const tokenHash = hashOpaqueToken(token)
   const link = await findCanvasShareLinkByTokenHash(tokenHash)
 
   if (!link) {

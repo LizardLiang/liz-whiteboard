@@ -41,7 +41,7 @@ import {
   findShareLinksByProjectId,
   revokeWhiteboardShareLinkById,
 } from '@/data/whiteboard-share-link'
-import { generateInviteToken, hashInviteToken } from '@/lib/auth/invite-token'
+import { generateOpaqueToken, hashOpaqueToken } from '@/lib/auth/opaque-token'
 
 /**
  * Classify a mapped share-link row against the current time — shared by
@@ -115,8 +115,8 @@ export async function createShareLinkHandler(
   )
   if (denial) return denial
 
-  const rawToken = generateInviteToken()
-  const tokenHash = hashInviteToken(rawToken)
+  const rawToken = generateOpaqueToken()
+  const tokenHash = hashOpaqueToken(rawToken)
 
   const link = await createWhiteboardShareLink({
     whiteboardId: data.whiteboardId,
@@ -216,7 +216,7 @@ export async function listShareLinksHandler(
  * read-only (AC3 of the spec delta).
  */
 export async function getSharedWhiteboardHandler(token: string) {
-  const tokenHash = hashInviteToken(token)
+  const tokenHash = hashOpaqueToken(token)
   const link = await findShareLinkByTokenHash(tokenHash)
 
   if (!link) {

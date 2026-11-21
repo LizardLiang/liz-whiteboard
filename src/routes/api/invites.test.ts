@@ -23,7 +23,7 @@ import {
   redeemInviteHandler,
   revokeInviteHandler,
 } from '@/lib/invite/handlers'
-import { generateInviteToken, hashInviteToken } from '@/lib/auth/invite-token'
+import { generateOpaqueToken, hashOpaqueToken } from '@/lib/auth/opaque-token'
 import { createProjectInvite, findProjectInvites } from '@/data/project-invite'
 import { upsertProjectMember } from '@/data/permission'
 import { makeProject, makeUser, resetDb } from '@/test/db-helpers'
@@ -238,11 +238,11 @@ describe('redeemInviteHandler', () => {
   })
 
   it('REVOKED: revoked link', async () => {
-    const rawToken = generateInviteToken()
+    const rawToken = generateOpaqueToken()
     const invite = await createProjectInvite({
       projectId: PROJECT_ID,
       role: 'VIEWER',
-      tokenHash: hashInviteToken(rawToken),
+      tokenHash: hashOpaqueToken(rawToken),
       createdByUserId: ADMIN_ID,
       expiresInHours: 24,
     })
@@ -260,11 +260,11 @@ describe('redeemInviteHandler', () => {
   })
 
   it('EXPIRED: expired link', async () => {
-    const rawToken = generateInviteToken()
+    const rawToken = generateOpaqueToken()
     await createProjectInvite({
       projectId: PROJECT_ID,
       role: 'VIEWER',
-      tokenHash: hashInviteToken(rawToken),
+      tokenHash: hashOpaqueToken(rawToken),
       createdByUserId: ADMIN_ID,
       expiresInHours: -1,
     })
@@ -278,11 +278,11 @@ describe('redeemInviteHandler', () => {
   })
 
   it('EXHAUSTED: usedCount has reached maxUses', async () => {
-    const rawToken = generateInviteToken()
+    const rawToken = generateOpaqueToken()
     const invite = await createProjectInvite({
       projectId: PROJECT_ID,
       role: 'VIEWER',
-      tokenHash: hashInviteToken(rawToken),
+      tokenHash: hashOpaqueToken(rawToken),
       createdByUserId: ADMIN_ID,
       expiresInHours: 24,
     })
@@ -304,11 +304,11 @@ describe('redeemInviteHandler', () => {
   })
 
   it('success: fresh user redemption creates a new ProjectMember', async () => {
-    const rawToken = generateInviteToken()
+    const rawToken = generateOpaqueToken()
     await createProjectInvite({
       projectId: PROJECT_ID,
       role: 'EDITOR',
-      tokenHash: hashInviteToken(rawToken),
+      tokenHash: hashOpaqueToken(rawToken),
       createdByUserId: ADMIN_ID,
       expiresInHours: 24,
     })
@@ -328,11 +328,11 @@ describe('redeemInviteHandler', () => {
   })
 
   it('idempotent no-downgrade: existing EDITOR redeeming a VIEWER-role invite keeps EDITOR', async () => {
-    const rawToken = generateInviteToken()
+    const rawToken = generateOpaqueToken()
     await createProjectInvite({
       projectId: PROJECT_ID,
       role: 'VIEWER',
-      tokenHash: hashInviteToken(rawToken),
+      tokenHash: hashOpaqueToken(rawToken),
       createdByUserId: ADMIN_ID,
       expiresInHours: 24,
     })
@@ -353,11 +353,11 @@ describe('redeemInviteHandler', () => {
   })
 
   it('upgrade: existing VIEWER redeeming an EDITOR-role invite is upgraded', async () => {
-    const rawToken = generateInviteToken()
+    const rawToken = generateOpaqueToken()
     await createProjectInvite({
       projectId: PROJECT_ID,
       role: 'EDITOR',
-      tokenHash: hashInviteToken(rawToken),
+      tokenHash: hashOpaqueToken(rawToken),
       createdByUserId: ADMIN_ID,
       expiresInHours: 24,
     })
@@ -375,11 +375,11 @@ describe('redeemInviteHandler', () => {
   })
 
   it('never downgrades the OWNER redeeming any role invite', async () => {
-    const rawToken = generateInviteToken()
+    const rawToken = generateOpaqueToken()
     await createProjectInvite({
       projectId: PROJECT_ID,
       role: 'VIEWER',
-      tokenHash: hashInviteToken(rawToken),
+      tokenHash: hashOpaqueToken(rawToken),
       createdByUserId: ADMIN_ID,
       expiresInHours: 24,
     })
@@ -413,11 +413,11 @@ describe('redeemInviteHandler', () => {
 
   describe('B1 regression: transaction atomicity on a failed write', () => {
     it('fails the whole redemption (no usedCount increment, no ProjectMember row) when the write violates a DB constraint', async () => {
-      const rawToken = generateInviteToken()
+      const rawToken = generateOpaqueToken()
       const invite = await createProjectInvite({
         projectId: PROJECT_ID,
         role: 'EDITOR',
-        tokenHash: hashInviteToken(rawToken),
+        tokenHash: hashOpaqueToken(rawToken),
         createdByUserId: ADMIN_ID,
         expiresInHours: 24,
       })
@@ -455,11 +455,11 @@ describe('redeemInviteHandler', () => {
 
 describe('getInvitePreviewHandler', () => {
   it('requires no auth and returns project name + role for a valid invite', async () => {
-    const rawToken = generateInviteToken()
+    const rawToken = generateOpaqueToken()
     await createProjectInvite({
       projectId: PROJECT_ID,
       role: 'EDITOR',
-      tokenHash: hashInviteToken(rawToken),
+      tokenHash: hashOpaqueToken(rawToken),
       createdByUserId: ADMIN_ID,
       expiresInHours: 24,
     })
@@ -474,11 +474,11 @@ describe('getInvitePreviewHandler', () => {
   })
 
   it('never returns projectId, createdByUserId, or tokenHash', async () => {
-    const rawToken = generateInviteToken()
+    const rawToken = generateOpaqueToken()
     await createProjectInvite({
       projectId: PROJECT_ID,
       role: 'EDITOR',
-      tokenHash: hashInviteToken(rawToken),
+      tokenHash: hashOpaqueToken(rawToken),
       createdByUserId: ADMIN_ID,
       expiresInHours: 24,
     })
@@ -496,11 +496,11 @@ describe('getInvitePreviewHandler', () => {
       reason: 'INVALID',
     })
 
-    const revokedToken = generateInviteToken()
+    const revokedToken = generateOpaqueToken()
     const revokedInvite = await createProjectInvite({
       projectId: PROJECT_ID,
       role: 'VIEWER',
-      tokenHash: hashInviteToken(revokedToken),
+      tokenHash: hashOpaqueToken(revokedToken),
       createdByUserId: ADMIN_ID,
       expiresInHours: 24,
     })
@@ -513,11 +513,11 @@ describe('getInvitePreviewHandler', () => {
       reason: 'REVOKED',
     })
 
-    const expiredToken = generateInviteToken()
+    const expiredToken = generateOpaqueToken()
     await createProjectInvite({
       projectId: PROJECT_ID,
       role: 'VIEWER',
-      tokenHash: hashInviteToken(expiredToken),
+      tokenHash: hashOpaqueToken(expiredToken),
       createdByUserId: ADMIN_ID,
       expiresInHours: -1,
     })
@@ -526,11 +526,11 @@ describe('getInvitePreviewHandler', () => {
       reason: 'EXPIRED',
     })
 
-    const exhaustedToken = generateInviteToken()
+    const exhaustedToken = generateOpaqueToken()
     const exhaustedInvite = await createProjectInvite({
       projectId: PROJECT_ID,
       role: 'VIEWER',
-      tokenHash: hashInviteToken(exhaustedToken),
+      tokenHash: hashOpaqueToken(exhaustedToken),
       createdByUserId: ADMIN_ID,
       expiresInHours: 24,
     })

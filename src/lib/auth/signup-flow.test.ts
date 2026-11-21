@@ -1,7 +1,7 @@
 // src/lib/auth/signup-flow.test.ts
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { issueSignupEmail } from './signup-flow'
-import { hashSignupToken } from './signup-token'
+import { hashOpaqueToken } from './opaque-token'
 import { db } from '@/db'
 import { getSignupTokenState } from '@/data/signup-token'
 import { makeUser, resetDb } from '@/test/db-helpers'
@@ -45,7 +45,7 @@ describe('issueSignupEmail', () => {
     const mail = sendEmail.mock.calls[0][0]
     const raw = /\/signup\/([0-9a-f]{64})/.exec(mail.text)![1]
     expect(mail.text).toContain('https://app.example.com/signup/')
-    expect(getSignupTokenState(hashSignupToken(raw)).state).toBe('valid')
+    expect(getSignupTokenState(hashOpaqueToken(raw)).state).toBe('valid')
     expect(users()).toBe(0)
   })
 
@@ -127,8 +127,8 @@ describe('issueSignupEmail', () => {
     const second = /\/signup\/([0-9a-f]{64})/.exec(
       sendEmail.mock.calls[1][0].text,
     )![1]
-    expect(getSignupTokenState(hashSignupToken(first)).state).toBe('valid')
-    const row = getSignupTokenState(hashSignupToken(second))
+    expect(getSignupTokenState(hashOpaqueToken(first)).state).toBe('valid')
+    const row = getSignupTokenState(hashOpaqueToken(second))
     expect(row.state).toBe('valid')
     expect(row.token).toMatchObject({
       username: 'alice',
@@ -156,7 +156,7 @@ describe('issueSignupEmail', () => {
       sendEmail.mock.calls[1][0].text,
     )![1]
     expect(
-      getSignupTokenState(hashSignupToken(second)).token?.redirectTo,
+      getSignupTokenState(hashOpaqueToken(second)).token?.redirectTo,
     ).toBe('/invite/xyz')
   })
 

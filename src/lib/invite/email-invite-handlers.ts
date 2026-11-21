@@ -42,7 +42,7 @@ import {
   tryCreateEmailInvite,
 } from '@/data/project-email-invite'
 import { logSampledError } from '@/lib/auth/log-sample'
-import { generateInviteToken, hashInviteToken } from '@/lib/auth/invite-token'
+import { generateOpaqueToken, hashOpaqueToken } from '@/lib/auth/opaque-token'
 import { INVITE_DENIAL_MESSAGES } from '@/lib/invite/denial-reasons'
 import { sendEmail } from '@/lib/email/resend'
 import { getRequestLocale } from '@/lib/i18n/server-locale'
@@ -155,12 +155,12 @@ export async function grantPermissionHandler(
     }
   }
 
-  const rawToken = generateInviteToken()
+  const rawToken = generateOpaqueToken()
   const created = tryCreateEmailInvite({
     projectId: data.projectId,
     email: data.email,
     role: data.role,
-    tokenHash: hashInviteToken(rawToken),
+    tokenHash: hashOpaqueToken(rawToken),
     invitedByUserId: user.id,
   })
   // Inside the (project, address) cooldown the reply is the same as for a
@@ -286,7 +286,7 @@ async function checkInvite(
   user: AuthContext['user'],
   token: string,
 ): Promise<Checked> {
-  const invite = findEmailInviteByTokenHash(hashInviteToken(token))
+  const invite = findEmailInviteByTokenHash(hashOpaqueToken(token))
   if (!invite) return { ok: false, denial: deny('INVALID') }
 
   const state = classifyEmailInvite(invite)

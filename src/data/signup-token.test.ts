@@ -10,7 +10,7 @@ import {
   tryCreateSignupToken,
 } from './signup-token'
 import { db } from '@/db'
-import { hashSignupToken } from '@/lib/auth/signup-token'
+import { hashOpaqueToken } from '@/lib/auth/opaque-token'
 import { makeUser, resetDb } from '@/test/db-helpers'
 
 const create = (
@@ -20,7 +20,7 @@ const create = (
     email: 'new@example.com',
     username: 'newbie',
     redirectTo: null,
-    tokenHash: hashSignupToken(Math.random().toString()),
+    tokenHash: hashOpaqueToken(Math.random().toString()),
     voided: false,
     ...over,
   })
