@@ -53,12 +53,32 @@ describe('tryCreateSignupToken', () => {
     expect(create()).toBeNull()
   })
 
-  it('a new token voids older unused ones', () => {
+  it('a second request leaves the first link usable', () => {
+    create({ tokenHash: 'old', username: 'first', redirectTo: '/invite/a' })
+    age('new@example.com', 3 * 60_000)
+    create({ tokenHash: 'fresh', username: 'second', redirectTo: null })
+    expect(getSignupTokenState('old').state).toBe('valid')
+    expect(getSignupTokenState('fresh').state).toBe('valid')
+    expect(getSignupTokenState('old').token).toMatchObject({
+      username: 'first',
+      redirectTo: '/invite/a',
+    })
+  })
+
+  it('completing through one link voids the other unused links', () => {
     create({ tokenHash: 'old' })
     age('new@example.com', 3 * 60_000)
     create({ tokenHash: 'fresh' })
+    const done = completeSignup({
+      tokenHash: 'fresh',
+      username: 'newbie',
+      passwordHash: 'h',
+    })
+    expect(done.ok).toBe(true)
     expect(getSignupTokenState('old').state).toBe('used')
-    expect(getSignupTokenState('fresh').state).toBe('valid')
+    expect(
+      completeSignup({ tokenHash: 'old', username: 'zed', passwordHash: 'h' }),
+    ).toEqual({ ok: false, reason: 'invalid' })
   })
 
   it('stores an attempt for an existing account already voided', () => {

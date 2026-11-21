@@ -47,8 +47,10 @@ export async function issueSignupEmail(params: {
   if (username === null) {
     const latest = findLatestSignupTokenForEmail(email)
     if (!latest && !user) return
+    // A resend takes only the username from the newest row; it never copies
+    // a return path another request stored.
     username = latest?.username ?? ''
-    redirectTo = latest?.redirectTo ?? null
+    redirectTo = null
   }
 
   const rawToken = generateSignupToken()

@@ -104,7 +104,7 @@ describe('issueSignupEmail', () => {
     spy.mockRestore()
   })
 
-  it('a resend reuses the stored username and return path, and invalidates the older link', async () => {
+  it('a resend reuses the stored username only, and the older link stays valid', async () => {
     await issueSignupEmail({
       ...base,
       email: 'a@example.com',
@@ -127,12 +127,12 @@ describe('issueSignupEmail', () => {
     const second = /\/signup\/([0-9a-f]{64})/.exec(
       sendEmail.mock.calls[1][0].text,
     )![1]
-    expect(getSignupTokenState(hashSignupToken(first)).state).toBe('used')
+    expect(getSignupTokenState(hashSignupToken(first)).state).toBe('valid')
     const row = getSignupTokenState(hashSignupToken(second))
     expect(row.state).toBe('valid')
     expect(row.token).toMatchObject({
       username: 'alice',
-      redirectTo: '/invite/xyz',
+      redirectTo: null,
     })
   })
 

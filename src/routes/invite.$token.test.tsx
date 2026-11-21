@@ -134,6 +134,27 @@ describe('Invite landing page', () => {
     })
   })
 
+  it('landing on a valid invite while logged in does not join until Accept is clicked', async () => {
+    vi.mocked(redeemInvite).mockClear()
+    mockNavigate.mockClear()
+    vi.mocked(getInvitePreview).mockResolvedValue({
+      valid: true,
+      projectName: 'Test Project',
+      role: 'EDITOR',
+    } as any)
+    vi.mocked(getCurrentUser).mockResolvedValue({
+      user: { id: 'user-1', username: 'alice', email: 'alice@example.com' },
+    })
+
+    const InvitePage = await importInvitePage()
+    renderInvitePage(InvitePage)
+
+    await screen.findByRole('button', { name: /accept invite/i })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(redeemInvite).not.toHaveBeenCalled()
+    expect(mockNavigate).not.toHaveBeenCalled()
+  })
+
   it('invalid/expired/revoked states render InviteInvalid with no accept button offered', async () => {
     vi.mocked(getInvitePreview).mockResolvedValue({
       valid: false,

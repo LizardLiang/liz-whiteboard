@@ -26,9 +26,10 @@ function countForEmailSince(email: string, sinceMs: number): number {
 
 /**
  * Check the per-email send limits (the forgot-password cooldown and daily
- * cap, counted from the DB) and, if they pass, store one signup row. Every
- * earlier unused row of the email is voided first, so only the newest link
- * works. The whole check-and-write runs in one synchronous transaction.
+ * cap, counted from the DB) and, if they pass, store one signup row. Earlier
+ * unused rows stay valid until they expire or a signup completes (an anonymous
+ * request must not cancel another person's link). The whole check-and-write
+ * runs in one synchronous transaction.
  *
  * `voided` stores the row already used. The caller sets it when the email
  * already has an account, so both cases count against the same limits and do
@@ -54,10 +55,6 @@ export function tryCreateSignupToken(params: {
     ) {
       return null
     }
-
-    db.prepare(
-      'UPDATE "SignupToken" SET "usedAt" = ? WHERE "email" = ? AND "usedAt" IS NULL',
-    ).run(now, params.email)
 
     const id = genId()
     insert('SignupToken', {
