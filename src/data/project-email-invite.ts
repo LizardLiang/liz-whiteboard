@@ -39,6 +39,8 @@ export const EMAIL_INVITE_PAIR_PER_DAY = 10 // guess
  * so one tenant's volume never makes another tenant's invite fail.
  */
 export const EMAIL_INVITE_RECIPIENT_CEILING_PER_DAY = 30 // guess
+/** Silent ceiling, hourly: all inviters together to one address. */
+export const EMAIL_INVITE_RECIPIENT_CEILING_PER_HOUR = 5 // guess
 /** No new email to the same (project, recipient) inside this window. */
 export const EMAIL_INVITE_COOLDOWN_MS = 10 * 60 * 1000 // guess
 
@@ -77,6 +79,8 @@ export type TryCreateEmailInviteResult =
       suppressEmail: boolean
     }
   | { status: 'cooldown' }
+  /** Silent ceiling hit and a sent pending row was kept (role updated if it differed). */
+  | { status: 'suppressed' }
   | { status: 'inviter_limit' }
   | { status: 'recipient_limit' }
 
@@ -130,7 +134,26 @@ export function tryCreateEmailInvite(params: {
     }
     const suppressEmail =
       countSince('email', params.email, now - DAY_MS) >=
-      EMAIL_INVITE_RECIPIENT_CEILING_PER_DAY
+        EMAIL_INVITE_RECIPIENT_CEILING_PER_DAY ||
+      countSince('email', params.email, now - HOUR_MS) >=
+        EMAIL_INVITE_RECIPIENT_CEILING_PER_HOUR
+    if (suppressEmail) {
+      // A token is revoked only when a replacement email is actually sent. A
+      // pending row whose email went out stays as it is; only its role moves.
+      const pending = db
+        .prepare(
+          `SELECT "id" FROM "ProjectEmailInvite"
+           WHERE "projectId" = ? AND "email" = ? AND "acceptedAt" IS NULL
+             AND "revokedAt" IS NULL AND "expiresAt" > ?`,
+        )
+        .get(params.projectId, params.email, now) as { id: string } | undefined
+      if (pending) {
+        db.prepare(
+          'UPDATE "ProjectEmailInvite" SET "role" = ? WHERE "id" = ?',
+        ).run(params.role, pending.id)
+        return { status: 'suppressed' as const }
+      }
+    }
     return {
       status: 'created' as const,
       invite: insertEmailInvite(params),

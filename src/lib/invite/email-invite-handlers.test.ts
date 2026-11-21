@@ -298,6 +298,68 @@ describe('send limits', () => {
     expect(Number(row.c)).toBe(1)
   })
 
+  function seedCeiling(n: number) {
+    for (let i = 0; i < n; i++) {
+      const u = makeUser()
+      const p = makeProject({ ownerId: u.id }).id
+      seedRows(1, { projectId: p, by: u.id, email: () => 'victim@example.com' })
+    }
+  }
+
+  it('the ceiling hit while a sent pending invite exists keeps the old link working', async () => {
+    const target = makeUser({ email: 'victim@example.com' })
+    await grant('victim@example.com', 'VIEWER')
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+    const token = sentToken()
+    age(11 * MIN)
+    seedCeiling(30)
+    db.prepare(
+      'UPDATE "ProjectEmailInvite" SET "createdAt" = "createdAt" + ? WHERE "projectId" != ?',
+    ).run(11 * MIN, projectId)
+    const result = await grant('victim@example.com', 'VIEWER')
+    expect(result).toEqual({ success: true, invited: true })
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+    const rows = db
+      .prepare(
+        'SELECT count(*) AS c FROM "ProjectEmailInvite" WHERE "projectId" = ?',
+      )
+      .get(projectId) as { c: number }
+    expect(Number(rows.c)).toBe(1)
+    expect(
+      await acceptEmailInviteHandler(
+        ctx({ id: target.id, email: 'victim@example.com' }),
+        { token },
+      ),
+    ).toMatchObject({ success: true })
+  })
+
+  it('the hourly ceiling (5 per hour across inviters) suppresses silently', async () => {
+    seedCeiling(5)
+    const result = await grant('victim@example.com', 'VIEWER')
+    expect(result).toEqual({ success: true, invited: true })
+    expect(sendEmail).not.toHaveBeenCalled()
+    const list = (await listEmailInvitesHandler(asAdmin(), projectId)) as any
+    expect(list.invites).toHaveLength(1)
+  })
+
+  it('a suppressed role change updates the pending role and keeps the token', async () => {
+    const target = makeUser({ email: 'victim@example.com' })
+    await grant('victim@example.com', 'VIEWER')
+    const token = sentToken()
+    age(11 * MIN)
+    seedCeiling(5)
+    db.prepare(
+      'UPDATE "ProjectEmailInvite" SET "createdAt" = "createdAt" + ? WHERE "projectId" != ?',
+    ).run(11 * MIN, projectId)
+    await grant('victim@example.com', 'EDITOR')
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+    const result = await acceptEmailInviteHandler(
+      ctx({ id: target.id, email: 'victim@example.com' }),
+      { token },
+    )
+    expect(result).toMatchObject({ success: true, role: 'EDITOR' })
+  })
+
   it('the limit message is the same for a registered and an unregistered recipient', async () => {
     makeUser({ email: 'known@example.com' })
     for (const email of ['known@example.com', 'ghost@example.com']) {

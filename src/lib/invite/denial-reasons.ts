@@ -6,11 +6,7 @@
 // drift out of sync.
 
 export type InviteDenialReason =
-  | 'INVALID'
-  | 'REVOKED'
-  | 'EXPIRED'
-  | 'EXHAUSTED'
-  | 'WRONG_ACCOUNT'
+  'INVALID' | 'REVOKED' | 'EXPIRED' | 'EXHAUSTED' | 'WRONG_ACCOUNT'
 
 export const INVITE_DENIAL_MESSAGES: Record<InviteDenialReason, string> = {
   INVALID: 'This invite link is invalid.',

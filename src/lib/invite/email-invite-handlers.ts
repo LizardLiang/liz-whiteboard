@@ -60,6 +60,14 @@ function forbidden(message: string) {
   return { error: 'FORBIDDEN' as const, status: 403, message }
 }
 
+function logCeiling(userId: string) {
+  logSampledError({
+    userId,
+    errorClass: 'email-invite-recipient-ceiling',
+    message: '[email-invite] recipient ceiling',
+  })
+}
+
 function rateLimited(message: string) {
   return { error: 'RATE_LIMITED' as const, status: 429, message }
 }
@@ -168,14 +176,15 @@ export async function grantPermissionHandler(
     return rateLimited('Too many invites to this address recently.')
   }
 
+  if (created.status === 'suppressed') {
+    logCeiling(user.id)
+    return { success: true as const, invited: true as const }
+  }
+
   // Silent per-address ceiling: the row exists, no email goes out, and the
   // reply is the same, so no tenant can make another tenant's invite fail.
   if (created.suppressEmail) {
-    logSampledError({
-      userId: user.id,
-      errorClass: 'email-invite-recipient-ceiling',
-      message: '[email-invite] recipient ceiling',
-    })
+    logCeiling(user.id)
     return { success: true as const, invited: true as const }
   }
 
