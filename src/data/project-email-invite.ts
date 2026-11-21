@@ -30,8 +30,15 @@ const DAY_MS = 24 * HOUR_MS
 // so a re-invite cannot dodge them and a restart does not reset them.
 export const EMAIL_INVITE_INVITER_PER_HOUR = 20 // guess
 export const EMAIL_INVITE_INVITER_PER_DAY = 100 // guess
-export const EMAIL_INVITE_RECIPIENT_PER_HOUR = 3 // guess
-export const EMAIL_INVITE_RECIPIENT_PER_DAY = 10 // guess
+/** Visible limit: one inviter's own sends to one address. */
+export const EMAIL_INVITE_PAIR_PER_HOUR = 3 // guess
+export const EMAIL_INVITE_PAIR_PER_DAY = 10 // guess
+/**
+ * Silent ceiling: all inviters together to one address in 24 h. At the
+ * ceiling the row is stored and the reply is unchanged, but no email goes out,
+ * so one tenant's volume never makes another tenant's invite fail.
+ */
+export const EMAIL_INVITE_RECIPIENT_CEILING_PER_DAY = 30 // guess
 /** No new email to the same (project, recipient) inside this window. */
 export const EMAIL_INVITE_COOLDOWN_MS = 10 * 60 * 1000 // guess
 
@@ -48,15 +55,37 @@ function countSince(
   return Number(row.c)
 }
 
+function countPairSince(
+  invitedByUserId: string,
+  email: string,
+  sinceMs: number,
+): number {
+  const row = db
+    .prepare(
+      `SELECT count(*) AS c FROM "ProjectEmailInvite"
+       WHERE "invitedByUserId" = ? AND "email" = ? AND "createdAt" >= ?`,
+    )
+    .get(invitedByUserId, email, sinceMs) as { c: number }
+  return Number(row.c)
+}
+
 export type TryCreateEmailInviteResult =
-  | { status: 'created'; invite: ProjectEmailInvite }
-  | { status: 'cooldown' | 'inviter_limit' | 'recipient_limit' }
+  | {
+      status: 'created'
+      invite: ProjectEmailInvite
+      /** True when the silent per-recipient ceiling was hit: store, do not send. */
+      suppressEmail: boolean
+    }
+  | { status: 'cooldown' }
+  | { status: 'inviter_limit' }
+  | { status: 'recipient_limit' }
 
 /**
  * Check the send limits and, if they pass, store one invite, in ONE
  * synchronous transaction. Order: the (project, email) cooldown first (the
- * caller replies as for a send, and sends nothing), then the per-inviter
- * limits, then the per-recipient limits.
+ * caller replies as for a send, and sends nothing; a changed role updates
+ * the pending row in place), then the per-inviter limits, then the visible
+ * (inviter, address) limits, then the silent per-address ceiling.
  */
 export function tryCreateEmailInvite(params: {
   projectId: string
@@ -73,6 +102,13 @@ export function tryCreateEmailInvite(params: {
       )
       .get(params.projectId, params.email) as { t: number | null }
     if (last.t !== null && now - Number(last.t) < EMAIL_INVITE_COOLDOWN_MS) {
+      // A new role inside the cooldown changes the pending row in place. Its
+      // token stays, so the email already sent stays valid.
+      db.prepare(
+        `UPDATE "ProjectEmailInvite" SET "role" = ?
+         WHERE "projectId" = ? AND "email" = ? AND "acceptedAt" IS NULL
+           AND "revokedAt" IS NULL AND "expiresAt" > ? AND "role" != ?`,
+      ).run(params.role, params.projectId, params.email, now, params.role)
       return { status: 'cooldown' as const }
     }
     const by = params.invitedByUserId
@@ -85,14 +121,21 @@ export function tryCreateEmailInvite(params: {
       return { status: 'inviter_limit' as const }
     }
     if (
-      countSince('email', params.email, now - HOUR_MS) >=
-        EMAIL_INVITE_RECIPIENT_PER_HOUR ||
-      countSince('email', params.email, now - DAY_MS) >=
-        EMAIL_INVITE_RECIPIENT_PER_DAY
+      countPairSince(by, params.email, now - HOUR_MS) >=
+        EMAIL_INVITE_PAIR_PER_HOUR ||
+      countPairSince(by, params.email, now - DAY_MS) >=
+        EMAIL_INVITE_PAIR_PER_DAY
     ) {
       return { status: 'recipient_limit' as const }
     }
-    return { status: 'created' as const, invite: insertEmailInvite(params) }
+    const suppressEmail =
+      countSince('email', params.email, now - DAY_MS) >=
+      EMAIL_INVITE_RECIPIENT_CEILING_PER_DAY
+    return {
+      status: 'created' as const,
+      invite: insertEmailInvite(params),
+      suppressEmail,
+    }
   })
 }
 

@@ -40,6 +40,7 @@ import {
   revokeEmailInvite,
   tryCreateEmailInvite,
 } from '@/data/project-email-invite'
+import { logSampledError } from '@/lib/auth/log-sample'
 import { generateInviteToken, hashInviteToken } from '@/lib/auth/invite-token'
 import { INVITE_DENIAL_MESSAGES } from '@/lib/invite/denial-reasons'
 import { sendEmail } from '@/lib/email/resend'
@@ -165,6 +166,17 @@ export async function grantPermissionHandler(
   }
   if (created.status === 'recipient_limit') {
     return rateLimited('Too many invites to this address recently.')
+  }
+
+  // Silent per-address ceiling: the row exists, no email goes out, and the
+  // reply is the same, so no tenant can make another tenant's invite fail.
+  if (created.suppressEmail) {
+    logSampledError({
+      userId: user.id,
+      errorClass: 'email-invite-recipient-ceiling',
+      message: '[email-invite] recipient ceiling',
+    })
+    return { success: true as const, invited: true as const }
   }
 
   const baseUrl = resolveBaseUrl(await requestOrigin())

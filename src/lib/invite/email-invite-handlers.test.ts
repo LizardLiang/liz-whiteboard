@@ -233,12 +233,12 @@ describe('send limits', () => {
     expect(result).toEqual({ success: true, invited: true })
   })
 
-  it('per recipient: 3 per hour across projects and inviters', async () => {
+  it('per (inviter, address): 3 per hour', async () => {
     for (let i = 0; i < 3; i++) {
       const p = makeProject({ ownerId: owner.id }).id
       seedRows(1, {
         projectId: p,
-        by: owner.id,
+        by: admin.id,
         email: () => 'victim@example.com',
       })
     }
@@ -251,12 +251,12 @@ describe('send limits', () => {
     expect(sendEmail).not.toHaveBeenCalled()
   })
 
-  it('per recipient: 10 per 24 hours', async () => {
+  it('per (inviter, address): 10 per 24 hours', async () => {
     for (let i = 0; i < 10; i++) {
       const p = makeProject({ ownerId: owner.id }).id
       seedRows(1, {
         projectId: p,
-        by: owner.id,
+        by: admin.id,
         email: () => 'victim@example.com',
       })
     }
@@ -265,17 +265,75 @@ describe('send limits', () => {
     expect(result).toMatchObject({ error: 'RATE_LIMITED' })
   })
 
+  it("inviter A's 3 invites do not stop inviter B's invite to the same address", async () => {
+    for (let i = 0; i < 3; i++) {
+      const p = makeProject({ ownerId: owner.id }).id
+      seedRows(1, {
+        projectId: p,
+        by: owner.id,
+        email: () => 'victim@example.com',
+      })
+    }
+    expect(await grant('victim@example.com', 'VIEWER')).toEqual({
+      success: true,
+      invited: true,
+    })
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+  })
+
+  it('silent ceiling: 30 per 24 h to one address stores the row, sends nothing, replies the same', async () => {
+    for (let i = 0; i < 30; i++) {
+      const u = makeUser()
+      const p = makeProject({ ownerId: u.id }).id
+      seedRows(1, { projectId: p, by: u.id, email: () => 'victim@example.com' })
+    }
+    const result = await grant('victim@example.com', 'VIEWER')
+    expect(result).toEqual({ success: true, invited: true })
+    expect(sendEmail).not.toHaveBeenCalled()
+    const row = db
+      .prepare(
+        'SELECT count(*) AS c FROM "ProjectEmailInvite" WHERE "projectId" = ?',
+      )
+      .get(projectId) as { c: number }
+    expect(Number(row.c)).toBe(1)
+  })
+
   it('the limit message is the same for a registered and an unregistered recipient', async () => {
     makeUser({ email: 'known@example.com' })
     for (const email of ['known@example.com', 'ghost@example.com']) {
       for (let i = 0; i < 3; i++) {
         const p = makeProject({ ownerId: owner.id }).id
-        seedRows(1, { projectId: p, by: owner.id, email: () => email })
+        seedRows(1, { projectId: p, by: admin.id, email: () => email })
       }
     }
     const a = await grant('known@example.com', 'VIEWER')
     const b = await grant('ghost@example.com', 'VIEWER')
     expect(a).toEqual(b)
+  })
+
+  it('a role change inside the cooldown updates the pending row; the original link accepts with the new role', async () => {
+    const target = makeUser({ email: 'known@example.com' })
+    await grant('known@example.com', 'VIEWER')
+    const again = await grant('known@example.com', 'EDITOR')
+    expect(again).toEqual({ success: true, invited: true })
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+    const list = (await listEmailInvitesHandler(asAdmin(), projectId)) as any
+    expect(list.invites).toHaveLength(1)
+    expect(list.invites[0].role).toBe('EDITOR')
+    const result = await acceptEmailInviteHandler(
+      ctx({ id: target.id, email: 'known@example.com' }),
+      { token: sentToken() },
+    )
+    expect(result).toMatchObject({ success: true, role: 'EDITOR' })
+  })
+
+  it('a role change inside the cooldown still obeys the role rules', async () => {
+    await grant('known@example.com', 'VIEWER')
+    expect(await grant('known@example.com', 'ADMIN')).toMatchObject({
+      error: 'FORBIDDEN',
+    })
+    const list = (await listEmailInvitesHandler(asAdmin(), projectId)) as any
+    expect(list.invites[0].role).toBe('VIEWER')
   })
 })
 
