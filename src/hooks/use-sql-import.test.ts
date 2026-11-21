@@ -116,7 +116,7 @@ describe('useSqlImport', () => {
     vi.mocked(serverFns.computeAutoLayout).mockResolvedValue({
       positions: [],
       areas: [],
-    } as any)
+    })
 
     const { result } = renderHook(() => freshHook('wb'))
     await result.current.importDiagram({} as any)

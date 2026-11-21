@@ -14,12 +14,12 @@
 // header comments for the real `bun run build` failure this pattern avoids).
 import type { AuthContext } from '@/lib/auth/middleware'
 import type { CreateTable } from '@/data/schema'
+import type { ClientBatch } from '@/lib/schema-changelog/client-batch'
 import { clientErrorMessage } from '@/lib/client-error'
 import { createDiagramTable } from '@/data/diagram-table'
 import { getWhiteboardProjectId } from '@/data/resolve-project'
 import { requireServerFnRole } from '@/lib/auth/require-role'
 import { emitToWhiteboard } from '@/routes/api/collaboration'
-import type { ClientBatch } from '@/lib/schema-changelog/client-batch'
 import { userContext, withClientBatch } from '@/lib/schema-changelog'
 
 /**

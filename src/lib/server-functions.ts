@@ -19,6 +19,7 @@ import type { Area, CommentWithAuthor, Connector, Shape } from '@/data/models'
 import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
 import type { EffectiveRole } from '@/data/permission'
 import type { AreaLayoutOutputArea } from '@/lib/auto-layout/area-aware-layout'
+import type { ClientBatch } from '@/lib/schema-changelog/client-batch'
 import {
   MAX_TEXT_SOURCE_LENGTH,
   bulkUpdatePositionsSchema,
@@ -58,7 +59,6 @@ import {
   resolveTableReferences,
   updateTableReference,
 } from '@/data/table-reference'
-import type { ClientBatch } from '@/lib/schema-changelog/client-batch'
 import { userContext } from '@/lib/schema-changelog'
 
 /**
