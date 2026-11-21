@@ -576,6 +576,22 @@ CREATE INDEX IF NOT EXISTS "ProjectEmailInvite_expiresAt_idx" ON "ProjectEmailIn
 CREATE INDEX IF NOT EXISTS "ProjectEmailInvite_email_createdAt_idx" ON "ProjectEmailInvite"("email", "createdAt");
 CREATE INDEX IF NOT EXISTS "ProjectEmailInvite_invitedByUserId_createdAt_idx" ON "ProjectEmailInvite"("invitedByUserId", "createdAt");
 
+-- Send log for email invites. It has NO foreign key to Project or User, so
+-- deleting a project (which cascades ProjectEmailInvite) or an account cannot
+-- reset the send limits. One row per invite stored, including silent-ceiling
+-- rows. Swept after 24 h (src/lib/auth/session-sweep.ts).
+CREATE TABLE IF NOT EXISTS "EmailInviteSend" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "inviterId" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "projectId" TEXT NOT NULL,
+    "createdAt" INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS "EmailInviteSend_email_createdAt_idx" ON "EmailInviteSend"("email", "createdAt");
+CREATE INDEX IF NOT EXISTS "EmailInviteSend_inviterId_createdAt_idx" ON "EmailInviteSend"("inviterId", "createdAt");
+CREATE INDEX IF NOT EXISTS "EmailInviteSend_projectId_email_createdAt_idx" ON "EmailInviteSend"("projectId", "email", "createdAt");
+
 -- Tombstones for ids a client may choose (RetiredId). A create can name its own
 -- id, so a deleted row's id must not be claimable from another whiteboard: a
 -- later restore of the home whiteboard would then collide with the squatter.

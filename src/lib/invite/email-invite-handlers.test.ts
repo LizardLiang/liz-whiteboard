@@ -14,6 +14,7 @@ import {
 import type { AuthContext } from '@/lib/auth/middleware'
 import { findEffectiveRole, upsertProjectMember } from '@/data/permission'
 import { createEmailInvite } from '@/data/project-email-invite'
+import { deleteProject } from '@/data/project'
 import { db } from '@/db'
 import { makeProject, makeUser, resetDb } from '@/test/db-helpers'
 
@@ -60,6 +61,9 @@ function age(ms: number) {
   db.prepare(
     'UPDATE "ProjectEmailInvite" SET "createdAt" = "createdAt" - ?',
   ).run(ms)
+  db.prepare('UPDATE "EmailInviteSend" SET "createdAt" = "createdAt" - ?').run(
+    ms,
+  )
 }
 
 const MIN = 60_000
@@ -396,6 +400,148 @@ describe('send limits', () => {
     })
     const list = (await listEmailInvitesHandler(asAdmin(), projectId)) as any
     expect(list.invites[0].role).toBe('VIEWER')
+  })
+})
+
+describe('send limits survive a project delete (B1)', () => {
+  const grantIn = (
+    pid: string,
+    c: AuthContext,
+    email: string,
+    role: 'VIEWER' | 'EDITOR' | 'ADMIN' = 'VIEWER',
+  ) => grantPermissionHandler(c, { projectId: pid, email, role })
+
+  it('a create, invite, delete project loop cannot exceed the per-inviter limit', async () => {
+    let limited = 0
+    for (let i = 0; i < 25; i++) {
+      const p = makeProject({ ownerId: owner.id }).id
+      const r = await grantIn(p, asOwner(), `target${i}@example.com`)
+      if ('error' in r && r.error === 'RATE_LIMITED') limited++
+      await deleteProject(p)
+    }
+    expect(sendEmail).toHaveBeenCalledTimes(20)
+    expect(limited).toBe(5)
+  })
+
+  it('the per-(inviter, address) limit survives the loop', async () => {
+    const results: Array<unknown> = []
+    for (let i = 0; i < 5; i++) {
+      const p = makeProject({ ownerId: owner.id }).id
+      results.push(await grantIn(p, asOwner(), 'victim@example.com'))
+      await deleteProject(p)
+    }
+    expect(sendEmail).toHaveBeenCalledTimes(3)
+    expect(results[3]).toMatchObject({ error: 'RATE_LIMITED' })
+  })
+
+  it('the per-address ceiling survives the loop: no email past it, same reply', async () => {
+    for (let i = 0; i < 7; i++) {
+      const u = makeUser({ email: `inviter${i}@example.com` })
+      const p = makeProject({ ownerId: u.id }).id
+      const r = await grantIn(
+        p,
+        ctx({ id: u.id, email: `inviter${i}@example.com` }),
+        'victim@example.com',
+      )
+      expect(r).toEqual({ success: true, invited: true })
+      await deleteProject(p)
+    }
+    expect(sendEmail).toHaveBeenCalledTimes(5)
+  })
+})
+
+describe('cooldown and roles (W1, W2)', () => {
+  it('W1: an ADMIN invites as EDITOR, the OWNER upgrades to ADMIN inside the cooldown, accept succeeds as ADMIN', async () => {
+    const target = makeUser({ email: 'newadmin@example.com' })
+    await grant('newadmin@example.com', 'EDITOR', asAdmin())
+    const token = sentToken()
+    await grant('newadmin@example.com', 'ADMIN', asOwner())
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+    const result = await acceptEmailInviteHandler(
+      ctx({ id: target.id, email: 'newadmin@example.com' }),
+      { token },
+    )
+    expect(result).toMatchObject({ success: true, role: 'ADMIN' })
+  })
+
+  it('W2: revoke, then re-invite at once, sends and stores a pending row', async () => {
+    await grant('nobody@example.com', 'VIEWER')
+    const list = (await listEmailInvitesHandler(asAdmin(), projectId)) as any
+    await revokeEmailInviteHandler(asAdmin(), {
+      projectId,
+      inviteId: list.invites[0].id,
+    })
+    await grant('nobody@example.com', 'EDITOR')
+    expect(sendEmail).toHaveBeenCalledTimes(2)
+    const after = (await listEmailInvitesHandler(asAdmin(), projectId)) as any
+    expect(after.invites).toHaveLength(1)
+    expect(after.invites[0].role).toBe('EDITOR')
+  })
+
+  it('W2: after an accepted invite, a re-invite at once sends', async () => {
+    const target = makeUser({ email: 'known@example.com' })
+    await grant('known@example.com', 'VIEWER')
+    await acceptEmailInviteHandler(
+      ctx({ id: target.id, email: 'known@example.com' }),
+      { token: sentToken() },
+    )
+    await grant('known@example.com', 'EDITOR')
+    expect(sendEmail).toHaveBeenCalledTimes(2)
+  })
+
+  it('a revoke loop is still bounded by the pair limit', async () => {
+    for (let i = 0; i < 5; i++) {
+      await grant('nobody@example.com', 'VIEWER')
+      const list = (await listEmailInvitesHandler(asAdmin(), projectId)) as any
+      for (const inv of list.invites) {
+        await revokeEmailInviteHandler(asAdmin(), {
+          projectId,
+          inviteId: inv.id,
+        })
+      }
+    }
+    expect(sendEmail).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('a failed send (Resend down)', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0))
+
+  it('keeps the older link working and does not block a retry', async () => {
+    const target = makeUser({ email: 'known@example.com' })
+    await grant('known@example.com', 'VIEWER')
+    const oldToken = sentToken(0)
+    age(11 * MIN)
+
+    sendEmail.mockResolvedValueOnce(false)
+    await grant('known@example.com', 'EDITOR')
+    await flush()
+
+    // The retry is not held back by the cooldown.
+    await grant('known@example.com', 'EDITOR')
+    expect(sendEmail).toHaveBeenCalledTimes(3)
+    const retryToken = sentToken(2)
+    expect(retryToken).not.toBe(oldToken)
+    const result = await acceptEmailInviteHandler(
+      ctx({ id: target.id, email: 'known@example.com' }),
+      { token: retryToken },
+    )
+    expect(result).toMatchObject({ success: true, role: 'EDITOR' })
+  })
+
+  it('restores the older pending link when the new email fails', async () => {
+    const target = makeUser({ email: 'known@example.com' })
+    await grant('known@example.com', 'VIEWER')
+    const oldToken = sentToken(0)
+    age(11 * MIN)
+    sendEmail.mockResolvedValueOnce(false)
+    await grant('known@example.com', 'EDITOR')
+    await flush()
+    const result = await acceptEmailInviteHandler(
+      ctx({ id: target.id, email: 'known@example.com' }),
+      { token: oldToken },
+    )
+    expect(result).toMatchObject({ success: true, role: 'VIEWER' })
   })
 })
 

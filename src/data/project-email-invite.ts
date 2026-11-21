@@ -16,6 +16,9 @@ import {
 /** An email invite is valid for 7 days from issuance. */
 export const EMAIL_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
+/** Age after which the sweep deletes a send-log row; the longest limit window is 24 h. */
+export const EMAIL_INVITE_SEND_LOG_AGE_MS = 24 * 60 * 60 * 1000
+
 /** Age past expiry after which the sweep deletes a row. */
 export const EMAIL_INVITE_CLEANUP_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -26,8 +29,9 @@ const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
 
 // Send limits. Every number below is a guess, sized far above normal team use.
-// Counts come from DB rows of ANY state (pending, voided, revoked, accepted),
-// so a re-invite cannot dodge them and a restart does not reset them.
+// Counts come from the EmailInviteSend log, which has no foreign key to Project
+// or User: a revoke, a member removal, a project delete or an account delete
+// cannot reset them, and a restart does not either.
 export const EMAIL_INVITE_INVITER_PER_HOUR = 20 // guess
 export const EMAIL_INVITE_INVITER_PER_DAY = 100 // guess
 /** Visible limit: one inviter's own sends to one address. */
@@ -44,30 +48,33 @@ export const EMAIL_INVITE_RECIPIENT_CEILING_PER_HOUR = 5 // guess
 /** No new email to the same (project, recipient) inside this window. */
 export const EMAIL_INVITE_COOLDOWN_MS = 10 * 60 * 1000 // guess
 
+/** Pending: not accepted, not revoked, not expired. Takes `now` as its one bound parameter. */
+const PENDING_SQL = `"acceptedAt" IS NULL AND "revokedAt" IS NULL AND "expiresAt" > ?`
+
 function countSince(
-  column: 'invitedByUserId' | 'email',
+  column: 'inviterId' | 'email',
   value: string,
   sinceMs: number,
 ): number {
   const row = db
     .prepare(
-      `SELECT count(*) AS c FROM "ProjectEmailInvite" WHERE "${column}" = ? AND "createdAt" >= ?`,
+      `SELECT count(*) AS c FROM "EmailInviteSend" WHERE "${column}" = ? AND "createdAt" >= ?`,
     )
     .get(value, sinceMs) as { c: number }
   return Number(row.c)
 }
 
 function countPairSince(
-  invitedByUserId: string,
+  inviterId: string,
   email: string,
   sinceMs: number,
 ): number {
   const row = db
     .prepare(
-      `SELECT count(*) AS c FROM "ProjectEmailInvite"
-       WHERE "invitedByUserId" = ? AND "email" = ? AND "createdAt" >= ?`,
+      `SELECT count(*) AS c FROM "EmailInviteSend"
+       WHERE "inviterId" = ? AND "email" = ? AND "createdAt" >= ?`,
     )
-    .get(invitedByUserId, email, sinceMs) as { c: number }
+    .get(inviterId, email, sinceMs) as { c: number }
   return Number(row.c)
 }
 
@@ -75,6 +82,8 @@ export type TryCreateEmailInviteResult =
   | {
       status: 'created'
       invite: ProjectEmailInvite
+      /** Ids of older pending rows this insert revoked; undoEmailInvite restores them. */
+      supersededIds: Array<string>
       /** True when the silent per-recipient ceiling was hit: store, do not send. */
       suppressEmail: boolean
     }
@@ -100,26 +109,46 @@ export function tryCreateEmailInvite(params: {
 }): TryCreateEmailInviteResult {
   return transaction(() => {
     const now = nowMs()
-    const last = db
+    // The cooldown holds only while a PENDING row of this pair was stored
+    // inside the window. After a revoke or a member removal there is none, so a
+    // re-invite sends at once (the visible pair limit still bounds a loop).
+    const pendingRow = db
       .prepare(
-        'SELECT max("createdAt") AS t FROM "ProjectEmailInvite" WHERE "projectId" = ? AND "email" = ?',
+        `SELECT "id", "createdAt" FROM "ProjectEmailInvite"
+         WHERE "projectId" = ? AND "email" = ? AND ${PENDING_SQL}
+         ORDER BY "createdAt" DESC LIMIT 1`,
       )
-      .get(params.projectId, params.email) as { t: number | null }
-    if (last.t !== null && now - Number(last.t) < EMAIL_INVITE_COOLDOWN_MS) {
-      // A new role inside the cooldown changes the pending row in place. Its
-      // token stays, so the email already sent stays valid.
+      .get(params.projectId, params.email, now) as
+      | { id: string; createdAt: number }
+      | undefined
+    if (
+      pendingRow &&
+      now - Number(pendingRow.createdAt) < EMAIL_INVITE_COOLDOWN_MS
+    ) {
+      // A new role inside the cooldown changes the pending row in place, and
+      // the caller becomes its inviter, because accept checks the role against
+      // the inviter's own role. Its token stays, so the email already sent
+      // stays valid.
       db.prepare(
-        `UPDATE "ProjectEmailInvite" SET "role" = ?
-         WHERE "projectId" = ? AND "email" = ? AND "acceptedAt" IS NULL
-           AND "revokedAt" IS NULL AND "expiresAt" > ? AND "role" != ?`,
-      ).run(params.role, params.projectId, params.email, now, params.role)
+        `UPDATE "ProjectEmailInvite" SET "role" = ?, "invitedByUserId" = ?
+         WHERE "projectId" = ? AND "email" = ? AND ${PENDING_SQL}
+           AND ("role" != ? OR "invitedByUserId" != ?)`,
+      ).run(
+        params.role,
+        params.invitedByUserId,
+        params.projectId,
+        params.email,
+        now,
+        params.role,
+        params.invitedByUserId,
+      )
       return { status: 'cooldown' as const }
     }
     const by = params.invitedByUserId
     if (
-      countSince('invitedByUserId', by, now - HOUR_MS) >=
+      countSince('inviterId', by, now - HOUR_MS) >=
         EMAIL_INVITE_INVITER_PER_HOUR ||
-      countSince('invitedByUserId', by, now - DAY_MS) >=
+      countSince('inviterId', by, now - DAY_MS) >=
         EMAIL_INVITE_INVITER_PER_DAY
     ) {
       return { status: 'inviter_limit' as const }
@@ -143,29 +172,25 @@ export function tryCreateEmailInvite(params: {
       const pending = db
         .prepare(
           `SELECT "id" FROM "ProjectEmailInvite"
-           WHERE "projectId" = ? AND "email" = ? AND "acceptedAt" IS NULL
-             AND "revokedAt" IS NULL AND "expiresAt" > ?`,
+           WHERE "projectId" = ? AND "email" = ? AND ${PENDING_SQL}`,
         )
         .get(params.projectId, params.email, now) as { id: string } | undefined
       if (pending) {
         db.prepare(
-          'UPDATE "ProjectEmailInvite" SET "role" = ? WHERE "id" = ?',
-        ).run(params.role, pending.id)
+          'UPDATE "ProjectEmailInvite" SET "role" = ?, "invitedByUserId" = ? WHERE "id" = ?',
+        ).run(params.role, params.invitedByUserId, pending.id)
         return { status: 'suppressed' as const }
       }
     }
-    return {
-      status: 'created' as const,
-      invite: insertEmailInvite(params),
-      suppressEmail,
-    }
+    const { invite, supersededIds } = insertEmailInvite(params)
+    return { status: 'created' as const, invite, supersededIds, suppressEmail }
   })
 }
 
 /**
- * Store one invite for (project, email). A still-pending older row of the same
- * pair is revoked in the same transaction, so only the newest link works.
- * `email` must already be lower-cased.
+ * Store one invite for (project, email) and log the send. A still-pending older
+ * row of the same pair is revoked in the same transaction, so only the newest
+ * link works. `email` must already be lower-cased.
  */
 function insertEmailInvite(params: {
   projectId: string
@@ -173,12 +198,22 @@ function insertEmailInvite(params: {
   role: ProjectRoleValue
   tokenHash: string
   invitedByUserId: string
-}): ProjectEmailInvite {
+}): { invite: ProjectEmailInvite; supersededIds: Array<string> } {
   const now = nowMs()
-  db.prepare(
-    `UPDATE "ProjectEmailInvite" SET "revokedAt" = ?
-     WHERE "projectId" = ? AND "email" = ? AND "acceptedAt" IS NULL AND "revokedAt" IS NULL`,
-  ).run(now, params.projectId, params.email)
+  const supersededIds = (
+    db
+      .prepare(
+        `SELECT "id" FROM "ProjectEmailInvite"
+         WHERE "projectId" = ? AND "email" = ? AND "acceptedAt" IS NULL AND "revokedAt" IS NULL`,
+      )
+      .all(params.projectId, params.email) as Array<{ id: string }>
+  ).map((r) => r.id)
+  for (const oldId of supersededIds) {
+    db.prepare('UPDATE "ProjectEmailInvite" SET "revokedAt" = ? WHERE "id" = ?').run(
+      now,
+      oldId,
+    )
+  }
 
   const id = genId()
   insert('ProjectEmailInvite', {
@@ -193,9 +228,40 @@ function insertEmailInvite(params: {
     revokedAt: null,
     createdAt: now,
   })
-  return mapProjectEmailInvite(
-    db.prepare('SELECT * FROM "ProjectEmailInvite" WHERE "id" = ?').get(id),
-  )!
+  insert('EmailInviteSend', {
+    id: genId(),
+    inviterId: params.invitedByUserId,
+    email: params.email,
+    projectId: params.projectId,
+    createdAt: now,
+  })
+  return {
+    invite: mapProjectEmailInvite(
+      db.prepare('SELECT * FROM "ProjectEmailInvite" WHERE "id" = ?').get(id),
+    )!,
+    supersededIds,
+  }
+}
+
+/**
+ * Undo an insert whose email could not be sent: delete the new row and bring
+ * back the rows it revoked, so the older link still works and no pending row
+ * blocks a retry. The send log row stays, so the failed send still counts.
+ */
+export function undoEmailInvite(
+  inviteId: string,
+  supersededIds: Array<string>,
+): void {
+  transaction(() => {
+    db.prepare(
+      'DELETE FROM "ProjectEmailInvite" WHERE "id" = ? AND "acceptedAt" IS NULL',
+    ).run(inviteId)
+    for (const oldId of supersededIds) {
+      db.prepare(
+        'UPDATE "ProjectEmailInvite" SET "revokedAt" = NULL WHERE "id" = ?',
+      ).run(oldId)
+    }
+  })
 }
 
 /** Store one invite without the send limits. Used by tests; the handler calls tryCreateEmailInvite. */
@@ -206,7 +272,7 @@ export function createEmailInvite(params: {
   tokenHash: string
   invitedByUserId: string
 }): ProjectEmailInvite {
-  return transaction(() => insertEmailInvite(params))
+  return transaction(() => insertEmailInvite(params).invite)
 }
 
 /** Count the pending (not accepted, revoked or expired) invites of a project. */
@@ -214,7 +280,7 @@ export function countPendingEmailInvites(projectId: string): number {
   const row = db
     .prepare(
       `SELECT count(*) AS c FROM "ProjectEmailInvite"
-       WHERE "projectId" = ? AND "acceptedAt" IS NULL AND "revokedAt" IS NULL AND "expiresAt" > ?`,
+       WHERE "projectId" = ? AND ${PENDING_SQL}`,
     )
     .get(projectId, nowMs()) as { c: number }
   return Number(row.c)
@@ -227,7 +293,7 @@ export function findPendingEmailInvites(
   return db
     .prepare(
       `SELECT * FROM "ProjectEmailInvite"
-       WHERE "projectId" = ? AND "acceptedAt" IS NULL AND "revokedAt" IS NULL AND "expiresAt" > ?
+       WHERE "projectId" = ? AND ${PENDING_SQL}
        ORDER BY "createdAt" DESC`,
     )
     .all(projectId, nowMs())
@@ -295,6 +361,14 @@ export function releaseEmailInvite(inviteId: string): void {
 export function deleteEmailInvitesExpiredBefore(ageMs: number): number {
   const result = db
     .prepare('DELETE FROM "ProjectEmailInvite" WHERE "expiresAt" < ?')
+    .run(nowMs() - ageMs)
+  return Number(result.changes)
+}
+
+/** Delete send-log rows older than `ageMs`. The longest limit window is 24 h. */
+export function deleteEmailInviteSendsOlderThan(ageMs: number): number {
+  const result = db
+    .prepare('DELETE FROM "EmailInviteSend" WHERE "createdAt" < ?')
     .run(nowMs() - ageMs)
   return Number(result.changes)
 }

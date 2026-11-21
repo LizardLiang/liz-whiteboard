@@ -25,8 +25,10 @@ export interface SendEmailParams {
  * logged and never thrown — callers fire this without awaiting it.
  *
  * @param params - Recipient, subject, and both email bodies
+ * @returns false when the email was not handed to Resend (no key in
+ *   production, an error response, a network failure or a timeout), else true
  */
-export async function sendEmail(params: SendEmailParams): Promise<void> {
+export async function sendEmail(params: SendEmailParams): Promise<boolean> {
   const apiKey = process.env.RESEND_API_KEY
 
   if (!apiKey) {
@@ -34,10 +36,10 @@ export async function sendEmail(params: SendEmailParams): Promise<void> {
       console.log(
         `[email] RESEND_API_KEY not set — logging instead of sending.\nTo: ${params.to}\nSubject: ${params.subject}\n${params.text}`,
       )
-      return
+      return true
     }
     console.error('[email] RESEND_API_KEY is not set — email not sent.')
-    return
+    return false
   }
 
   try {
@@ -60,8 +62,11 @@ export async function sendEmail(params: SendEmailParams): Promise<void> {
     if (!response.ok) {
       const body = await response.text().catch(() => '')
       console.error(`[email] Resend API error ${response.status}: ${body}`)
+      return false
     }
+    return true
   } catch (err) {
     console.error('[email] Resend request failed:', err)
+    return false
   }
 }

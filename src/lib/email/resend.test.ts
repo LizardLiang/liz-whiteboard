@@ -102,7 +102,7 @@ describe('sendEmail', () => {
     )
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    await expect(sendEmail(PARAMS)).resolves.toBeUndefined()
+    await expect(sendEmail(PARAMS)).resolves.toBe(false)
     expect(errorSpy).toHaveBeenCalled()
 
     errorSpy.mockRestore()
@@ -113,7 +113,7 @@ describe('sendEmail', () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('down')))
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    await expect(sendEmail(PARAMS)).resolves.toBeUndefined()
+    await expect(sendEmail(PARAMS)).resolves.toBe(false)
     expect(errorSpy).toHaveBeenCalled()
 
     errorSpy.mockRestore()
@@ -144,7 +144,7 @@ describe('sendEmail', () => {
     )
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    await expect(sendEmail(PARAMS)).resolves.toBeUndefined()
+    await expect(sendEmail(PARAMS)).resolves.toBe(false)
     expect(errorSpy).toHaveBeenCalled()
 
     errorSpy.mockRestore()

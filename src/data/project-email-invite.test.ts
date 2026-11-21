@@ -5,6 +5,7 @@ import {
   claimEmailInvite,
   classifyEmailInvite,
   createEmailInvite,
+  deleteEmailInviteSendsOlderThan,
   deleteEmailInvitesExpiredBefore,
   findEmailInviteByTokenHash,
   findPendingEmailInvites,
@@ -121,5 +122,36 @@ describe('claim, revoke and expiry', () => {
     db.exec('PRAGMA foreign_keys = ON;')
     db.prepare('DELETE FROM "Project" WHERE "id" = ?').run(projectId)
     expect(findEmailInviteByTokenHash('z')).toBeNull()
+  })
+})
+
+describe('send log', () => {
+  const sends = () =>
+    Number(
+      (
+        db.prepare('SELECT count(*) AS c FROM "EmailInviteSend"').get() as {
+          c: number
+        }
+      ).c,
+    )
+
+  it('one row per invite stored, and it survives a project delete', () => {
+    create('l1')
+    create('l2', 'b@example.com')
+    expect(sends()).toBe(2)
+    db.exec('PRAGMA foreign_keys = ON;')
+    db.prepare('DELETE FROM "Project" WHERE "id" = ?').run(projectId)
+    expect(findEmailInviteByTokenHash('l1')).toBeNull()
+    expect(sends()).toBe(2)
+  })
+
+  it('the sweep deletes log rows older than the age and keeps newer ones', () => {
+    create('l3')
+    create('l4', 'b@example.com')
+    db.prepare(
+      'UPDATE "EmailInviteSend" SET "createdAt" = 1 WHERE "email" = ?',
+    ).run('a@example.com')
+    expect(deleteEmailInviteSendsOlderThan(60_000)).toBe(1)
+    expect(sends()).toBe(1)
   })
 })

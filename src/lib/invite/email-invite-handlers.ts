@@ -25,7 +25,7 @@ import type { Locale } from '@/lib/i18n/resolve-locale'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { checkAdminRoleChange } from '@/lib/auth/admin-role-guard'
 import { buildEmailInviteHtml } from '@/lib/auth/escape-html'
-import { resolveBaseUrl } from '@/lib/auth/signup-flow'
+import { resolveBaseUrl } from '@/lib/email/base-url'
 import { findEffectiveRole, setProjectMemberRole } from '@/data/permission'
 import { findProjectById } from '@/data/project'
 import { findUserById } from '@/data/user'
@@ -39,6 +39,7 @@ import {
   releaseEmailInvite,
   revokeEmailInvite,
   tryCreateEmailInvite,
+  undoEmailInvite,
 } from '@/data/project-email-invite'
 import { logSampledError } from '@/lib/auth/log-sample'
 import { generateInviteToken, hashInviteToken } from '@/lib/auth/invite-token'
@@ -176,21 +177,28 @@ export async function grantPermissionHandler(
     return rateLimited('Too many invites to this address recently.')
   }
 
-  if (created.status === 'suppressed') {
+  // Silent per-address ceiling: the row exists (or an already-sent pending row
+  // kept its place), no email goes out, and the reply is the same, so no tenant
+  // can make another tenant's invite fail.
+  if (created.status === 'suppressed' || created.suppressEmail) {
     logCeiling(user.id)
     return { success: true as const, invited: true as const }
   }
 
-  // Silent per-address ceiling: the row exists, no email goes out, and the
-  // reply is the same, so no tenant can make another tenant's invite fail.
-  if (created.suppressEmail) {
-    logCeiling(user.id)
-    return { success: true as const, invited: true as const }
+  const { invite, supersededIds } = created
+  // A send that fails (or cannot start) leaves the older link working and no
+  // pending row to block a retry. The send log row stays, so it still counts.
+  const undo = () => {
+    try {
+      undoEmailInvite(invite.id, supersededIds)
+    } catch (err) {
+      console.error('[invite] could not undo a failed invite send:', err)
+    }
   }
-
   const baseUrl = resolveBaseUrl(await requestOrigin())
   if (!baseUrl) {
     console.error('[invite] APP_BASE_URL is not set — invite email not sent.')
+    undo()
   } else {
     const message = buildInviteMessage({
       baseUrl,
@@ -200,9 +208,14 @@ export async function grantPermissionHandler(
       role: data.role,
       locale: await getRequestLocale(),
     })
-    void sendEmail({ to: data.email, ...message }).catch((err: unknown) => {
-      console.error('[invite] sendEmail failed:', err)
-    })
+    void sendEmail({ to: data.email, ...message })
+      .then((sent) => {
+        if (sent === false) undo()
+      })
+      .catch((err: unknown) => {
+        console.error('[invite] sendEmail failed:', err)
+        undo()
+      })
   }
 
   return { success: true as const, invited: true as const }
