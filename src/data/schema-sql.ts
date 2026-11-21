@@ -528,6 +528,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS "PasswordResetToken_tokenHash_key" ON "Passwor
 CREATE INDEX IF NOT EXISTS "PasswordResetToken_userId_idx" ON "PasswordResetToken"("userId");
 CREATE INDEX IF NOT EXISTS "PasswordResetToken_createdAt_idx" ON "PasswordResetToken"("createdAt");
 
+-- Email-link signup. register stores one row per (attempted) signup; no User row
+-- exists until the emailed link sets the password. An attempt for an email that
+-- already has an account is stored already voided (usedAt set), so the per-email
+-- send limits count both cases the same way. redirectTo carries a same-origin
+-- return path (an invite link) through the email. Only the SHA-256 hash of the
+-- raw token is stored. src/data/signup-token.ts sweeps rows after 7 days.
+CREATE TABLE IF NOT EXISTS "SignupToken" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "email" TEXT NOT NULL,
+    "username" TEXT NOT NULL,
+    "redirectTo" TEXT,
+    "tokenHash" TEXT NOT NULL,
+    "expiresAt" INTEGER NOT NULL,
+    "usedAt" INTEGER,
+    "createdAt" INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "SignupToken_tokenHash_key" ON "SignupToken"("tokenHash");
+CREATE INDEX IF NOT EXISTS "SignupToken_email_idx" ON "SignupToken"("email");
+CREATE INDEX IF NOT EXISTS "SignupToken_createdAt_idx" ON "SignupToken"("createdAt");
+
 -- Tombstones for ids a client may choose (RetiredId). A create can name its own
 -- id, so a deleted row's id must not be claimable from another whiteboard: a
 -- later restore of the home whiteboard would then collide with the squatter.

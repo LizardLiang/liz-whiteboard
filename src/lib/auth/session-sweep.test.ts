@@ -40,4 +40,22 @@ describe('startSessionSweep', () => {
     expect(exists(expiredLater)).toBe(false)
     expect(exists(live)).toBe(true)
   })
+
+  it('sweeps signup tokens older than 7 days and keeps newer ones', async () => {
+    const ins = (id: string, createdAt: number) =>
+      db
+        .prepare(
+          'INSERT INTO "SignupToken" ("id","email","username","tokenHash","expiresAt","createdAt") VALUES (?,?,?,?,?,?)',
+        )
+        .run(id, `${id}@example.com`, 'u', `h-${id}`, createdAt + 1, createdAt)
+    ins('old', Date.now() - 8 * 24 * 3_600_000)
+    ins('young', Date.now() - 3_600_000)
+    startSessionSweep()
+    await vi.advanceTimersByTimeAsync(0)
+    const has = (id: string) =>
+      db.prepare('SELECT 1 AS x FROM "SignupToken" WHERE "id" = ?').get(id) !==
+      undefined
+    expect(has('old')).toBe(false)
+    expect(has('young')).toBe(true)
+  })
 })

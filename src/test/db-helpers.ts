@@ -24,6 +24,7 @@ const ALL_TABLES = [
   'Folder',
   'ProjectInvite',
   'PasswordResetToken',
+  'SignupToken',
   'ProjectMember',
   'Session',
   'Project',

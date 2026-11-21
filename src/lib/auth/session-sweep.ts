@@ -1,9 +1,13 @@
 // src/lib/auth/session-sweep.ts
-// Deletes expired login sessions: once at boot, then every hour. Mirrors the
-// interval-with-unref pattern of the OAuth sweeps (codes.ts, pending-consent.ts).
+// Deletes expired login sessions and signup tokens older than 7 days: once at
+// boot, then every hour. Mirrors the interval-with-unref pattern of the OAuth sweeps (codes.ts, pending-consent.ts).
 // Expired rows are already refused at validation time; this keeps the Session
 // table from growing forever.
 
+import {
+  SIGNUP_TOKEN_CLEANUP_AGE_MS,
+  deleteSignupTokensOlderThan,
+} from '@/data/signup-token'
 import { deleteExpiredSessions } from '@/lib/auth/session'
 
 const SESSION_SWEEP_INTERVAL_MS = 60 * 60 * 1000
@@ -15,6 +19,12 @@ async function sweepOnce(): Promise<void> {
     if (deleted > 0) console.log(`[auth] Deleted ${deleted} expired sessions`)
   } catch (error) {
     console.error('[auth] Failed to delete expired sessions:', error)
+  }
+  try {
+    const swept = deleteSignupTokensOlderThan(SIGNUP_TOKEN_CLEANUP_AGE_MS)
+    if (swept > 0) console.log(`[auth] Deleted ${swept} old signup tokens`)
+  } catch (error) {
+    console.error('[auth] Failed to delete old signup tokens:', error)
   }
 }
 

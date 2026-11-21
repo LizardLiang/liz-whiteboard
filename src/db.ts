@@ -39,6 +39,7 @@ import type {
   Relationship,
   Session,
   Shape,
+  SignupToken,
   User,
   Whiteboard,
   WhiteboardShareLink,
@@ -495,6 +496,20 @@ export function mapPasswordResetToken(r: Row): PasswordResetToken | null {
   return {
     id: r.id as string,
     userId: r.userId as string,
+    tokenHash: r.tokenHash as string,
+    expiresAt: fromDbDate(r.expiresAt),
+    usedAt: r.usedAt == null ? null : fromDbDate(r.usedAt),
+    createdAt: fromDbDate(r.createdAt),
+  }
+}
+
+export function mapSignupToken(r: Row): SignupToken | null {
+  if (!r) return null
+  return {
+    id: r.id as string,
+    email: r.email as string,
+    username: r.username as string,
+    redirectTo: (r.redirectTo as string | null) ?? null,
     tokenHash: r.tokenHash as string,
     expiresAt: fromDbDate(r.expiresAt),
     usedAt: r.usedAt == null ? null : fromDbDate(r.usedAt),

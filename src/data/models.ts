@@ -57,6 +57,18 @@ export interface PasswordResetToken {
   createdAt: Date
 }
 
+/** One pending (or attempted) email-link signup. No User row exists yet. */
+export interface SignupToken {
+  id: string
+  email: string
+  username: string
+  redirectTo: string | null
+  tokenHash: string
+  expiresAt: Date
+  usedAt: Date | null
+  createdAt: Date
+}
+
 export interface ProjectMember {
   id: string
   projectId: string
