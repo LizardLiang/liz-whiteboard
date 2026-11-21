@@ -191,6 +191,14 @@ export const zhTW: DeepStringRecord<Dictionary> = {
     existsHtmlIntro:
       '有人使用這個電子郵件地址要求建立帳號，但您已經有帳號了。請從這裡登入，或重設密碼：',
     existsHtmlOutro: '如果這不是您本人，請忽略這封郵件。',
+    inviteSubject: '您受邀加入一個專案',
+    inviteText:
+      '{inviter} 邀請您以{role}身分加入專案「{project}」。\n\n請在使用此電子郵件地址登入的狀態下開啟此連結：{link}\n\n還沒有帳號？請先用此電子郵件地址註冊：{registerLink}\n\n此連結將在 7 天後失效，且只能使用一次。如果您沒有預期這封邀請，請忽略這封郵件。',
+    inviteHtmlIntro:
+      '{inviter} 邀請您以{role}身分加入專案「{project}」。請在使用此電子郵件地址登入的狀態下開啟此連結：',
+    inviteHtmlRegister: '還沒有帳號？請先用此電子郵件地址註冊：',
+    inviteHtmlOutro:
+      '此連結將在 7 天後失效，且只能使用一次。如果您沒有預期這封邀請，請忽略這封郵件。',
   },
   header: {
     connections: '連線',
@@ -458,6 +466,8 @@ export const zhTW: DeepStringRecord<Dictionary> = {
     inviteExpired: '此邀請連結已過期。',
     inviteExhausted: '此邀請連結已被使用過。',
     inviteNoLongerValid: '此邀請連結已失效。',
+    inviteWrongAccount: '此邀請是寄給另一個電子郵件地址的。請使用受邀的地址登入。',
+    tooManyPendingInvites: '待處理的邀請過多。請先撤銷一些再寄送更多。',
     shareInvalid: '此分享連結無效。',
     shareRevoked: '此分享連結已被撤銷。',
     shareExpired: '此分享連結已過期。',

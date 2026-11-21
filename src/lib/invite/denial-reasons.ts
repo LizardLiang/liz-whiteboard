@@ -5,11 +5,18 @@
 // client-side src/components/project/InviteInvalid.tsx, so the two never
 // drift out of sync.
 
-export type InviteDenialReason = 'INVALID' | 'REVOKED' | 'EXPIRED' | 'EXHAUSTED'
+export type InviteDenialReason =
+  | 'INVALID'
+  | 'REVOKED'
+  | 'EXPIRED'
+  | 'EXHAUSTED'
+  | 'WRONG_ACCOUNT'
 
 export const INVITE_DENIAL_MESSAGES: Record<InviteDenialReason, string> = {
   INVALID: 'This invite link is invalid.',
   REVOKED: 'This invite link has been revoked.',
   EXPIRED: 'This invite link has expired.',
   EXHAUSTED: 'This invite link has already been used.',
+  WRONG_ACCOUNT:
+    'This invite was sent to a different email address. Log in with the invited address.',
 }

@@ -194,6 +194,15 @@ export const en = {
     existsHtmlIntro:
       'Someone asked to create an account with this email address, but you already have one. Log in here, or reset your password:',
     existsHtmlOutro: 'If this was not you, you can ignore this email.',
+    inviteSubject: 'You were invited to a project',
+    inviteText:
+      '{inviter} invited you to join the project "{project}" as {role}.\n\nOpen this link while logged in with this email address: {link}\n\nNo account yet? Register with this email address first: {registerLink}\n\nThis link expires in 7 days and can only be used once. If you did not expect this, you can ignore this email.',
+    inviteHtmlIntro:
+      '{inviter} invited you to join the project "{project}" as {role}. Open this link while logged in with this email address:',
+    inviteHtmlRegister:
+      'No account yet? Register with this email address first:',
+    inviteHtmlOutro:
+      'This link expires in 7 days and can only be used once. If you did not expect this, you can ignore this email.',
   },
   header: {
     connections: 'Connections',
@@ -475,6 +484,10 @@ export const en = {
     inviteExpired: 'This invite link has expired.',
     inviteExhausted: 'This invite link has already been used.',
     inviteNoLongerValid: 'This invite link is no longer valid.',
+    inviteWrongAccount:
+      'This invite was sent to a different email address. Log in with the invited address.',
+    tooManyPendingInvites:
+      'Too many pending invites. Revoke some before sending more.',
     shareInvalid: 'This shared link is invalid.',
     shareRevoked: 'This shared link has been revoked.',
     shareExpired: 'This shared link has expired.',

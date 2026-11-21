@@ -47,3 +47,19 @@ export function buildAccountExistsEmailHtml(parts: {
   const outro = escapeHtml(parts.outro)
   return `<p>${intro}</p><p><a href="${loginLink}">${loginLink}</a></p><p><a href="${resetLink}">${resetLink}</a></p><p>${outro}</p>`
 }
+
+/** Build the project-invite email HTML: accept link plus a register hint; all values escaped. */
+export function buildEmailInviteHtml(parts: {
+  intro: string
+  link: string
+  registerHint: string
+  registerLink: string
+  outro: string
+}): string {
+  const intro = escapeHtml(parts.intro)
+  const link = escapeHtml(parts.link)
+  const registerHint = escapeHtml(parts.registerHint)
+  const registerLink = escapeHtml(parts.registerLink)
+  const outro = escapeHtml(parts.outro)
+  return `<p>${intro}</p><p><a href="${link}">${link}</a></p><p>${registerHint}</p><p><a href="${registerLink}">${registerLink}</a></p><p>${outro}</p>`
+}

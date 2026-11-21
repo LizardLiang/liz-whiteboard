@@ -11,7 +11,8 @@ import {
   setProjectMemberRole,
 } from '@/data/permission'
 import { checkAdminRoleChange } from '@/lib/auth/admin-role-guard'
-import { findUserByEmail, findUserById } from '@/data/user'
+import { findUserById } from '@/data/user'
+import { grantPermissionHandler } from '@/lib/invite/email-invite-handlers'
 import { findProjectById } from '@/data/project'
 import {
   grantPermissionSchema,
@@ -69,62 +70,15 @@ export const listProjectPermissions = createServerFn({ method: 'GET' })
   )
 
 /**
- * Grant a permission to a user by email.
- * Requires ADMIN or OWNER effective role; granting ADMIN requires OWNER.
+ * Invite an email address to a project. Requires ADMIN or OWNER effective
+ * role; granting ADMIN requires OWNER. The reply never reveals whether the
+ * email has an account. See src/lib/invite/email-invite-handlers.ts.
  *
  * @requires admin
  */
 export const grantPermission = createServerFn({ method: 'POST' })
   .validator((data: unknown) => grantPermissionSchema.parse(data))
-  .handler(
-    requireAuth(async ({ user }, data) => {
-      const effectiveRole = await findEffectiveRole(user.id, data.projectId)
-      if (!hasMinimumRole(effectiveRole, 'ADMIN')) {
-        return {
-          error: 'FORBIDDEN' as const,
-          status: 403,
-          message: 'Only ADMIN or OWNER can grant permissions',
-        }
-      }
-
-      // Find target user by email
-      const targetUser = await findUserByEmail(data.email)
-      if (!targetUser) {
-        return {
-          error: 'USER_NOT_FOUND' as const,
-          status: 404,
-          message: 'No user found with that email address',
-        }
-      }
-
-      // Prevent modifying the owner
-      const project = await findProjectById(data.projectId)
-      if (project?.ownerId === targetUser.id) {
-        return {
-          error: 'FORBIDDEN' as const,
-          status: 403,
-          message: "Cannot modify the project owner's access",
-        }
-      }
-
-      // Granting ADMIN, or overwriting an existing ADMIN, needs OWNER.
-      const targetRole = await findEffectiveRole(targetUser.id, data.projectId)
-      const adminDenial = checkAdminRoleChange(effectiveRole, {
-        newRole: data.role,
-        targetRole,
-      })
-      if (adminDenial) return adminDenial
-
-      // Upsert the permission (create or update)
-      const member = await setProjectMemberRole({
-        projectId: data.projectId,
-        userId: targetUser.id,
-        role: data.role,
-      })
-
-      return { success: true, member }
-    }),
-  )
+  .handler(requireAuth(grantPermissionHandler))
 
 /**
  * Update a user's role on a project.

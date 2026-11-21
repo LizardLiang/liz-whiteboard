@@ -697,6 +697,14 @@ export const revokeInviteSchema = z.object({
 })
 
 /**
+ * Schema for accepting a grant-by-email invite. `token` is the raw bearer
+ * token from the emailed link; the hash lookup rejects anything else.
+ */
+export const acceptEmailInviteSchema = z.object({
+  token: z.string().min(1).max(256),
+})
+
+/**
  * Schema for redeeming a project invite link. `token` is the raw
  * crypto-random bearer token (not a UUID) — validated for non-emptiness
  * only, the hash lookup itself rejects anything that doesn't match.
@@ -866,6 +874,7 @@ export type RevokePermission = z.infer<typeof revokePermissionSchema>
 export type InviteExpiryHours = z.infer<typeof inviteExpiryHoursSchema>
 export type CreateInvite = z.infer<typeof createInviteSchema>
 export type RevokeInvite = z.infer<typeof revokeInviteSchema>
+export type AcceptEmailInvite = z.infer<typeof acceptEmailInviteSchema>
 export type RedeemInvite = z.infer<typeof redeemInviteSchema>
 
 // ============================================================================

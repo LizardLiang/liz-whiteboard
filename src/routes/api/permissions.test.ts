@@ -18,7 +18,7 @@ import {
   findProjectMembers,
   upsertProjectMember,
 } from '@/data/permission'
-import { findUserByEmail, findUserById } from '@/data/user'
+import { findUserById } from '@/data/user'
 import { findProjectById } from '@/data/project'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { makeProject, makeUser, resetDb } from '@/test/db-helpers'
@@ -69,55 +69,6 @@ async function listProjectPermissionsHandler(
       role: m.role,
     })),
   }
-}
-
-async function grantPermissionHandler(
-  callerId: string,
-  data: { projectId: string; email: string; role: string },
-) {
-  const effectiveRole = await findEffectiveRole(callerId, data.projectId)
-  if (!hasMinimumRole(effectiveRole, 'ADMIN')) {
-    return {
-      error: 'FORBIDDEN' as const,
-      status: 403,
-      message: 'Only ADMIN or OWNER can grant permissions',
-    }
-  }
-
-  const targetUser = await findUserByEmail(data.email)
-  if (!targetUser) {
-    return {
-      error: 'USER_NOT_FOUND' as const,
-      status: 404,
-      message: 'No user found with that email address',
-    }
-  }
-
-  const project = await findProjectById(data.projectId)
-  if (project?.ownerId === targetUser.id) {
-    return {
-      error: 'FORBIDDEN' as const,
-      status: 403,
-      message: "Cannot modify the project owner's access",
-    }
-  }
-
-  // Only OWNER can grant the ADMIN role.
-  if (data.role === 'ADMIN' && effectiveRole !== 'OWNER') {
-    return {
-      error: 'FORBIDDEN' as const,
-      status: 403,
-      message: 'Only OWNER can grant ADMIN role',
-    }
-  }
-
-  const member = await upsertProjectMember({
-    projectId: data.projectId,
-    userId: targetUser.id,
-    role: data.role as any,
-  })
-
-  return { success: true, member }
 }
 
 async function updatePermissionHandler(
@@ -224,92 +175,8 @@ beforeEach(() => {
   PROJECT_ID = makeProject({ name: 'Test Project', ownerId: OWNER_ID }).id
 })
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TC-P4-07: grantPermission — ADMIN can add EDITOR; ADMIN cannot add ADMIN
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('TC-P4-07: grantPermission role enforcement', () => {
-  it('ADMIN can grant EDITOR role to a new user', async () => {
-    mockedFindEffectiveRole.mockResolvedValue('ADMIN')
-
-    const result = await grantPermissionHandler(ADMIN_ID, {
-      projectId: PROJECT_ID,
-      email: 'target@example.com',
-      role: 'EDITOR',
-    })
-
-    expect(result).toMatchObject({ success: true })
-    // Real membership row persisted with the EDITOR role.
-    expect(await memberRole(PROJECT_ID, TARGET_ID)).toBe('EDITOR')
-  })
-
-  it('ADMIN cannot grant ADMIN role (only OWNER can grant ADMIN)', async () => {
-    mockedFindEffectiveRole.mockResolvedValue('ADMIN')
-
-    const result = await grantPermissionHandler(ADMIN_ID, {
-      projectId: PROJECT_ID,
-      email: 'target@example.com',
-      role: 'ADMIN',
-    })
-
-    expect(result.error).toBe('FORBIDDEN')
-    // No membership was created.
-    expect(await memberRole(PROJECT_ID, TARGET_ID)).toBeUndefined()
-  })
-
-  it('OWNER can grant ADMIN role', async () => {
-    mockedFindEffectiveRole.mockResolvedValue('OWNER')
-
-    const result = await grantPermissionHandler(OWNER_ID, {
-      projectId: PROJECT_ID,
-      email: 'target@example.com',
-      role: 'ADMIN',
-    })
-
-    expect(result).toMatchObject({ success: true })
-    expect(await memberRole(PROJECT_ID, TARGET_ID)).toBe('ADMIN')
-  })
-
-  it('non-ADMIN caller cannot grant any permissions', async () => {
-    mockedFindEffectiveRole.mockResolvedValue('EDITOR')
-
-    const result = await grantPermissionHandler(EDITOR_ID, {
-      projectId: PROJECT_ID,
-      email: 'target@example.com',
-      role: 'VIEWER',
-    })
-
-    expect(result.error).toBe('FORBIDDEN')
-    expect(result.status).toBe(403)
-    expect(await memberRole(PROJECT_ID, TARGET_ID)).toBeUndefined()
-  })
-
-  it('returns USER_NOT_FOUND when the target email does not exist', async () => {
-    mockedFindEffectiveRole.mockResolvedValue('ADMIN')
-
-    const result = await grantPermissionHandler(ADMIN_ID, {
-      projectId: PROJECT_ID,
-      email: 'nobody@example.com',
-      role: 'VIEWER',
-    })
-
-    expect(result.error).toBe('USER_NOT_FOUND')
-    expect(result.status).toBe(404)
-  })
-
-  it('cannot grant a permission that targets the project owner', async () => {
-    mockedFindEffectiveRole.mockResolvedValue('ADMIN')
-
-    const result = await grantPermissionHandler(ADMIN_ID, {
-      projectId: PROJECT_ID,
-      email: 'owner@example.com',
-      role: 'EDITOR',
-    })
-
-    expect(result.error).toBe('FORBIDDEN')
-    expect(result.message).toContain('owner')
-  })
-})
+// TC-P4-07 (grantPermission) moved to src/lib/invite/email-invite-handlers.test.ts:
+// granting now sends an email invite instead of adding the member at once.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TC-P4-08: updatePermission — admin cannot demote owner; only owner demotes admin

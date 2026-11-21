@@ -19,7 +19,7 @@ import { generateSignupToken, hashSignupToken } from '@/lib/auth/signup-token'
 import { sendEmail } from '@/lib/email/resend'
 import { translate } from '@/lib/i18n/translate'
 
-function resolveBaseUrl(requestOrigin: string | null): string | null {
+export function resolveBaseUrl(requestOrigin: string | null): string | null {
   const configured = process.env.APP_BASE_URL
   if (configured) return configured.replace(/\/$/, '')
   // Outside production the request origin keeps the flow usable on a dev
