@@ -3,7 +3,11 @@
 
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { DUMMY_PASSWORD_HASH, checkCredentials } from './login-flow'
+import {
+  DUMMY_PASSWORD_HASH,
+  checkCredentials,
+  failureNeedsChallenge,
+} from './login-flow'
 import {
   LOGIN_IP_LIMIT_MAX,
   REGISTER_IP_LIMIT_MAX,
@@ -99,10 +103,39 @@ describe('login challenge instead of lockout', () => {
   it('a wrong password with a valid token is a normal failure', async () => {
     makeUser({ email: 'a@example.com', passwordHash: HASH })
     await failTimes('a@example.com', 5)
-    expect(await checkCredentials('a@example.com', 'nope', PASS)).toEqual({
+    const res = await checkCredentials('a@example.com', 'nope', PASS)
+    expect(res).toEqual({
       ok: false,
       reason: 'bad_password',
+      challengePassed: true,
     })
+  })
+
+  it('W4: a valid token with a wrong password, or an unknown email, answers AUTH_FAILED; a missing or bad token answers CHALLENGE_REQUIRED', async () => {
+    makeUser({ email: 'a@example.com', passwordHash: HASH })
+    await failTimes('a@example.com', 5)
+    await failTimes('ghost@example.com', 5)
+    for (const email of ['a@example.com', 'ghost@example.com']) {
+      const wrong = await checkCredentials(email, 'nope', PASS)
+      if (wrong.ok) throw new Error('unexpected success')
+      expect(failureNeedsChallenge(wrong, email)).toBe(false)
+      for (const token of [undefined, 'bad-token']) {
+        const refused = await checkCredentials(email, 'nope', {
+          turnstileToken: token,
+          ip: '1.1.1.1',
+        })
+        if (refused.ok) throw new Error('unexpected success')
+        expect(failureNeedsChallenge(refused, email)).toBe(true)
+      }
+    }
+  })
+
+  it('W4: the failure that reaches the threshold still answers CHALLENGE_REQUIRED', async () => {
+    makeUser({ email: 'a@example.com', passwordHash: HASH })
+    await failTimes('a@example.com', 4)
+    const fifth = await checkCredentials('a@example.com', 'wrong', CHALLENGE)
+    if (fifth.ok) throw new Error('unexpected success')
+    expect(failureNeedsChallenge(fifth, 'a@example.com')).toBe(true)
   })
 
   it('20 parallel wrong passwords: 5 reach bcrypt, the rest are refused at the challenge', async () => {
@@ -135,7 +168,11 @@ describe('unknown email and enumeration', () => {
   it('unknown email still runs a bcrypt verification against the dummy hash', async () => {
     const spy = vi.spyOn(passwordMod, 'verifyPassword')
     const res = await checkCredentials('nobody@example.com', 'whatever', CHALLENGE)
-    expect(res).toEqual({ ok: false, reason: 'unknown' })
+    expect(res).toEqual({
+      ok: false,
+      reason: 'unknown',
+      challengePassed: false,
+    })
     expect(spy).toHaveBeenCalledTimes(1)
     expect(spy).toHaveBeenCalledWith('whatever', DUMMY_PASSWORD_HASH)
     spy.mockRestore()

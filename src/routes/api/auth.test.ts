@@ -45,11 +45,8 @@ import {
   completeSignup as completeSignupRow,
   getSignupTokenState,
 } from '@/data/signup-token'
-import { checkCredentials } from '@/lib/auth/login-flow'
-import {
-  _resetLoginFailuresForTests,
-  isLoginChallengeRequired,
-} from '@/lib/auth/rate-limit'
+import { checkCredentials, failureNeedsChallenge } from '@/lib/auth/login-flow'
+import { _resetLoginFailuresForTests } from '@/lib/auth/rate-limit'
 import { makeProject, makeUser, resetDb } from '@/test/db-helpers'
 
 const GENERIC_AUTH_ERROR = 'Invalid email or password'
@@ -134,7 +131,7 @@ async function loginUserHandler(data: {
     ip: '1.1.1.1',
   })
   if (!result.ok) {
-    if (result.reason === 'challenge' || isLoginChallengeRequired(data.email)) {
+    if (failureNeedsChallenge(result, data.email)) {
       return {
         success: false,
         error: 'CHALLENGE_REQUIRED',
