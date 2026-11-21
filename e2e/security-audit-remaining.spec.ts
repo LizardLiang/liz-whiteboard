@@ -267,6 +267,35 @@ test.describe('Login challenge after 5 failures', () => {
     await failFiveTimes(page, emailOf('nobody'))
     await expect(page.getByTestId('login-challenge')).toBeVisible()
   })
+
+  // W4: a valid Turnstile token with a wrong password says the password was
+  // wrong. It does not show "complete the check" again, and the widget stays.
+  test('a wrong password after the check says so, and the widget stays', async ({
+    page,
+  }) => {
+    seedUser('mistype')
+    const email = emailOf('mistype')
+    await failFiveTimes(page, email)
+
+    await typeInto(page, 'Password', 'still-the-wrong-password')
+    const signIn = page.getByRole('button', { name: 'Sign in' })
+    await expect(signIn).toBeEnabled({ timeout: 30_000 })
+    await signIn.click()
+    await expect(page.getByRole('alert').first()).toContainText(
+      'Invalid email or password',
+      { timeout: 20_000 },
+    )
+    await expect(page.getByRole('alert').first()).not.toContainText(
+      'Complete the check',
+    )
+    await expect(page.getByTestId('login-challenge')).toBeVisible()
+
+    // The next try with the right password still gets in.
+    await typeInto(page, 'Password', PASSWORD)
+    await expect(signIn).toBeEnabled({ timeout: 30_000 })
+    await signIn.click()
+    await expectSessionCookie(page.context())
+  })
 })
 
 test.describe('Grant-by-email invites', () => {
@@ -295,6 +324,33 @@ test.describe('Grant-by-email invites', () => {
       page.getByRole('list', { name: 'Pending email invites' }),
     ).toContainText(unknown)
     expect(seed('hasuser', { email: unknown })).toBe('0')
+  })
+
+  // W2: after a revoke, a re-invite at once is stored (and sent), not swallowed.
+  test('a revoke, then an immediate re-invite, shows the invite again', async ({
+    page,
+  }) => {
+    await page.goto(`/project/${IDS.project}`)
+    await page.getByRole('button', { name: 'Share' }).click()
+    await expect(
+      page.getByRole('heading', { name: 'Share Project' }),
+    ).toBeVisible()
+    const target = emailOf('revoke-again')
+    const box = page.getByRole('textbox', { name: 'Email address to invite' })
+    const pending = page.getByRole('list', { name: 'Pending email invites' })
+
+    await box.fill(target)
+    await page.getByRole('button', { name: 'Send invite' }).click()
+    await expect(pending).toContainText(target, { timeout: 20_000 })
+
+    await page
+      .getByRole('button', { name: `Revoke invite for ${target}` })
+      .click()
+    await expect(pending).not.toContainText(target, { timeout: 20_000 })
+
+    await box.fill(target)
+    await page.getByRole('button', { name: 'Send invite' }).click()
+    await expect(pending).toContainText(target, { timeout: 20_000 })
   })
 
   test('a forwarded link is refused, and the right user accepts', async ({
@@ -335,6 +391,71 @@ test.describe('Grant-by-email invites', () => {
     })
     expect(seed('role', { email: emailOf('invitee') })).toBe('EDITOR')
     await invitee.context().close()
+  })
+})
+
+test.describe('Invite return path through login and register (W3)', () => {
+  test.use({ storageState: { cookies: [], origins: [] } })
+
+  test('invite -> login -> Register -> signup link -> back on the invite', async ({
+    page,
+  }) => {
+    const newbie = emailOf('newbie')
+    const invite = newToken()
+    seed('invite', {
+      email: newbie,
+      role: 'VIEWER',
+      hash: invite.hash,
+      ttlMs: 60 * 60 * 1000,
+    })
+    const invitePath = `/invite/email/${invite.raw}`
+
+    // A logged-out visitor lands on login with the invite as the return path.
+    await page.goto(invitePath)
+    await expect(page).toHaveURL(/\/login\?redirect=/, { timeout: 20_000 })
+    await page.waitForLoadState('networkidle')
+
+    // The Register link carries it on.
+    await page.getByRole('link', { name: 'Register' }).click()
+    await expect(page).toHaveURL(/\/register\?redirect=/, { timeout: 20_000 })
+    expect(new URL(page.url()).searchParams.get('redirect')).toBe(invitePath)
+    await page.waitForLoadState('networkidle')
+
+    // The register form passes it to the check-email page (and the signup token).
+    await typeInto(page, 'Username', `sec_newbie_${RUN}`)
+    await typeInto(page, 'Email', newbie)
+    const create = page.getByRole('button', { name: 'Create account' })
+    await expect(create).toBeEnabled({ timeout: 15_000 })
+    await create.click()
+    await expect(
+      page.getByRole('heading', { name: 'Check your email' }),
+    ).toBeVisible({ timeout: 20_000 })
+    expect(new URL(page.url()).searchParams.get('redirect')).toBe(invitePath)
+
+    // The e2e server sends no mail: make the signup link the email would carry.
+    const signup = newToken()
+    seed('signup', {
+      email: newbie,
+      username: `sec_newbie2_${RUN}`,
+      hash: signup.hash,
+      redirectTo: invitePath,
+      ttlMs: 60 * 60 * 1000,
+    })
+    await page.goto(`/signup/${signup.raw}`)
+    await expect(
+      page.getByRole('heading', { name: 'Finish signing up' }),
+    ).toBeVisible({ timeout: 20_000 })
+    await typeInto(page, 'Password', PASSWORD)
+    await typeInto(page, 'Confirm password', PASSWORD)
+    const submit = page.getByRole('button', { name: 'Create account' })
+    await expect(submit).toBeEnabled({ timeout: 15_000 })
+    await submit.click()
+    await expect(page).toHaveURL(new RegExp(`${invitePath}$`), {
+      timeout: 30_000,
+    })
+    await expect(
+      page.getByRole('button', { name: 'Accept invite' }),
+    ).toBeVisible({ timeout: 20_000 })
   })
 })
 
