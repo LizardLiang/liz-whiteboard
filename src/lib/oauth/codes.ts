@@ -27,6 +27,8 @@ export interface AuthCode {
   used: boolean
   /** Refresh-token family the code produced; set once tokens are issued. */
   familyId?: string
+  /** Set when a replay hit the code, even before its family was persisted. */
+  replayed?: boolean
 }
 
 // In-memory store: code → AuthCode
@@ -103,14 +105,22 @@ export function setAuthCodeFamily(code: string, familyId: string): void {
 }
 
 /**
- * Family of tokens issued from a code that was already used, or null when the
- * code is unknown, still unused, expired, or produced no tokens (RFC 6749
- * §4.1.2: a replayed code must revoke the tokens it already produced).
+ * Record a replay of an already-used code (RFC 6749 §4.1.2) and return the
+ * refresh-token family its first use produced, or null when none is recorded
+ * yet. The replay is flagged even when the family is not persisted yet, so the
+ * first use can see it after token issuance (wasCodeReplayed). Returns null
+ * for unknown, unused or expired codes.
  */
-export function findReplayedCodeFamily(code: string): string | null {
+export function recordCodeReplay(code: string): string | null {
   const entry = codeStore.get(code)
   if (!entry || !entry.used || entry.expiresAt < Date.now()) return null
+  entry.replayed = true
   return entry.familyId ?? null
+}
+
+/** True when a replay has hit this code since it was consumed. */
+export function wasCodeReplayed(code: string): boolean {
+  return codeStore.get(code)?.replayed === true
 }
 
 /** Reset the store (for testing only) */

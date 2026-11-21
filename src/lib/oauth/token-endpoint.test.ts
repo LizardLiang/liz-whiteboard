@@ -25,6 +25,7 @@ import {
 } from '@/lib/auth/auth-limits'
 import { PEER_IP_HEADER } from '@/lib/rate-limit'
 import { makeUser, resetDb } from '@/test/db-helpers'
+import { db } from '@/db'
 
 vi.mock('@/lib/oauth/resolve-client', async (importOriginal) => {
   const actual = await importOriginal<typeof ResolveClientModule>()
@@ -196,6 +197,43 @@ describe('/token authorization_code: replay revokes the family (audit F7b)', () 
     )
     expect(refresh.status).toBe(400)
     expect((await refresh.json()).error).toBe('invalid_grant')
+  })
+})
+
+describe('/token authorization_code: replay during token issuance (audit F7b)', () => {
+  it('a replay that lands while tokens are being issued voids them', async () => {
+    const dcr = registerClient({ redirectUris: [REDIRECT] })
+    const verifier = generateCodeVerifier()
+    const code = codeFor(dcr.clientId, verifier)
+    const form = {
+      grant_type: 'authorization_code',
+      client_id: dcr.clientId,
+      code,
+      redirect_uri: REDIRECT,
+      code_verifier: verifier,
+    }
+
+    let replayStatus = 0
+    const tokens = await import('@/lib/oauth/tokens')
+    const realIssue = tokens.issueTokens
+    const spy = vi
+      .spyOn(tokens, 'issueTokens')
+      .mockImplementationOnce(async (...args) => {
+        const replay = await handleTokenPost(post(form))
+        replayStatus = replay.status
+        return realIssue(...args)
+      })
+
+    const first = await handleTokenPost(post(form))
+    spy.mockRestore()
+
+    expect(replayStatus).toBe(400)
+    expect(first.status).toBe(400)
+    expect((await first.json()).error).toBe('invalid_grant')
+    const rows = db
+      .prepare('SELECT COUNT(*) AS n FROM "OauthRefreshToken"')
+      .get() as { n: number }
+    expect(rows.n).toBe(0)
   })
 })
 

@@ -104,13 +104,14 @@ async function handleAuthCodeGrant(body: URLSearchParams): Promise<Response> {
   const {
     peekAuthCode,
     consumeAuthCode,
-    findReplayedCodeFamily,
+    recordCodeReplay,
+    wasCodeReplayed,
     setAuthCodeFamily,
   } = await import('@/lib/oauth/codes')
   const pending = peekAuthCode(code)
   if (!pending) {
     // A replayed code revokes the tokens its first use produced (RFC 6749 §4.1.2).
-    const replayedFamily = findReplayedCodeFamily(code)
+    const replayedFamily = recordCodeReplay(code)
     if (replayedFamily) {
       const { revokeRefreshFamily } = await import('@/lib/oauth/tokens')
       revokeRefreshFamily(replayedFamily)
@@ -194,6 +195,17 @@ async function handleAuthCodeGrant(body: URLSearchParams): Promise<Response> {
     config,
     familyId,
   )
+
+  // A replay that landed while tokens were being issued found no persisted
+  // family to revoke: revoke it now and hand out nothing.
+  if (wasCodeReplayed(code)) {
+    const { revokeRefreshFamily } = await import('@/lib/oauth/tokens')
+    revokeRefreshFamily(familyId)
+    return tokenError(
+      'invalid_grant',
+      'Authorization code is invalid, expired, or already used',
+    )
+  }
 
   console.log(
     `[oauth/token] Issued access token for user=${authCode.userId} client=${clientId}`,
