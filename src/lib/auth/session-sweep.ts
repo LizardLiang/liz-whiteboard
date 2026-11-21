@@ -1,5 +1,5 @@
 // src/lib/auth/session-sweep.ts
-// Deletes expired login sessions and signup tokens older than 7 days: once at
+// Deletes expired login sessions, signup tokens older than 7 days and email invites expired for 7 days: once at
 // boot, then every hour. Mirrors the interval-with-unref pattern of the OAuth sweeps (codes.ts, pending-consent.ts).
 // Expired rows are already refused at validation time; this keeps the Session
 // table from growing forever.
@@ -8,6 +8,10 @@ import {
   SIGNUP_TOKEN_CLEANUP_AGE_MS,
   deleteSignupTokensOlderThan,
 } from '@/data/signup-token'
+import {
+  EMAIL_INVITE_CLEANUP_AGE_MS,
+  deleteEmailInvitesExpiredBefore,
+} from '@/data/project-email-invite'
 import { deleteExpiredSessions } from '@/lib/auth/session'
 
 const SESSION_SWEEP_INTERVAL_MS = 60 * 60 * 1000
@@ -25,6 +29,12 @@ async function sweepOnce(): Promise<void> {
     if (swept > 0) console.log(`[auth] Deleted ${swept} old signup tokens`)
   } catch (error) {
     console.error('[auth] Failed to delete old signup tokens:', error)
+  }
+  try {
+    const swept = deleteEmailInvitesExpiredBefore(EMAIL_INVITE_CLEANUP_AGE_MS)
+    if (swept > 0) console.log(`[auth] Deleted ${swept} old email invites`)
+  } catch (error) {
+    console.error('[auth] Failed to delete old email invites:', error)
   }
 }
 

@@ -23,6 +23,7 @@ const ALL_TABLES = [
   'Whiteboard',
   'Folder',
   'ProjectInvite',
+  'ProjectEmailInvite',
   'PasswordResetToken',
   'SignupToken',
   'ProjectMember',

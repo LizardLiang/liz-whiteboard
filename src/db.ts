@@ -34,6 +34,7 @@ import type {
   PasswordResetToken,
   PersistedSnapshotPayload,
   Project,
+  ProjectEmailInvite,
   ProjectInvite,
   ProjectMember,
   Relationship,
@@ -552,6 +553,22 @@ export function mapProjectInvite(r: Row): ProjectInvite | null {
     maxUses: r.maxUses == null ? null : Number(r.maxUses),
     usedCount: Number(r.usedCount),
     expiresAt: fromDbDate(r.expiresAt),
+    revokedAt: r.revokedAt == null ? null : fromDbDate(r.revokedAt),
+    createdAt: fromDbDate(r.createdAt),
+  }
+}
+
+export function mapProjectEmailInvite(r: Row): ProjectEmailInvite | null {
+  if (!r) return null
+  return {
+    id: r.id as string,
+    projectId: r.projectId as string,
+    email: r.email as string,
+    role: r.role as ProjectRoleValue,
+    tokenHash: r.tokenHash as string,
+    invitedByUserId: r.invitedByUserId as string,
+    expiresAt: fromDbDate(r.expiresAt),
+    acceptedAt: r.acceptedAt == null ? null : fromDbDate(r.acceptedAt),
     revokedAt: r.revokedAt == null ? null : fromDbDate(r.revokedAt),
     createdAt: fromDbDate(r.createdAt),
   }

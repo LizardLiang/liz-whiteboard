@@ -69,6 +69,20 @@ export interface SignupToken {
   createdAt: Date
 }
 
+/** One emailed role grant. The row exists until accepted, revoked or expired. */
+export interface ProjectEmailInvite {
+  id: string
+  projectId: string
+  email: string
+  role: ProjectRoleValue
+  tokenHash: string
+  invitedByUserId: string
+  expiresAt: Date
+  acceptedAt: Date | null
+  revokedAt: Date | null
+  createdAt: Date
+}
+
 export interface ProjectMember {
   id: string
   projectId: string

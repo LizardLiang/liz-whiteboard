@@ -549,6 +549,31 @@ CREATE UNIQUE INDEX IF NOT EXISTS "SignupToken_tokenHash_key" ON "SignupToken"("
 CREATE INDEX IF NOT EXISTS "SignupToken_email_idx" ON "SignupToken"("email");
 CREATE INDEX IF NOT EXISTS "SignupToken_createdAt_idx" ON "SignupToken"("createdAt");
 
+-- Grant-by-email invites. Granting a role to an email stores one row here and
+-- emails a link; no ProjectMember row exists until the invited user accepts
+-- while logged in with that same email. Only the SHA-256 hash of the raw token
+-- is stored. A re-invite of the same (project, email) revokes the older pending
+-- row (src/data/project-email-invite.ts). Boot cannot ALTER ProjectInvite, so
+-- this is its own table.
+CREATE TABLE IF NOT EXISTS "ProjectEmailInvite" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "projectId" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "role" TEXT NOT NULL,
+    "tokenHash" TEXT NOT NULL,
+    "invitedByUserId" TEXT NOT NULL,
+    "expiresAt" INTEGER NOT NULL,
+    "acceptedAt" INTEGER,
+    "revokedAt" INTEGER,
+    "createdAt" INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    CONSTRAINT "ProjectEmailInvite_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "ProjectEmailInvite_invitedByUserId_fkey" FOREIGN KEY ("invitedByUserId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "ProjectEmailInvite_tokenHash_key" ON "ProjectEmailInvite"("tokenHash");
+CREATE INDEX IF NOT EXISTS "ProjectEmailInvite_projectId_email_idx" ON "ProjectEmailInvite"("projectId", "email");
+CREATE INDEX IF NOT EXISTS "ProjectEmailInvite_expiresAt_idx" ON "ProjectEmailInvite"("expiresAt");
+
 -- Tombstones for ids a client may choose (RetiredId). A create can name its own
 -- id, so a deleted row's id must not be claimable from another whiteboard: a
 -- later restore of the home whiteboard would then collide with the squatter.
