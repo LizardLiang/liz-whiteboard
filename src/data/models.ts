@@ -399,7 +399,6 @@ export interface Comment {
  */
 export interface CommentWithAuthor extends Comment {
   authorName: string
-  authorEmail: string
 }
 
 /**

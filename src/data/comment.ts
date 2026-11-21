@@ -7,10 +7,10 @@ import type { CreateComment, UpdateComment } from './schema'
 import type { Comment, CommentWithAuthor } from './models'
 import { db, genId, insert, mapComment, nowMs, toDbBool, update } from '@/db'
 
-/** Joins the User table so replies/roots always carry a display name/email,
+/** Joins the User table so replies/roots always carry a display name,
  * even when the author is offline (never resolved from `activeUsers`). */
 const SELECT_WITH_AUTHOR = `
-  SELECT c.*, u."username" AS "authorName", u."email" AS "authorEmail"
+  SELECT c.*, u."username" AS "authorName"
   FROM "Comment" c
   INNER JOIN "User" u ON u."id" = c."authorId"
 `
@@ -24,7 +24,6 @@ function mapCommentWithAuthor(
   return {
     ...comment,
     authorName: r.authorName as string,
-    authorEmail: r.authorEmail as string,
   }
 }
 
