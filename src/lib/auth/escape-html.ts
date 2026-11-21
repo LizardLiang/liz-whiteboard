@@ -25,15 +25,6 @@ export function buildLinkEmailHtml(parts: {
   return `<p>${intro}</p><p><a href="${link}">${link}</a></p><p>${outro}</p>`
 }
 
-/** Build the password-reset email HTML; every interpolated value is escaped. */
-export function buildResetEmailHtml(parts: {
-  intro: string
-  link: string
-  outro: string
-}): string {
-  return buildLinkEmailHtml(parts)
-}
-
 /** Build the "you already have an account" email HTML; all values escaped. */
 export function buildAccountExistsEmailHtml(parts: {
   intro: string

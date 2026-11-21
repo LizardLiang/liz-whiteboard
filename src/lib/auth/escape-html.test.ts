@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { buildResetEmailHtml, escapeHtml } from './escape-html'
+import { buildLinkEmailHtml, escapeHtml } from './escape-html'
 
 describe('escapeHtml', () => {
   it('escapes the five HTML-significant characters', () => {
@@ -10,9 +10,9 @@ describe('escapeHtml', () => {
   })
 })
 
-describe('buildResetEmailHtml', () => {
+describe('buildLinkEmailHtml', () => {
   it('escapes the link and both translated strings', () => {
-    const html = buildResetEmailHtml({
+    const html = buildLinkEmailHtml({
       intro: '<script>alert(1)</script>',
       link: 'https://x.test/r?token=a"><img src=x onerror=1>&b=2',
       outro: '<b>bye</b>',
@@ -26,7 +26,7 @@ describe('buildResetEmailHtml', () => {
   })
 
   it('keeps a normal link intact', () => {
-    const html = buildResetEmailHtml({
+    const html = buildLinkEmailHtml({
       intro: 'Reset',
       link: 'https://x.test/reset-password?token=abc',
       outro: 'Thanks',

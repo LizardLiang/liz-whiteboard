@@ -350,7 +350,8 @@ export const requestPasswordReset = createServerFn({ method: 'POST' })
     const { generateResetToken, hashResetToken } =
       await import('@/lib/auth/reset-token')
     const { sendEmail } = await import('@/lib/email/resend')
-    const { buildResetEmailHtml } = await import('@/lib/auth/escape-html')
+    const { resolveBaseUrl } = await import('@/lib/email/base-url')
+    const { buildLinkEmailHtml } = await import('@/lib/auth/escape-html')
 
     const { getRequestLocale } = await import('@/lib/i18n/server-locale')
     const { translate } = await import('@/lib/i18n/translate')
@@ -385,20 +386,18 @@ export const requestPasswordReset = createServerFn({ method: 'POST' })
       const created = tryCreateResetToken(user.id, tokenHash)
 
       if (created) {
-        const baseUrl = process.env.APP_BASE_URL
+        const baseUrl = resolveBaseUrl(new URL(request.url).origin)
         if (!baseUrl) {
-          if (process.env.NODE_ENV === 'production') {
-            console.error(
-              '[password-reset] APP_BASE_URL is not set — reset email not sent.',
-            )
-          }
+          console.error(
+            '[password-reset] APP_BASE_URL is not set — reset email not sent.',
+          )
         } else {
-          const link = `${baseUrl.replace(/\/$/, '')}/reset-password?token=${rawToken}`
+          const link = `${baseUrl}/reset-password?token=${rawToken}`
           void sendEmail({
             to: user.email,
             subject: translate(locale, 'email.resetSubject'),
             text: translate(locale, 'email.resetText', { link }),
-            html: buildResetEmailHtml({
+            html: buildLinkEmailHtml({
               intro: translate(locale, 'email.resetHtmlIntro'),
               link,
               outro: translate(locale, 'email.resetHtmlOutro'),
