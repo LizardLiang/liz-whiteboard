@@ -1,11 +1,12 @@
 // src/lib/auth/auth-limits.ts
 // Per-IP fixed-window limiters for login and register (in-process, reset on
-// restart). Account lockout alone cannot stop one IP from spraying many
-// accounts; these cap how many attempts a single IP gets per window.
+// restart). The per-email Turnstile challenge cannot stop one IP from spraying
+// many accounts; these cap how many attempts a single IP gets per window.
 //
 // Login: 30 attempts / 15 min per IP. A single IP hammering ONE account is
-// stopped sooner by the account lockout (5 failures); this limit catches
-// spraying across accounts and keeps bcrypt CPU cost bounded.
+// stopped sooner by the Turnstile challenge: after 5 failures per email,
+// login requires a Turnstile pass. This limit catches spraying across
+// accounts and keeps bcrypt CPU cost bounded.
 // Register: 10 attempts / hour per IP.
 // Token (/token): 120 requests / minute per IP. A legitimate OAuth client calls
 // /token once per login (code exchange) and once per access-token lifetime

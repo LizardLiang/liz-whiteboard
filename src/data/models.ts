@@ -33,7 +33,9 @@ export interface User {
   username: string
   email: string
   passwordHash: string
+  /** Legacy and unused: login no longer locks accounts. The column stays because boot cannot drop it. */
   failedLoginAttempts: number
+  /** Legacy and unused: see failedLoginAttempts. */
   lockedUntil: Date | null
   createdAt: Date
   updatedAt: Date

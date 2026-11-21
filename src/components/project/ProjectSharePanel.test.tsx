@@ -155,7 +155,7 @@ describe('ProjectSharePanel', () => {
       </Wrapper>,
     )
 
-    const emailInput = await screen.findByLabelText(/email address to add/i)
+    const emailInput = await screen.findByLabelText(/email address to invite/i)
     fireEvent.change(emailInput, { target: { value: 'new@example.com' } })
 
     const addButton = await screen.findByRole('button', {
@@ -188,7 +188,7 @@ describe('ProjectSharePanel', () => {
       </Wrapper>,
     )
 
-    fireEvent.change(await screen.findByLabelText(/email address to add/i), {
+    fireEvent.change(await screen.findByLabelText(/email address to invite/i), {
       target: { value: 'new@example.com' },
     })
     fireEvent.click(
@@ -247,9 +247,9 @@ describe('ProjectSharePanel', () => {
       members: [],
     })
     vi.mocked(grantPermission).mockResolvedValue({
-      error: 'USER_NOT_FOUND',
-      status: 404,
-      message: 'No user found with that email address',
+      error: 'FORBIDDEN',
+      status: 403,
+      message: 'Only ADMIN or OWNER can grant permissions',
     } as any)
 
     render(
@@ -262,7 +262,7 @@ describe('ProjectSharePanel', () => {
       </Wrapper>,
     )
 
-    const emailInput = await screen.findByLabelText(/email address to add/i)
+    const emailInput = await screen.findByLabelText(/email address to invite/i)
     fireEvent.change(emailInput, { target: { value: 'missing@example.com' } })
 
     const addButton = await screen.findByRole('button', {
@@ -271,7 +271,7 @@ describe('ProjectSharePanel', () => {
     fireEvent.click(addButton)
 
     expect(
-      await screen.findByText('No user found with that email address'),
+      await screen.findByText('Only ADMIN or OWNER can grant permissions'),
     ).toBeTruthy()
   })
 

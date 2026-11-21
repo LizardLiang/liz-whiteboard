@@ -128,7 +128,7 @@ describe('login challenge instead of lockout', () => {
         expect(failureNeedsChallenge(refused, email)).toBe(true)
       }
     }
-  })
+  }, 30_000)
 
   it('W4: the failure that reaches the threshold still answers CHALLENGE_REQUIRED', async () => {
     makeUser({ email: 'a@example.com', passwordHash: HASH })

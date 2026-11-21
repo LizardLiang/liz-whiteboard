@@ -221,7 +221,8 @@ export async function deleteResetTokensOlderThan(ms: number): Promise<void> {
 /**
  * Complete a password reset in one transaction:
  *   - sets the new password hash and updatedAt
- *   - clears the account lockout (failedLoginAttempts=0, lockedUntil=NULL)
+ *   - zeroes the legacy failedLoginAttempts/lockedUntil columns (nothing reads
+ *     them: login no longer locks accounts)
  *   - voids every unused reset token of the user
  *   - deletes every Session row (signs out every browser session)
  *   - deletes every OauthRefreshToken row (revokes every MCP client;

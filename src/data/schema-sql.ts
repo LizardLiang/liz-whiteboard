@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS "User" (
     "username" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "passwordHash" TEXT NOT NULL,
+    -- failedLoginAttempts and lockedUntil are legacy and unused: login no longer
+    -- locks accounts (a per-email Turnstile challenge replaced the lock). Boot
+    -- cannot drop columns, so they stay.
     "failedLoginAttempts" INTEGER NOT NULL DEFAULT 0,
     "lockedUntil" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

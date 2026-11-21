@@ -54,7 +54,6 @@ export const en = {
       passwordPlaceholder: 'At least 8 characters',
       submit: 'Create account',
       submitting: 'Creating account...',
-      redirecting: 'Redirecting to login...',
       hasAccount: 'Already have an account?',
       logIn: 'Log in',
       validationFailed:
@@ -375,7 +374,7 @@ export const en = {
       title: 'Share Project',
       description: 'Manage who has access to this project and their roles.',
       addPerson: 'Invite a person by email',
-      emailAria: 'Email address to add',
+      emailAria: 'Email address to invite',
       selectRole: 'Select role',
       adding: 'Sending...',
       add: 'Send invite',
@@ -384,7 +383,7 @@ export const en = {
       pendingInvitesAria: 'Pending email invites',
       noPendingInvites: 'No pending invites.',
       revokePendingAria: 'Revoke invite for {email}',
-      addFailed: 'Failed to add user',
+      addFailed: 'Failed to send invite',
       currentAccess: 'Current access',
       membersAria: 'Project members',
       owner: 'Owner',
@@ -465,9 +464,6 @@ export const en = {
   errors: {
     unauthorized: 'Unauthorized',
     invalidCredentials: 'Invalid email or password',
-    tooManyAttempts:
-      'Too many failed attempts. Please try again in 15 minutes.',
-    registrationSuccess: 'Registration successful. Please log in.',
     usernameTaken: 'Username is already taken',
     resetRequested:
       'If an account exists for that email, a reset link is on its way.',
@@ -507,7 +503,6 @@ export const en = {
     folderNotFound: 'Folder not found',
     projectNotFound: 'Project not found',
     noAccessResource: 'You do not have access to this resource.',
-    noUserForEmail: 'No user found with that email address',
     permViewDenied: 'Only ADMIN or OWNER can view permissions',
     permGrantDenied: 'Only ADMIN or OWNER can grant permissions',
     permUpdateDenied: 'Only ADMIN or OWNER can update permissions',

@@ -284,7 +284,7 @@ test.describe('Grant-by-email invites', () => {
 
     const unknown = emailOf('unknown-invitee')
     await page
-      .getByRole('textbox', { name: 'Email address to add' })
+      .getByRole('textbox', { name: 'Email address to invite' })
       .fill(unknown)
     await page.getByRole('button', { name: 'Send invite' }).click()
 
