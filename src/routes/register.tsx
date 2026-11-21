@@ -119,7 +119,7 @@ function RegisterPage() {
         })
       } else {
         // The only refusal registerUser returns is the per-IP rate limit.
-        setErrors({ form: 'Too many attempts. Please try again later.' })
+        setErrors({ form: t('auth.checkEmail.rateLimited') })
       }
     } catch {
       setErrors({ form: t('common.somethingWentWrong') })
