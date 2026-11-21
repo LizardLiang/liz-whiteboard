@@ -27,8 +27,7 @@ import { PEER_IP_HEADER } from '@/lib/rate-limit'
 import { makeUser, resetDb } from '@/test/db-helpers'
 
 vi.mock('@/lib/oauth/resolve-client', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof ResolveClientModule>()
+  const actual = await importOriginal<typeof ResolveClientModule>()
   return { ...actual, resolveClient: vi.fn(actual.resolveClient) }
 })
 
@@ -142,6 +141,64 @@ describe('/token authorization_code: no CIMD fetch before the client is proven',
   })
 })
 
+describe('/token authorization_code: PKCE verifier format (audit F7a)', () => {
+  it.each([
+    ['too short', 'a'.repeat(42)],
+    ['too long', 'a'.repeat(129)],
+    ['illegal character', 'a'.repeat(42) + '!'],
+    ['space', 'a'.repeat(42) + ' '],
+  ])('refuses a verifier that is %s with invalid_request', async (_n, bad) => {
+    const dcr = registerClient({ redirectUris: [REDIRECT] })
+    const code = codeFor(dcr.clientId, bad)
+    const res = await handleTokenPost(
+      post({
+        grant_type: 'authorization_code',
+        client_id: dcr.clientId,
+        code,
+        redirect_uri: REDIRECT,
+        code_verifier: bad,
+      }),
+    )
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('invalid_request')
+    // The format check runs before the code is touched.
+    expect(consumeAuthCode(code)).not.toBeNull()
+  })
+})
+
+describe('/token authorization_code: replay revokes the family (audit F7b)', () => {
+  it('a second use of a code revokes the refresh token its first use issued', async () => {
+    const dcr = registerClient({ redirectUris: [REDIRECT] })
+    const verifier = generateCodeVerifier()
+    const code = codeFor(dcr.clientId, verifier)
+    const form = {
+      grant_type: 'authorization_code',
+      client_id: dcr.clientId,
+      code,
+      redirect_uri: REDIRECT,
+      code_verifier: verifier,
+    }
+
+    const first = await handleTokenPost(post(form))
+    expect(first.status).toBe(200)
+    const { refresh_token } = await first.json()
+
+    const replay = await handleTokenPost(post(form))
+    expect(replay.status).toBe(400)
+    expect((await replay.json()).error).toBe('invalid_grant')
+
+    const refresh = await handleTokenPost(
+      post({
+        grant_type: 'refresh_token',
+        client_id: dcr.clientId,
+        refresh_token,
+      }),
+    )
+    expect(refresh.status).toBe(400)
+    expect((await refresh.json()).error).toBe('invalid_grant')
+  })
+})
+
 describe('/token refresh_token: no CIMD fetch before the client is proven', () => {
   it('an unknown refresh token never reaches resolveClient', async () => {
     const res = await handleTokenPost(
@@ -203,7 +260,9 @@ describe('/token per-IP rate limit', () => {
   it('refuses with 429 once an IP exceeds the window, other IPs unaffected', async () => {
     const bad = { grant_type: 'nope' }
     for (let i = 0; i < TOKEN_IP_LIMIT_MAX; i++) {
-      expect((await handleTokenPost(post(bad, '198.51.100.1'))).status).toBe(400)
+      expect((await handleTokenPost(post(bad, '198.51.100.1'))).status).toBe(
+        400,
+      )
     }
     const limited = await handleTokenPost(post(bad, '198.51.100.1'))
     expect(limited.status).toBe(429)

@@ -154,8 +154,7 @@ export function getRefreshTokenClientId(refreshToken: string): string | null {
       `SELECT clientId, expiresAt FROM "OauthRefreshToken" WHERE tokenHash = ?`,
     )
     .get(hashToken(refreshToken)) as
-    | { clientId: string; expiresAt: number }
-    | undefined
+    { clientId: string; expiresAt: number } | undefined
   if (!row || row.expiresAt < nowMs()) return null
   return row.clientId
 }
@@ -467,6 +466,11 @@ export function revokeRefreshToken(token: string, clientId: string): boolean {
     row.familyId,
   )
   return true
+}
+
+/** Delete every refresh token in a family (auth-code replay, RFC 6749 §4.1.2). */
+export function revokeRefreshFamily(familyId: string): void {
+  db.prepare(`DELETE FROM "OauthRefreshToken" WHERE familyId = ?`).run(familyId)
 }
 
 /** Reset refresh token store (for testing only). */

@@ -17,6 +17,8 @@
 //
 // Every request is first limited per IP (src/lib/auth/auth-limits.ts).
 
+import { randomUUID } from 'node:crypto'
+
 export async function handleTokenPost(request: Request): Promise<Response> {
   const { checkTokenIpRateLimit } = await import('@/lib/auth/auth-limits')
   const { extractClientIp } = await import('@/lib/rate-limit')
@@ -90,15 +92,32 @@ async function handleAuthCodeGrant(body: URLSearchParams): Promise<Response> {
     return tokenError('invalid_request', 'redirect_uri is required')
   if (!codeVerifier)
     return tokenError('invalid_request', 'code_verifier is required')
+  // RFC 7636 §4.1: 43-128 characters from the unreserved set.
+  if (!/^[A-Za-z0-9._~-]{43,128}$/.test(codeVerifier))
+    return tokenError('invalid_request', 'code_verifier has an invalid format')
 
   // Prove the client is known BEFORE resolveClient: resolving a CIMD client_id
   // makes the server fetch an attacker-chosen URL. A live code bound to this
   // exact client_id was issued by /authorize after a session and a successful
   // resolve, so the client is known. A code that exists but belongs to another
   // client is burned, exactly as the consume-then-compare order did before.
-  const { peekAuthCode, consumeAuthCode } = await import('@/lib/oauth/codes')
+  const {
+    peekAuthCode,
+    consumeAuthCode,
+    findReplayedCodeFamily,
+    setAuthCodeFamily,
+  } = await import('@/lib/oauth/codes')
   const pending = peekAuthCode(code)
   if (!pending) {
+    // A replayed code revokes the tokens its first use produced (RFC 6749 §4.1.2).
+    const replayedFamily = findReplayedCodeFamily(code)
+    if (replayedFamily) {
+      const { revokeRefreshFamily } = await import('@/lib/oauth/tokens')
+      revokeRefreshFamily(replayedFamily)
+      console.warn(
+        `[oauth/token] auth code replay: revoked family=${replayedFamily}`,
+      )
+    }
     return tokenError(
       'invalid_grant',
       'Authorization code is invalid, expired, or already used',
@@ -163,6 +182,8 @@ async function handleAuthCodeGrant(body: URLSearchParams): Promise<Response> {
 
   // Issue tokens
   const { issueTokens } = await import('@/lib/oauth/tokens')
+  const familyId = randomUUID()
+  setAuthCodeFamily(code, familyId)
   const result = await issueTokens(
     {
       userId: authCode.userId,
@@ -171,6 +192,7 @@ async function handleAuthCodeGrant(body: URLSearchParams): Promise<Response> {
       resource: authCode.resource,
     },
     config,
+    familyId,
   )
 
   console.log(

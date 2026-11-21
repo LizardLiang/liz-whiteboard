@@ -25,6 +25,8 @@ export interface AuthCode {
   scope: string
   expiresAt: number // unix ms
   used: boolean
+  /** Refresh-token family the code produced; set once tokens are issued. */
+  familyId?: string
 }
 
 // In-memory store: code → AuthCode
@@ -39,7 +41,8 @@ function startSweep(): void {
   sweepTimer = setInterval(() => {
     const now = Date.now()
     for (const [code, entry] of codeStore) {
-      if (entry.used || entry.expiresAt < now) {
+      // Used codes stay until expiry so a replay can still find its family.
+      if (entry.expiresAt < now) {
         codeStore.delete(code)
       }
     }
@@ -91,6 +94,23 @@ export function peekAuthCode(code: string): AuthCode | null {
   const entry = codeStore.get(code)
   if (!entry || entry.used || entry.expiresAt < Date.now()) return null
   return entry
+}
+
+/** Record the refresh-token family that a consumed code produced. */
+export function setAuthCodeFamily(code: string, familyId: string): void {
+  const entry = codeStore.get(code)
+  if (entry?.used) entry.familyId = familyId
+}
+
+/**
+ * Family of tokens issued from a code that was already used, or null when the
+ * code is unknown, still unused, expired, or produced no tokens (RFC 6749
+ * §4.1.2: a replayed code must revoke the tokens it already produced).
+ */
+export function findReplayedCodeFamily(code: string): string | null {
+  const entry = codeStore.get(code)
+  if (!entry || !entry.used || entry.expiresAt < Date.now()) return null
+  return entry.familyId ?? null
 }
 
 /** Reset the store (for testing only) */
