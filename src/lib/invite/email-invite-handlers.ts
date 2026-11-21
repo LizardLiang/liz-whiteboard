@@ -36,10 +36,10 @@ import {
   countPendingEmailInvites,
   findEmailInviteByTokenHash,
   findPendingEmailInvites,
+  markEmailInviteSent,
   releaseEmailInvite,
   revokeEmailInvite,
   tryCreateEmailInvite,
-  undoEmailInvite,
 } from '@/data/project-email-invite'
 import { logSampledError } from '@/lib/auth/log-sample'
 import { generateInviteToken, hashInviteToken } from '@/lib/auth/invite-token'
@@ -185,20 +185,22 @@ export async function grantPermissionHandler(
     return { success: true as const, invited: true as const }
   }
 
-  const { invite, supersededIds } = created
-  // A send that fails (or cannot start) leaves the older link working and no
-  // pending row to block a retry. The send log row stays, so it still counts.
-  const undo = () => {
+  const { invite } = created
+  // The older link is revoked only once the new email went out. A send that
+  // fails (or cannot start) revokes just the new row: the older link keeps
+  // working, no pending row holds the cooldown, and nothing is un-revoked. The
+  // send log row stays, so the attempt still counts toward the limits.
+  const failed = () => {
     try {
-      undoEmailInvite(invite.id, supersededIds)
+      revokeEmailInvite(data.projectId, invite.id)
     } catch (err) {
-      console.error('[invite] could not undo a failed invite send:', err)
+      console.error('[invite] could not revoke a failed invite send:', err)
     }
   }
   const baseUrl = resolveBaseUrl(await requestOrigin())
   if (!baseUrl) {
     console.error('[invite] APP_BASE_URL is not set — invite email not sent.')
-    undo()
+    failed()
   } else {
     const message = buildInviteMessage({
       baseUrl,
@@ -210,11 +212,12 @@ export async function grantPermissionHandler(
     })
     void sendEmail({ to: data.email, ...message })
       .then((sent) => {
-        if (sent === false) undo()
+        if (sent === false) failed()
+        else markEmailInviteSent(invite)
       })
       .catch((err: unknown) => {
         console.error('[invite] sendEmail failed:', err)
-        undo()
+        failed()
       })
   }
 

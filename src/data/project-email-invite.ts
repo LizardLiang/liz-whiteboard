@@ -82,8 +82,6 @@ export type TryCreateEmailInviteResult =
   | {
       status: 'created'
       invite: ProjectEmailInvite
-      /** Ids of older pending rows this insert revoked; undoEmailInvite restores them. */
-      supersededIds: Array<string>
       /** True when the silent per-recipient ceiling was hit: store, do not send. */
       suppressEmail: boolean
     }
@@ -182,15 +180,19 @@ export function tryCreateEmailInvite(params: {
         return { status: 'suppressed' as const }
       }
     }
-    const { invite, supersededIds } = insertEmailInvite(params)
-    return { status: 'created' as const, invite, supersededIds, suppressEmail }
+    return {
+      status: 'created' as const,
+      invite: insertEmailInvite(params),
+      suppressEmail,
+    }
   })
 }
 
 /**
- * Store one invite for (project, email) and log the send. A still-pending older
- * row of the same pair is revoked in the same transaction, so only the newest
- * link works. `email` must already be lower-cased.
+ * Store one pending invite for (project, email) and log the send. Older
+ * pending rows of the pair stay valid until the email is sent
+ * (markEmailInviteSent), so a failed send never takes a working link away. No
+ * path un-revokes a row. `email` must already be lower-cased.
  */
 function insertEmailInvite(params: {
   projectId: string
@@ -198,23 +200,8 @@ function insertEmailInvite(params: {
   role: ProjectRoleValue
   tokenHash: string
   invitedByUserId: string
-}): { invite: ProjectEmailInvite; supersededIds: Array<string> } {
+}): ProjectEmailInvite {
   const now = nowMs()
-  const supersededIds = (
-    db
-      .prepare(
-        `SELECT "id" FROM "ProjectEmailInvite"
-         WHERE "projectId" = ? AND "email" = ? AND "acceptedAt" IS NULL AND "revokedAt" IS NULL`,
-      )
-      .all(params.projectId, params.email) as Array<{ id: string }>
-  ).map((r) => r.id)
-  for (const oldId of supersededIds) {
-    db.prepare('UPDATE "ProjectEmailInvite" SET "revokedAt" = ? WHERE "id" = ?').run(
-      now,
-      oldId,
-    )
-  }
-
   const id = genId()
   insert('ProjectEmailInvite', {
     id,
@@ -235,36 +222,31 @@ function insertEmailInvite(params: {
     projectId: params.projectId,
     createdAt: now,
   })
-  return {
-    invite: mapProjectEmailInvite(
-      db.prepare('SELECT * FROM "ProjectEmailInvite" WHERE "id" = ?').get(id),
-    )!,
-    supersededIds,
-  }
+  return mapProjectEmailInvite(
+    db.prepare('SELECT * FROM "ProjectEmailInvite" WHERE "id" = ?').get(id),
+  )!
 }
 
 /**
- * Undo an insert whose email could not be sent: delete the new row and bring
- * back the rows it revoked, so the older link still works and no pending row
- * blocks a retry. The send log row stays, so the failed send still counts.
+ * The email for this invite went out: revoke the older pending rows of the same
+ * pair, so only the newest link works. Rows another caller already revoked or
+ * accepted are not touched.
  */
-export function undoEmailInvite(
-  inviteId: string,
-  supersededIds: Array<string>,
-): void {
-  transaction(() => {
-    db.prepare(
-      'DELETE FROM "ProjectEmailInvite" WHERE "id" = ? AND "acceptedAt" IS NULL',
-    ).run(inviteId)
-    for (const oldId of supersededIds) {
-      db.prepare(
-        'UPDATE "ProjectEmailInvite" SET "revokedAt" = NULL WHERE "id" = ?',
-      ).run(oldId)
-    }
-  })
+export function markEmailInviteSent(invite: ProjectEmailInvite): void {
+  db.prepare(
+    `UPDATE "ProjectEmailInvite" SET "revokedAt" = ?
+     WHERE "projectId" = ? AND "email" = ? AND "id" != ? AND "createdAt" <= ?
+       AND "acceptedAt" IS NULL AND "revokedAt" IS NULL`,
+  ).run(
+    nowMs(),
+    invite.projectId,
+    invite.email,
+    invite.id,
+    invite.createdAt.getTime(),
+  )
 }
 
-/** Store one invite without the send limits. Used by tests; the handler calls tryCreateEmailInvite. */
+/** Store one invite as if its email went out, without the send limits. Used by tests; the handler calls tryCreateEmailInvite. */
 export function createEmailInvite(params: {
   projectId: string
   email: string
@@ -272,7 +254,11 @@ export function createEmailInvite(params: {
   tokenHash: string
   invitedByUserId: string
 }): ProjectEmailInvite {
-  return transaction(() => insertEmailInvite(params).invite)
+  return transaction(() => {
+    const invite = insertEmailInvite(params)
+    markEmailInviteSent(invite)
+    return invite
+  })
 }
 
 /** Count the pending (not accepted, revoked or expired) invites of a project. */
@@ -336,18 +322,27 @@ export function revokeEmailInvite(
 }
 
 /**
- * Claim an invite: set acceptedAt only if it is still pending and unexpired.
+ * Claim an invite: set acceptedAt only if it is still pending and unexpired,
+ * and revoke the other pending rows of the pair in the same transaction.
  * Returns true for exactly one caller, so a replayed link cannot win twice.
  */
 export function claimEmailInvite(inviteId: string): boolean {
-  const now = nowMs()
-  const result = db
-    .prepare(
-      `UPDATE "ProjectEmailInvite" SET "acceptedAt" = ?
-       WHERE "id" = ? AND "acceptedAt" IS NULL AND "revokedAt" IS NULL AND "expiresAt" > ?`,
-    )
-    .run(now, inviteId, now)
-  return Number(result.changes) > 0
+  return transaction(() => {
+    const now = nowMs()
+    const result = db
+      .prepare(
+        `UPDATE "ProjectEmailInvite" SET "acceptedAt" = ?
+         WHERE "id" = ? AND "acceptedAt" IS NULL AND "revokedAt" IS NULL AND "expiresAt" > ?`,
+      )
+      .run(now, inviteId, now)
+    if (Number(result.changes) === 0) return false
+    db.prepare(
+      `UPDATE "ProjectEmailInvite" SET "revokedAt" = ?
+       WHERE "id" != ? AND "acceptedAt" IS NULL AND "revokedAt" IS NULL
+         AND ("projectId", "email") = (SELECT "projectId", "email" FROM "ProjectEmailInvite" WHERE "id" = ?)`,
+    ).run(now, inviteId, inviteId)
+    return true
+  })
 }
 
 /** Undo a claim when the role write that followed it failed. */

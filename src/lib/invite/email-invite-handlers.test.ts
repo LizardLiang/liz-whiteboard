@@ -50,11 +50,16 @@ const asAdmin = () =>
 const asOwner = () =>
   ctx({ id: owner.id, username: 'owner', email: ownerEmail })
 
-const grant = (
+// The send is fire-and-forget; let its completion handler run before returning.
+const grant = async (
   email: string,
   role: 'VIEWER' | 'EDITOR' | 'ADMIN',
   c = asAdmin(),
-) => grantPermissionHandler(c, { projectId, email, role })
+) => {
+  const result = await grantPermissionHandler(c, { projectId, email, role })
+  await new Promise((r) => setTimeout(r, 0))
+  return result
+}
 
 /** Move every invite row back in time so the send cooldown no longer applies. */
 function age(ms: number) {
@@ -504,10 +509,26 @@ describe('cooldown and roles (W1, W2)', () => {
   })
 })
 
-describe('a failed send (Resend down)', () => {
-  const flush = () => new Promise((r) => setTimeout(r, 0))
+describe('an in-flight or failed send', () => {
+  const grantNoFlush = (email: string, role: 'VIEWER' | 'EDITOR' | 'ADMIN') =>
+    grantPermissionHandler(asAdmin(), { projectId, email, role })
+  const pendingCount = () =>
+    Number(
+      (
+        db
+          .prepare(
+            'SELECT count(*) AS c FROM "ProjectEmailInvite" WHERE "revokedAt" IS NULL AND "acceptedAt" IS NULL',
+          )
+          .get() as { c: number }
+      ).c,
+    )
+  const accept = (target: { id: string }, token: string) =>
+    acceptEmailInviteHandler(
+      ctx({ id: target.id, email: 'known@example.com' }),
+      { token },
+    )
 
-  it('keeps the older link working and does not block a retry', async () => {
+  it('(b) a failed send leaves the old link working and allows an immediate retry', async () => {
     const target = makeUser({ email: 'known@example.com' })
     await grant('known@example.com', 'VIEWER')
     const oldToken = sentToken(0)
@@ -515,33 +536,79 @@ describe('a failed send (Resend down)', () => {
 
     sendEmail.mockResolvedValueOnce(false)
     await grant('known@example.com', 'EDITOR')
-    await flush()
+    expect(pendingCount()).toBe(1)
 
-    // The retry is not held back by the cooldown.
+    // The retry is not held back by the cooldown, and the failed row is gone.
     await grant('known@example.com', 'EDITOR')
     expect(sendEmail).toHaveBeenCalledTimes(3)
     const retryToken = sentToken(2)
     expect(retryToken).not.toBe(oldToken)
-    const result = await acceptEmailInviteHandler(
-      ctx({ id: target.id, email: 'known@example.com' }),
-      { token: retryToken },
-    )
-    expect(result).toMatchObject({ success: true, role: 'EDITOR' })
+    expect(await accept(target, retryToken)).toMatchObject({
+      success: true,
+      role: 'EDITOR',
+    })
   })
 
-  it('restores the older pending link when the new email fails', async () => {
+  it('(b) after a failed send the old link still accepts', async () => {
     const target = makeUser({ email: 'known@example.com' })
     await grant('known@example.com', 'VIEWER')
     const oldToken = sentToken(0)
     age(11 * MIN)
     sendEmail.mockResolvedValueOnce(false)
     await grant('known@example.com', 'EDITOR')
-    await flush()
-    const result = await acceptEmailInviteHandler(
-      ctx({ id: target.id, email: 'known@example.com' }),
-      { token: oldToken },
-    )
-    expect(result).toMatchObject({ success: true, role: 'VIEWER' })
+    expect(await accept(target, oldToken)).toMatchObject({
+      success: true,
+      role: 'VIEWER',
+    })
+  })
+
+  it('(c) a successful send revokes the old link', async () => {
+    const target = makeUser({ email: 'known@example.com' })
+    await grant('known@example.com', 'VIEWER')
+    const oldToken = sentToken(0)
+    age(11 * MIN)
+    await grant('known@example.com', 'EDITOR')
+    expect(await accept(target, oldToken)).toMatchObject({
+      success: false,
+      error: 'REVOKED',
+    })
+  })
+
+  it('(a) an explicit revoke during an in-flight send stays revoked after the send fails', async () => {
+    await grant('known@example.com', 'VIEWER')
+    const list0 = (await listEmailInvitesHandler(asAdmin(), projectId)) as any
+    const oldId = list0.invites[0].id
+    age(11 * MIN)
+
+    let settle!: (v: boolean) => void
+    sendEmail.mockReturnValueOnce(new Promise<boolean>((r) => (settle = r)))
+    await grantNoFlush('known@example.com', 'EDITOR')
+    // Both rows are pending while the send is in flight; the admin revokes the old one.
+    expect(pendingCount()).toBe(2)
+    await revokeEmailInviteHandler(asAdmin(), { projectId, inviteId: oldId })
+    settle(false)
+    await new Promise((r) => setTimeout(r, 0))
+    const revoked = db
+      .prepare('SELECT "revokedAt" AS r FROM "ProjectEmailInvite" WHERE "id" = ?')
+      .get(oldId) as { r: number | null }
+    expect(revoked.r).not.toBeNull()
+    expect(pendingCount()).toBe(0)
+  })
+
+  it('(d) accepting one of two pending rows revokes the other', async () => {
+    const target = makeUser({ email: 'known@example.com' })
+    await grant('known@example.com', 'VIEWER')
+    const oldToken = sentToken(0)
+    age(11 * MIN)
+    let settle!: (v: boolean) => void
+    sendEmail.mockReturnValueOnce(new Promise<boolean>((r) => (settle = r)))
+    await grantNoFlush('known@example.com', 'EDITOR')
+    expect(pendingCount()).toBe(2)
+    expect(await accept(target, oldToken)).toMatchObject({ success: true })
+    expect(pendingCount()).toBe(0)
+    settle(true)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(pendingCount()).toBe(0)
   })
 })
 
