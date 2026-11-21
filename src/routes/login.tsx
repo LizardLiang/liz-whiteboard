@@ -294,6 +294,7 @@ function LoginPage() {
           {t('auth.login.noAccount')}{' '}
           <Link
             to="/register"
+            search={redirect !== '/' ? { redirect } : {}}
             className="font-medium underline underline-offset-4"
           >
             {t('auth.login.register')}

@@ -7,6 +7,7 @@
 
 import {
   SIGNUP_TOKEN_CLEANUP_AGE_MS,
+  clearExpiredSignupRedirects,
   deleteSignupTokensOlderThan,
 } from '@/data/signup-token'
 import {
@@ -28,6 +29,7 @@ async function sweepOnce(): Promise<void> {
     console.error('[auth] Failed to delete expired sessions:', error)
   }
   try {
+    clearExpiredSignupRedirects()
     const swept = deleteSignupTokensOlderThan(SIGNUP_TOKEN_CLEANUP_AGE_MS)
     if (swept > 0) console.log(`[auth] Deleted ${swept} old signup tokens`)
   } catch (error) {

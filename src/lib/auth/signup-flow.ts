@@ -24,7 +24,7 @@ export async function issueSignupEmail(params: {
   email: string
   /** The username from the register form; null on a resend. */
   username: string | null
-  /** Same-origin return path (an invite link), or null. */
+  /** Same-origin return path (an invite link or /authorize), or null. */
   redirectTo: string | null
   locale: Locale
   requestOrigin: string | null
@@ -33,14 +33,14 @@ export async function issueSignupEmail(params: {
   const user = await findUserByEmail(email)
 
   let username = params.username
-  let redirectTo = params.redirectTo
+  const redirectTo = params.redirectTo
   if (username === null) {
     const latest = findLatestSignupTokenForEmail(email)
     if (!latest && !user) return
-    // A resend takes only the username from the newest row; it never copies
-    // a return path another request stored.
+    // A resend takes only the username from the newest row. Its return path
+    // comes from the caller (the check-email page), already checked there; it
+    // is never copied from a row another request stored.
     username = latest?.username ?? ''
-    redirectTo = null
   }
 
   const rawToken = generateSignupToken()

@@ -136,6 +136,30 @@ describe('issueSignupEmail', () => {
     })
   })
 
+  it('a resend stores the return path the caller passes', async () => {
+    await issueSignupEmail({
+      ...base,
+      email: 'a@example.com',
+      username: 'alice',
+      redirectTo: '/invite/xyz',
+    })
+    db.prepare(
+      'UPDATE "SignupToken" SET "createdAt" = "createdAt" - 600000',
+    ).run()
+    await issueSignupEmail({
+      ...base,
+      email: 'a@example.com',
+      username: null,
+      redirectTo: '/invite/xyz',
+    })
+    const second = /\/signup\/([0-9a-f]{64})/.exec(
+      sendEmail.mock.calls[1][0].text,
+    )![1]
+    expect(
+      getSignupTokenState(hashSignupToken(second)).token?.redirectTo,
+    ).toBe('/invite/xyz')
+  })
+
   it('a resend inside the cooldown sends nothing', async () => {
     await issueSignupEmail({
       ...base,

@@ -16,8 +16,14 @@ import {
   resetPasswordInputSchema,
 } from '@/data/schema'
 import { AUTH_ERROR_CODES } from '@/lib/auth/errors'
+import { isSafeRedirect } from '@/lib/safe-redirect'
 
 const GENERIC_AUTH_ERROR = 'Invalid email or password'
+
+/** A same-origin return path worth storing, or null (unsafe, or just '/'). */
+function returnPathOrNull(path: string | undefined): string | null {
+  return path && isSafeRedirect(path) && path !== '/' ? path : null
+}
 
 /**
  * Start an email-link signup: the form takes email + username only. Every
@@ -37,7 +43,6 @@ export const registerUser = createServerFn({ method: 'POST' })
     const { extractClientIp } = await import('@/lib/rate-limit')
     const { issueSignupEmail } = await import('@/lib/auth/signup-flow')
     const { getRequestLocale } = await import('@/lib/i18n/server-locale')
-    const { isSafeRedirect } = await import('@/lib/safe-redirect')
 
     const request = getRequest()
     if (!checkRegisterIpRateLimit(extractClientIp(request))) {
@@ -48,10 +53,7 @@ export const registerUser = createServerFn({ method: 'POST' })
       }
     }
 
-    const redirectTo =
-      data.redirect && isSafeRedirect(data.redirect) && data.redirect !== '/'
-        ? data.redirect
-        : null
+    const redirectTo = returnPathOrNull(data.redirect)
 
     await issueSignupEmail({
       email: data.email,
@@ -88,7 +90,7 @@ export const resendSignupEmail = createServerFn({ method: 'POST' })
     await issueSignupEmail({
       email: data.email,
       username: null,
-      redirectTo: null,
+      redirectTo: returnPathOrNull(data.redirect),
       locale: await getRequestLocale(),
       requestOrigin: new URL(request.url).origin,
     })

@@ -61,7 +61,8 @@ export function tryCreateSignupToken(params: {
       id,
       email: params.email,
       username: params.username,
-      redirectTo: params.redirectTo,
+      // A voided row serves no link, so it keeps no return path.
+      redirectTo: params.voided ? null : params.redirectTo,
       tokenHash: params.tokenHash,
       expiresAt: now + SIGNUP_TOKEN_TTL_MS,
       usedAt: params.voided ? now : null,
@@ -141,9 +142,28 @@ export function completeSignup(params: {
     db.prepare(
       'UPDATE "SignupToken" SET "usedAt" = ? WHERE "email" = ? AND "usedAt" IS NULL',
     ).run(nowMs(), token.email)
+    // The return path can hold a raw invite token. Once the signup is done no
+    // link needs it, so wipe it from every row of the email.
+    db.prepare(
+      'UPDATE "SignupToken" SET "redirectTo" = NULL WHERE "email" = ?',
+    ).run(token.email)
 
     return { ok: true, user, redirectTo: token.redirectTo }
   })
+}
+
+/**
+ * Wipe the return path of rows whose link expired. The path can hold a raw
+ * invite token, so it lives only as long as the 24 h link. Returns the number
+ * of rows changed.
+ */
+export function clearExpiredSignupRedirects(): number {
+  const result = db
+    .prepare(
+      'UPDATE "SignupToken" SET "redirectTo" = NULL WHERE "redirectTo" IS NOT NULL AND "expiresAt" < ?',
+    )
+    .run(nowMs())
+  return Number(result.changes)
 }
 
 /** Delete rows created more than `ageMs` ago. Returns the number deleted. */

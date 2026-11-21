@@ -576,7 +576,11 @@ export const completeSignupInputSchema = z
   })
 
 /** Schema for the check-email page's resend. */
-export const resendSignupInputSchema = z.object({ email: emailSchema })
+export const resendSignupInputSchema = z.object({
+  email: emailSchema,
+  /** The return path the check-email page carries; the server re-checks it. */
+  redirect: z.string().max(2048).optional(),
+})
 
 /**
  * Schema for user login input

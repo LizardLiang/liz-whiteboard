@@ -10,6 +10,7 @@ import { resendSignupEmail } from './api/auth'
 import { Button } from '@/components/ui/button'
 import { useHydrated } from '@/hooks/use-hydrated'
 import { useT } from '@/lib/i18n/use-t'
+import { sanitizeRedirect } from '@/lib/safe-redirect'
 
 const searchSchema = z.object({
   email: z.string().optional().default(''),
@@ -23,7 +24,8 @@ export const Route = createFileRoute('/register_/check-email')({
 
 function CheckEmailPage() {
   const t = useT()
-  const { email } = Route.useSearch()
+  const { email, redirect: rawRedirect } = Route.useSearch()
+  const redirect = sanitizeRedirect(rawRedirect)
   const hydrated = useHydrated()
   const [isSending, setIsSending] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -34,7 +36,9 @@ function CheckEmailPage() {
     setError(null)
     setIsSending(true)
     try {
-      const result = await resendSignupEmail({ data: { email } })
+      const result = await resendSignupEmail({
+        data: { email, ...(redirect !== '/' ? { redirect } : {}) },
+      })
       if (result.success) {
         setNotice(t('auth.checkEmail.resent'))
       } else {

@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   SIGNUP_TOKEN_CLEANUP_AGE_MS,
+  clearExpiredSignupRedirects,
   completeSignup,
   deleteSignupTokensOlderThan,
   findLatestSignupTokenForEmail,
@@ -182,5 +183,34 @@ describe('deleteSignupTokensOlderThan', () => {
     expect(deleteSignupTokensOlderThan(SIGNUP_TOKEN_CLEANUP_AGE_MS)).toBe(1)
     expect(getSignupTokenState('o').state).toBe('invalid')
     expect(getSignupTokenState('y').state).toBe('valid')
+  })
+})
+
+describe('the return path holds a raw invite token, so it is short-lived', () => {
+  const redirectOf = (hash: string) =>
+    (
+      db
+        .prepare('SELECT "redirectTo" AS r FROM "SignupToken" WHERE "tokenHash" = ?')
+        .get(hash) as { r: string | null }
+    ).r
+
+  it('a voided row (existing account) stores no return path', () => {
+    create({ tokenHash: 'v', redirectTo: '/invite/raw', voided: true })
+    expect(redirectOf('v')).toBeNull()
+  })
+
+  it('completing the signup wipes the return path from the email rows', () => {
+    create({ tokenHash: 'c1', redirectTo: '/invite/raw' })
+    completeSignup({ tokenHash: 'c1', username: 'newbie', passwordHash: 'h' })
+    expect(redirectOf('c1')).toBeNull()
+  })
+
+  it('the sweep wipes the return path of an expired link and keeps a live one', () => {
+    create({ tokenHash: 'dead', redirectTo: '/invite/raw' })
+    db.prepare('UPDATE "SignupToken" SET "expiresAt" = 1').run()
+    create({ email: 'other@example.com', tokenHash: 'live', redirectTo: '/invite/raw2' })
+    expect(clearExpiredSignupRedirects()).toBe(1)
+    expect(redirectOf('dead')).toBeNull()
+    expect(redirectOf('live')).toBe('/invite/raw2')
   })
 })
