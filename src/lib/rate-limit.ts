@@ -168,15 +168,28 @@ export interface RateLimiter {
 export const RATE_LIMIT_MAX_KEYS = 10_000
 
 /**
+ * Collapse an IPv6 address to its /64 prefix so one host (which controls a
+ * whole /64) cannot mint unlimited keys. IPv4, IPv4-mapped IPv6 and any
+ * non-IP key (an email, 'unknown') are returned unchanged.
+ */
+export function normalizeRateLimitKey(key: string): string {
+  const parsed = parseIp(key)
+  if (parsed?.version !== 6) return key
+  return `v6/64:${(parsed.value >> 64n).toString(16)}`
+}
+
+/**
  * Create an in-process fixed-window rate limiter (resets on restart).
- * Each call to check() with the same `ip` within `windowMs` of the first
+ * Each call to check() with the same key within `windowMs` of the first
  * call increments a counter; once the counter exceeds `max`, check()
- * returns false until the window rolls over.
+ * returns false until the window rolls over. IPv6 keys share a window per /64.
  *
- * Memory is bounded: the map never holds more than `maxKeys` keys. When a
- * new key arrives at the cap, expired windows are deleted first, then the
- * oldest window. Entries are re-inserted when their window rolls over, so
- * Map insertion order is `windowStart` order and the first key is the oldest.
+ * Memory is bounded: the map never holds more than `maxKeys` keys. At the cap
+ * only expired windows are deleted - a live window is never evicted, because
+ * that would let a blocked caller flush its own block by flooding new keys.
+ * If the map is still full, new keys share one overflow bucket with the same
+ * `max` and window, so the limiter fails closed. Entries are re-inserted when
+ * their window rolls over, so Map insertion order is `windowStart` order.
  */
 export function createFixedWindowRateLimiter(opts: {
   max: number
@@ -185,26 +198,37 @@ export function createFixedWindowRateLimiter(opts: {
 }): RateLimiter {
   const map = new Map<string, RateLimitEntry>()
   const maxKeys = opts.maxKeys ?? RATE_LIMIT_MAX_KEYS
+  let overflow: RateLimitEntry | null = null
 
-  function makeRoom(now: number): void {
+  function deleteExpired(now: number): void {
     for (const [key, entry] of map) {
       if (now - entry.windowStart < opts.windowMs) break
       map.delete(key)
     }
-    while (map.size >= maxKeys) {
-      const oldest = map.keys().next()
-      if (oldest.done) break
-      map.delete(oldest.value)
+  }
+
+  function checkOverflow(now: number): boolean {
+    if (!overflow || now - overflow.windowStart >= opts.windowMs) {
+      overflow = { count: 1, windowStart: now }
+      return true
     }
+    overflow.count += 1
+    return overflow.count <= opts.max
   }
 
   return {
-    check(ip: string): boolean {
+    check(rawKey: string): boolean {
+      const ip = normalizeRateLimitKey(rawKey)
       const now = Date.now()
       const entry = map.get(ip)
-      if (!entry || now - entry.windowStart >= opts.windowMs) {
+      if (!entry) {
+        if (map.size >= maxKeys) deleteExpired(now)
+        if (map.size >= maxKeys) return checkOverflow(now)
+        map.set(ip, { count: 1, windowStart: now })
+        return true
+      }
+      if (now - entry.windowStart >= opts.windowMs) {
         map.delete(ip)
-        if (map.size >= maxKeys) makeRoom(now)
         map.set(ip, { count: 1, windowStart: now })
         return true
       }
@@ -213,6 +237,7 @@ export function createFixedWindowRateLimiter(opts: {
     },
     reset(): void {
       map.clear()
+      overflow = null
     },
     size(): number {
       return map.size

@@ -59,24 +59,34 @@ describe('createFixedWindowRateLimiter', () => {
       expect(limiter.size()).toBeLessThanOrEqual(100)
     })
 
-    it('evicts the oldest window at the cap and keeps recent keys', () => {
+    it('a blocked key stays blocked after 10,000+ new keys arrive', () => {
       const limiter = createFixedWindowRateLimiter({
-        max: 1,
+        max: 2,
+        windowMs: 60_000,
+      })
+      limiter.check('victim')
+      limiter.check('victim')
+      expect(limiter.check('victim')).toBe(false)
+      for (let i = 0; i < 10_500; i++) limiter.check(`flood-${i}`)
+      expect(limiter.check('victim')).toBe(false)
+    })
+
+    it('new keys beyond the cap share one overflow bucket', () => {
+      const limiter = createFixedWindowRateLimiter({
+        max: 2,
         windowMs: 60_000,
         maxKeys: 3,
       })
       limiter.check('a')
       limiter.check('b')
       limiter.check('c')
-      limiter.check('d')
+      expect(limiter.check('d')).toBe(true)
+      expect(limiter.check('e')).toBe(true)
+      expect(limiter.check('f')).toBe(false)
       expect(limiter.size()).toBe(3)
-      // 'd' is still tracked, so its second hit is refused.
-      expect(limiter.check('d')).toBe(false)
-      // 'a' was evicted, so it starts a fresh window.
-      expect(limiter.check('a')).toBe(true)
     })
 
-    it('deletes expired windows before evicting live ones', () => {
+    it('deletes expired windows to make room before overflowing', () => {
       vi.useFakeTimers()
       const limiter = createFixedWindowRateLimiter({
         max: 1,
@@ -90,6 +100,27 @@ describe('createFixedWindowRateLimiter', () => {
       limiter.check('new')
       expect(limiter.size()).toBe(2)
       expect(limiter.check('live')).toBe(false)
+      expect(limiter.check('new2')).toBe(true)
+      expect(limiter.size()).toBe(3)
+      // Map full of live windows: the next new keys share the overflow bucket.
+      expect(limiter.check('new3')).toBe(true)
+      expect(limiter.check('new4')).toBe(false)
+    })
+
+    it('two addresses in the same IPv6 /64 share one window', () => {
+      const limiter = createFixedWindowRateLimiter({ max: 1, windowMs: 60_000 })
+      expect(limiter.check('2001:db8:1:2::1')).toBe(true)
+      expect(limiter.check('2001:db8:1:2:ffff::9')).toBe(false)
+      expect(limiter.check('2001:db8:1:3::1')).toBe(true)
+      expect(limiter.size()).toBe(2)
+    })
+
+    it('keys IPv4 and non-IP keys unchanged', () => {
+      const limiter = createFixedWindowRateLimiter({ max: 1, windowMs: 60_000 })
+      expect(limiter.check('1.2.3.4')).toBe(true)
+      expect(limiter.check('1.2.3.5')).toBe(true)
+      expect(limiter.check('unknown')).toBe(true)
+      expect(limiter.check('unknown')).toBe(false)
     })
   })
 })
