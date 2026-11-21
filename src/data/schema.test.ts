@@ -10,6 +10,7 @@ import {
   canvasElementPropsSchema,
   canvasElementStyleSchema,
   cardinalitySchema,
+  completeSignupInputSchema,
   createConnectorSchema,
   createRelationshipSchema,
   createShapeSchema,
@@ -122,13 +123,12 @@ describe('registerInputSchema', () => {
     const result = registerInputSchema.safeParse({
       username: 'alice_01',
       email: 'alice@example.com',
-      password: 'secure123',
     })
     expect(result.success).toBe(true)
     if (result.success) {
       expect(result.data.username).toBe('alice_01')
       expect(result.data.email).toBe('alice@example.com')
-      expect(result.data.password).toBe('secure123')
+      expect(result.data).not.toHaveProperty('password')
     }
   })
 
@@ -138,7 +138,6 @@ describe('registerInputSchema', () => {
       const result = registerInputSchema.safeParse({
         username: 'ab',
         email: 'a@b.com',
-        password: 'pass1234',
       })
       expect(result.success).toBe(false)
     })
@@ -147,7 +146,6 @@ describe('registerInputSchema', () => {
       const result = registerInputSchema.safeParse({
         username: 'a'.repeat(51),
         email: 'a@b.com',
-        password: 'pass1234',
       })
       expect(result.success).toBe(false)
     })
@@ -156,7 +154,6 @@ describe('registerInputSchema', () => {
       const result = registerInputSchema.safeParse({
         username: 'alice bob',
         email: 'a@b.com',
-        password: 'pass1234',
       })
       expect(result.success).toBe(false)
     })
@@ -165,7 +162,6 @@ describe('registerInputSchema', () => {
       const result = registerInputSchema.safeParse({
         username: 'alice-bob',
         email: 'a@b.com',
-        password: 'pass1234',
       })
       expect(result.success).toBe(false)
     })
@@ -174,52 +170,14 @@ describe('registerInputSchema', () => {
       const result = registerInputSchema.safeParse({
         username: 'alice',
         email: 'notanemail',
-        password: 'pass1234',
       })
       expect(result.success).toBe(false)
-    })
-
-    it('rejects password of 7 characters', () => {
-      const result = registerInputSchema.safeParse({
-        username: 'alice',
-        email: 'a@b.com',
-        password: 'short12',
-      })
-      expect(result.success).toBe(false)
-    })
-
-    it('rejects password of 129 characters', () => {
-      const result = registerInputSchema.safeParse({
-        username: 'alice',
-        email: 'a@b.com',
-        password: 'a'.repeat(129),
-      })
-      expect(result.success).toBe(false)
-    })
-
-    it('accepts password of exactly 8 characters', () => {
-      const result = registerInputSchema.safeParse({
-        username: 'alice',
-        email: 'a@b.com',
-        password: 'exactly8',
-      })
-      expect(result.success).toBe(true)
-    })
-
-    it('accepts password of exactly 128 characters', () => {
-      const result = registerInputSchema.safeParse({
-        username: 'alice',
-        email: 'a@b.com',
-        password: 'a'.repeat(128),
-      })
-      expect(result.success).toBe(true)
     })
 
     it('accepts username of exactly 3 characters', () => {
       const result = registerInputSchema.safeParse({
         username: 'abc',
         email: 'a@b.com',
-        password: 'pass1234',
       })
       expect(result.success).toBe(true)
     })
@@ -228,10 +186,69 @@ describe('registerInputSchema', () => {
       const result = registerInputSchema.safeParse({
         username: 'a'.repeat(50),
         email: 'a@b.com',
-        password: 'pass1234',
       })
       expect(result.success).toBe(true)
     })
+  })
+})
+
+describe('completeSignupInputSchema', () => {
+  const base = {
+    token: 'abc',
+    username: 'alice_01',
+    password: 'exactly8',
+    confirmPassword: 'exactly8',
+  }
+
+  it('accepts a matching password of 8 characters', () => {
+    expect(completeSignupInputSchema.safeParse(base).success).toBe(true)
+  })
+
+  it('accepts a password of exactly 128 characters', () => {
+    const password = 'a'.repeat(128)
+    expect(
+      completeSignupInputSchema.safeParse({
+        ...base,
+        password,
+        confirmPassword: password,
+      }).success,
+    ).toBe(true)
+  })
+
+  it('rejects a password of 7 characters', () => {
+    expect(
+      completeSignupInputSchema.safeParse({
+        ...base,
+        password: 'short12',
+        confirmPassword: 'short12',
+      }).success,
+    ).toBe(false)
+  })
+
+  it('rejects a password of 129 characters', () => {
+    const password = 'a'.repeat(129)
+    expect(
+      completeSignupInputSchema.safeParse({
+        ...base,
+        password,
+        confirmPassword: password,
+      }).success,
+    ).toBe(false)
+  })
+
+  it('rejects mismatched passwords', () => {
+    expect(
+      completeSignupInputSchema.safeParse({
+        ...base,
+        confirmPassword: 'different1',
+      }).success,
+    ).toBe(false)
+  })
+
+  it('rejects a malformed username', () => {
+    expect(
+      completeSignupInputSchema.safeParse({ ...base, username: 'a b' }).success,
+    ).toBe(false)
   })
 })
 

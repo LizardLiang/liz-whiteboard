@@ -90,6 +90,24 @@ async function desyncedSubmit(page: Page, values: Record<string, string>) {
   }, values)
 }
 
+/**
+ * Email-link signup: the form never creates an account or a session. The
+ * check-email page follows, and no session cookie exists until the emailed
+ * link sets a password.
+ */
+async function expectCheckEmailPage(
+  page: Page,
+  context: { cookies: () => Promise<Array<{ name: string }>> },
+) {
+  await expect(page).toHaveURL(/\/register\/check-email/, { timeout: 15_000 })
+  await expect(
+    page.getByRole('heading', { name: 'Check your email' }),
+  ).toBeVisible()
+  expect(
+    (await context.cookies()).some((c) => c.name === 'session_token'),
+  ).toBe(false)
+}
+
 test.describe('Login — browser autofill', () => {
   test('pre-hydration autofill enables Sign in and signs the user in', async ({
     page,
@@ -216,14 +234,13 @@ test.describe('Register — browser autofill', () => {
     execFileSync('bun', ['run', 'e2e/seed-autofill.ts'], { stdio: 'inherit' })
   })
 
-  test('pre-hydration autofill enables Create account and registers', async ({
+  test('pre-hydration autofill enables Create account and reaches the check-email page', async ({
     page,
     context,
   }) => {
     await installPreHydrationAutofill(page, {
       username: E2E_AUTOFILL_USER.username,
       email: E2E_AUTOFILL_USER.email,
-      password: E2E_AUTOFILL_USER.password,
     })
 
     await page.goto('/register')
@@ -237,17 +254,10 @@ test.describe('Register — browser autofill', () => {
 
     await createAccount.click()
 
-    await expect
-      .poll(
-        async () =>
-          (await context.cookies()).some((c) => c.name === 'session_token'),
-        { timeout: 15_000 },
-      )
-      .toBe(true)
-    await expect(page.getByRole('button', { name: 'Log out' })).toBeVisible()
+    await expectCheckEmailPage(page, context)
   })
 
-  test('submit backstop: desynced state still registers the real values', async ({
+  test('submit backstop: desynced state still submits the real values', async ({
     page,
     context,
   }) => {
@@ -257,17 +267,9 @@ test.describe('Register — browser autofill', () => {
     await desyncedSubmit(page, {
       username: E2E_AUTOFILL_USER.username,
       email: E2E_AUTOFILL_USER.email,
-      password: E2E_AUTOFILL_USER.password,
     })
 
-    await expect
-      .poll(
-        async () =>
-          (await context.cookies()).some((c) => c.name === 'session_token'),
-        { timeout: 15_000 },
-      )
-      .toBe(true)
-    await expect(page.getByRole('button', { name: 'Log out' })).toBeVisible()
+    await expectCheckEmailPage(page, context)
   })
 
   // A full page load can be submitted before React hydrates. With no onSubmit
@@ -277,7 +279,7 @@ test.describe('Register — browser autofill', () => {
   // the hydrated form may register. method="post" alone would pass the
   // password check below; the disabled-button and no-navigation assertions are
   // what fail if the `!hydrated` gate is removed.
-  test('submit before hydration is blocked, then registers once hydrated, with no password in any URL', async ({
+  test('submit before hydration is blocked, then submits once hydrated, with no email-form secret in any URL', async ({
     page,
     context,
   }) => {
@@ -291,13 +293,12 @@ test.describe('Register — browser autofill', () => {
     await page.waitForSelector('#username', { state: 'attached' })
     await page.fill('#username', E2E_AUTOFILL_USER.username)
     await page.fill('#email', E2E_AUTOFILL_USER.email)
-    await page.fill('#password', E2E_AUTOFILL_USER.password)
 
     const createAccount = page.getByRole('button', { name: 'Create account' })
     await expect(createAccount).toBeDisabled()
 
     const before = navigations.length
-    await page.press('#password', 'Enter')
+    await page.press('#email', 'Enter')
     // Give a native submit time to start; none may.
     await page.waitForTimeout(1_000)
     expect(navigations.length).toBe(before)
@@ -306,14 +307,7 @@ test.describe('Register — browser autofill', () => {
     release()
     await expect(createAccount).toBeEnabled({ timeout: 15_000 })
     await createAccount.click()
-    await expect
-      .poll(
-        async () =>
-          (await context.cookies()).some((c) => c.name === 'session_token'),
-        { timeout: 15_000 },
-      )
-      .toBe(true)
-    await expect(page.getByRole('button', { name: 'Log out' })).toBeVisible()
+    await expectCheckEmailPage(page, context)
 
     expect(navigations.filter((u) => u.includes('password='))).toEqual([])
   })

@@ -54,12 +54,15 @@ interface MyRouterContext {
 // allowlist entry.
 // '/render/' pages are opened by the MCP server's headless browser with a
 // signed 60-second render token in the path; the token is the credential.
+// '/signup' is public: a signup link is opened straight from an email by a
+// visitor with no account yet. '/register' also covers /register/check-email.
 // '/forgot-password' and '/reset-password' are public — a
 // logged-out visitor who forgot their password has no session to check, and
 // a reset link is designed to be opened straight from an email.
 const PUBLIC_PATHS = [
   '/login',
   '/register',
+  '/signup',
   '/invite',
   '/share',
   '/canvas-share',

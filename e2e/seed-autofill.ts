@@ -30,6 +30,11 @@ for (const user of owned) {
   db.query('DELETE FROM "User" WHERE id = ?').run(user.id)
 }
 
+// A prior run's signup rows would trip the per-email resend cooldown.
+db.query('DELETE FROM "SignupToken" WHERE email = ?').run(
+  E2E_AUTOFILL_USER.email,
+)
+
 db.close()
 
 console.log(

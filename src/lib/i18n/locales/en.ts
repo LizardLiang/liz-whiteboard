@@ -83,6 +83,31 @@ export const en = {
       submitting: 'Updating...',
       noscript: 'JavaScript is required to reset your password.',
     },
+    checkEmail: {
+      title: 'Check your email',
+      body: 'If this email can be used to sign up, a link to finish creating your account is on its way. It expires in 24 hours.',
+      bodyWithEmail: 'We sent a message to {email}. Open the link in it to finish signing up. The link expires in 24 hours.',
+      resend: 'Resend email',
+      resending: 'Sending...',
+      resent: 'If that email can be used, a new message is on its way.',
+      rateLimited: 'Too many requests, try again later.',
+      backToSignIn: 'Back to sign in',
+    },
+    signup: {
+      title: 'Finish signing up',
+      subtitle: 'Choose a password to create your account.',
+      checking: 'Checking your link...',
+      linkInvalid: 'Link invalid',
+      linkExpired: 'This link has expired.',
+      linkUsed: 'This link has already been used.',
+      linkInvalidBody: 'This link is invalid.',
+      startOver: 'Start over',
+      confirmPassword: 'Confirm password',
+      submit: 'Create account',
+      submitting: 'Creating account...',
+      usernameTaken: 'That username is taken. Choose another one.',
+      noscript: 'JavaScript is required to finish signing up.',
+    },
     sessionExpired: {
       title: 'Your session has expired',
       description:
@@ -156,6 +181,19 @@ export const en = {
     resetHtmlIntro: 'Use this link to reset your password:',
     resetHtmlOutro:
       'This link expires in 30 minutes and can only be used once. If you did not request this, you can ignore this email.',
+    signupSubject: 'Finish signing up',
+    signupText:
+      'Use this link to finish creating your account and set your password: {link}\n\nThis link expires in 24 hours and can only be used once. If you did not request this, you can ignore this email.',
+    signupHtmlIntro:
+      'Use this link to finish creating your account and set your password:',
+    signupHtmlOutro:
+      'This link expires in 24 hours and can only be used once. If you did not request this, you can ignore this email.',
+    existsSubject: 'You already have an account',
+    existsText:
+      'Someone asked to create an account with this email address, but you already have one.\n\nLog in: {loginLink}\nForgot your password? Reset it: {resetLink}\n\nIf this was not you, you can ignore this email.',
+    existsHtmlIntro:
+      'Someone asked to create an account with this email address, but you already have one. Log in here, or reset your password:',
+    existsHtmlOutro: 'If this was not you, you can ignore this email.',
   },
   header: {
     connections: 'Connections',
@@ -427,6 +465,7 @@ export const en = {
     passwordRequired: 'Password is required',
     verificationRequired: 'Verification is required',
     missingResetToken: 'Missing reset token',
+    missingSignupToken: 'Missing signup token',
     confirmPasswordRequired: 'Please confirm your password',
     passwordsMismatch: 'Passwords do not match',
     consentExpired:

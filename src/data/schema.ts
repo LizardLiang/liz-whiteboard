@@ -535,23 +535,48 @@ export const passwordRuleSchema = z
 /**
  * Schema for user registration input
  */
+export const usernameSchema = z
+  .string()
+  .min(3, 'Username must be at least 3 characters')
+  .max(50, 'Username must be at most 50 characters')
+  .regex(
+    /^[a-zA-Z0-9_]+$/,
+    'Username must be alphanumeric with underscores only',
+  )
+
+const emailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .email('Invalid email address')
+  .max(255, 'Email must be at most 255 characters')
+
+/**
+ * Schema for the register form: email + username only. The password is set
+ * later, on the emailed signup link. `redirect` is a same-origin return path
+ * (an invite link) carried through the email; the server re-checks it.
+ */
 export const registerInputSchema = z.object({
-  username: z
-    .string()
-    .min(3, 'Username must be at least 3 characters')
-    .max(50, 'Username must be at most 50 characters')
-    .regex(
-      /^[a-zA-Z0-9_]+$/,
-      'Username must be alphanumeric with underscores only',
-    ),
-  email: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .email('Invalid email address')
-    .max(255, 'Email must be at most 255 characters'),
-  password: passwordRuleSchema,
+  username: usernameSchema,
+  email: emailSchema,
+  redirect: z.string().max(2048).optional(),
 })
+
+/** Schema for the signup-link page's set-password submit. */
+export const completeSignupInputSchema = z
+  .object({
+    token: z.string().min(1, 'Missing signup token'),
+    username: usernameSchema,
+    password: passwordRuleSchema,
+    confirmPassword: z.string().min(1, 'Please confirm your password'),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  })
+
+/** Schema for the check-email page's resend. */
+export const resendSignupInputSchema = z.object({ email: emailSchema })
 
 /**
  * Schema for user login input
@@ -831,6 +856,7 @@ export type CompareVersions = z.infer<typeof compareVersionsSchema>
 
 // Auth type exports
 export type RegisterInput = z.infer<typeof registerInputSchema>
+export type CompleteSignupInput = z.infer<typeof completeSignupInputSchema>
 export type LoginInput = z.infer<typeof loginInputSchema>
 export type ProjectRoleValue = z.infer<typeof projectRoleSchema>
 export type GrantPermission = z.infer<typeof grantPermissionSchema>

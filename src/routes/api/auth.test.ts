@@ -38,7 +38,13 @@ import {
   buildSetCookieHeader,
   parseSessionCookie,
 } from '@/lib/auth/cookies'
-import { insertRegisteredUser } from '@/lib/auth/register-user'
+import { issueSignupEmail } from '@/lib/auth/signup-flow'
+import { hashSignupToken } from '@/lib/auth/signup-token'
+import { isSafeRedirect, sanitizeRedirect } from '@/lib/safe-redirect'
+import {
+  completeSignup as completeSignupRow,
+  getSignupTokenState,
+} from '@/data/signup-token'
 import { checkCredentials } from '@/lib/auth/login-flow'
 import {
   _resetLoginFailuresForTests,
@@ -47,6 +53,9 @@ import {
 import { makeProject, makeUser, resetDb } from '@/test/db-helpers'
 
 const GENERIC_AUTH_ERROR = 'Invalid email or password'
+
+const sendEmail = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/email/resend', () => ({ sendEmail }))
 
 // Mock only the TanStack Start server context — there is no real HTTP request.
 vi.mock('@tanstack/react-start/server', () => ({
@@ -61,30 +70,57 @@ vi.mock('@tanstack/react-start/server', () => ({
 async function registerUserHandler(data: {
   username: string
   email: string
+  redirect?: string
+}) {
+  await issueSignupEmail({
+    email: data.email,
+    username: data.username,
+    redirectTo:
+      data.redirect && isSafeRedirect(data.redirect) && data.redirect !== '/'
+        ? data.redirect
+        : null,
+    locale: 'en',
+    requestOrigin: 'http://localhost:3000',
+  })
+  return { success: true as const, redirect: '/register/check-email' }
+}
+
+/** Mirrors completeSignup in auth.ts. */
+async function completeSignupHandler(data: {
+  token: string
+  username: string
   password: string
 }) {
-  const existingUser = await findUserByEmail(data.email)
-  if (existingUser) {
-    return {
-      success: true,
-      message: 'Registration successful. Please log in.',
-      redirect: '/login',
-      newUser: false,
-    }
+  const tokenHash = hashSignupToken(data.token)
+  if (getSignupTokenState(tokenHash).state !== 'valid') {
+    return { success: false as const, error: 'INVALID_TOKEN' }
   }
-
   const passwordHash = await hashPassword(data.password)
-
-  const user = insertRegisteredUser({
+  const result = completeSignupRow({
+    tokenHash,
     username: data.username,
-    email: data.email,
     passwordHash,
   })
-
-  const { token } = await createUserSession(user.id, false)
+  if (!result.ok) {
+    return {
+      success: false as const,
+      error:
+        result.reason === 'username_taken' ? 'VALIDATION_ERROR' : 'INVALID_TOKEN',
+    }
+  }
+  const { token } = await createUserSession(result.user.id, false)
   ;(setResponseHeader as any)('Set-Cookie', buildSetCookieHeader(token, false))
+  return {
+    success: true as const,
+    redirect: sanitizeRedirect(result.redirectTo ?? '/'),
+  }
+}
 
-  return { success: true, redirect: '/', newUser: true }
+/** The raw signup token from the last mail sent. */
+function lastSignupToken(): string {
+  const calls = sendEmail.mock.calls
+  const text = calls[calls.length - 1][0].text as string
+  return /\/signup\/([0-9a-f]{64})/.exec(text)![1]
 }
 
 async function loginUserHandler(data: {
@@ -179,6 +215,8 @@ beforeEach(() => {
   resetDb()
   _resetLoginFailuresForTests()
   vi.clearAllMocks()
+  sendEmail.mockResolvedValue(undefined)
+  vi.stubEnv('APP_BASE_URL', 'http://localhost:3000')
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,120 +224,169 @@ beforeEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('registerUser', () => {
-  // TC-P3-03: new registration creates a user + session
-  it('TC-P3-03: creates user and session for a new email', async () => {
+  // TC-P3-03: a new email gets a pending signup and a mail, no user, no cookie
+  it('TC-P3-03: new email creates no user and no session, sends the signup link', async () => {
     const result = await registerUserHandler({
       username: 'alice',
       email: 'alice@example.com',
-      password: 'secure123',
     })
 
-    expect(result).toMatchObject({
-      success: true,
-      newUser: true,
-      redirect: '/',
+    expect(result).toEqual({ success: true, redirect: '/register/check-email' })
+    expect(await findUserByEmail('alice@example.com')).toBeNull()
+    expect(countSessions()).toBe(0)
+    expect(setResponseHeader).not.toHaveBeenCalled()
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+    expect(sendEmail.mock.calls[0][0].text).toContain('/signup/')
+  })
+
+  // TC-P3-04: the link sets the password, stored as a bcrypt hash, and logs in
+  it('TC-P3-04: the signup link sets a bcrypt password hash and signs the user in', async () => {
+    await registerUserHandler({ username: 'bob', email: 'bob@example.com' })
+    const result = await completeSignupHandler({
+      token: lastSignupToken(),
+      username: 'bob',
+      password: 'mySecret123',
     })
 
-    // Real DB effects: the user exists and a session was created for them.
-    const user = await findUserByEmail('alice@example.com')
+    expect(result).toEqual({ success: true, redirect: '/' })
+    const user = await findUserByEmail('bob@example.com')
     expect(user).not.toBeNull()
-    expect(user!.username).toBe('alice')
+    expect(user!.passwordHash).not.toBe('mySecret123')
+    expect(user!.passwordHash).toMatch(/^\$2[aby]\$.+/)
+    await expect(
+      verifyPassword('mySecret123', user!.passwordHash),
+    ).resolves.toBe(true)
     expect(countSessionsForUser(user!.id)).toBe(1)
-
-    // Set-Cookie was emitted with the session token.
     expect(setResponseHeader).toHaveBeenCalledWith(
       'Set-Cookie',
       expect.stringContaining('session_token'),
     )
   })
 
-  // TC-P3-04: password is stored as a bcrypt hash, never plaintext
-  it('TC-P3-04: password stored as bcrypt hash, never plaintext', async () => {
-    await registerUserHandler({
-      username: 'bob',
-      email: 'bob@example.com',
-      password: 'mySecret123',
-    })
-
-    const user = await findUserByEmail('bob@example.com')
-    expect(user).not.toBeNull()
-    expect(user!.passwordHash).not.toBe('mySecret123')
-    expect(user!.passwordHash).toMatch(/^\$2[aby]\$.+/)
-    // The stored hash actually verifies against the plaintext password.
-    await expect(
-      verifyPassword('mySecret123', user!.passwordHash),
-    ).resolves.toBe(true)
-  })
-
-  // TC-P3-05: duplicate email returns anti-enumeration response, no new user
-  it('TC-P3-05: duplicate email returns anti-enumeration success response', async () => {
+  // TC-P3-05: existing email: same reply, no new user, no cookie, the other mail
+  it('TC-P3-05: existing email returns the identical reply and sends the account-exists mail', async () => {
     makeUser({ email: 'alice@example.com', username: 'alice' })
     const usersBefore = countUsers()
 
     const result = await registerUserHandler({
       username: 'alice2',
       email: 'alice@example.com',
-      password: 'secure123',
     })
 
-    expect(result).toEqual({
-      success: true,
-      message: 'Registration successful. Please log in.',
-      redirect: '/login',
-      newUser: false,
-    })
-    // No new user, no session, no cookie set.
+    expect(result).toEqual({ success: true, redirect: '/register/check-email' })
     expect(countUsers()).toBe(usersBefore)
     expect(countSessions()).toBe(0)
     expect(setResponseHeader).not.toHaveBeenCalled()
+    expect(sendEmail.mock.calls[0][0].text).not.toContain('/signup/')
+    expect(sendEmail.mock.calls[0][0].text).toContain('/login')
   })
 
-  // TC-P3-06: duplicate-email response shape matches new-user success shape
-  it('TC-P3-06: duplicate email response has identical shape to new-user success', async () => {
-    const newUserResult = await registerUserHandler({
-      username: 'carol',
-      email: 'carol@example.com',
-      password: 'secure123',
+  // TC-P3-06: new and existing replies are deeply equal
+  it('TC-P3-06: new and existing email replies are deeply equal', async () => {
+    makeUser({ email: 'old@example.com', username: 'old' })
+    const existing = await registerUserHandler({
+      username: 'x_old',
+      email: 'old@example.com',
     })
-
-    // carol now exists → registering carol again hits the duplicate path.
-    const dupeResult = await registerUserHandler({
-      username: 'carol',
-      email: 'carol@example.com',
-      password: 'secure123',
+    const fresh = await registerUserHandler({
+      username: 'x_new',
+      email: 'new@example.com',
     })
-
-    expect(newUserResult.success).toBe(true)
-    expect(dupeResult.success).toBe(true)
-    expect(typeof newUserResult.redirect).toBe('string')
-    expect(typeof dupeResult.redirect).toBe('string')
+    expect(fresh).toEqual(existing)
   })
 
-  // TC-P3-03b: the first registrant must NOT take ownerless projects
-  it('TC-P3-03b: first registered user does NOT adopt ownerless projects', async () => {
+  it('TC-P3-06b: a taken username does not change the register reply', async () => {
+    makeUser({ email: 'o@example.com', username: 'taken' })
+    const result = await registerUserHandler({
+      username: 'taken',
+      email: 'fresh@example.com',
+    })
+    expect(result).toEqual({ success: true, redirect: '/register/check-email' })
+  })
+
+  it('TC-P3-06c: an invite return path survives register -> email link -> set password', async () => {
+    await registerUserHandler({
+      username: 'invitee',
+      email: 'invitee@example.com',
+      redirect: '/invite/abc123',
+    })
+    const result = await completeSignupHandler({
+      token: lastSignupToken(),
+      username: 'invitee',
+      password: 'secure123',
+    })
+    expect(result).toEqual({ success: true, redirect: '/invite/abc123' })
+  })
+
+  it('TC-P3-06d: an unsafe return path is dropped', async () => {
+    await registerUserHandler({
+      username: 'evil',
+      email: 'evil@example.com',
+      redirect: '//evil.com',
+    })
+    const result = await completeSignupHandler({
+      token: lastSignupToken(),
+      username: 'evil',
+      password: 'secure123',
+    })
+    expect(result).toEqual({ success: true, redirect: '/' })
+  })
+
+  it('TC-P3-06e: a used link is refused', async () => {
+    await registerUserHandler({ username: 'once', email: 'once@example.com' })
+    const token = lastSignupToken()
+    await completeSignupHandler({ token, username: 'once', password: 'secure123' })
+    const again = await completeSignupHandler({
+      token,
+      username: 'once2',
+      password: 'secure123',
+    })
+    expect(again).toEqual({ success: false, error: 'INVALID_TOKEN' })
+  })
+
+  it('TC-P3-06f: a username taken before the link is used is refused, the link stays usable', async () => {
+    await registerUserHandler({ username: 'race', email: 'race@example.com' })
+    const token = lastSignupToken()
+    makeUser({ username: 'race', email: 'other@example.com' })
+    const clash = await completeSignupHandler({
+      token,
+      username: 'race',
+      password: 'secure123',
+    })
+    expect(clash).toEqual({ success: false, error: 'VALIDATION_ERROR' })
+    const ok = await completeSignupHandler({
+      token,
+      username: 'race2',
+      password: 'secure123',
+    })
+    expect(ok.success).toBe(true)
+  })
+
+  // TC-P3-03b: signup must NOT take ownerless projects
+  it('TC-P3-03b: a signed-up user does NOT adopt ownerless projects', async () => {
     const p1 = makeProject({ name: 'P1' })
     const p2 = makeProject({ name: 'P2' })
 
-    await registerUserHandler({
+    await registerUserHandler({ username: 'first', email: 'first@example.com' })
+    await completeSignupHandler({
+      token: lastSignupToken(),
       username: 'first',
-      email: 'first@example.com',
       password: 'secure123',
     })
 
-    const user = await findUserByEmail('first@example.com')
-    expect(user).not.toBeNull()
+    expect(await findUserByEmail('first@example.com')).not.toBeNull()
     expect((await findProjectById(p1.id))?.ownerId).toBeNull()
     expect((await findProjectById(p2.id))?.ownerId).toBeNull()
   })
 
-  it('TC-P3-03c: a later registered user does NOT adopt existing projects', async () => {
-    // Existing first user owns a project.
+  it('TC-P3-03c: a later signed-up user does NOT adopt existing projects', async () => {
     const first = makeUser({ email: 'first@example.com' })
     const proj = makeProject({ name: 'Owned', ownerId: first.id })
 
-    await registerUserHandler({
+    await registerUserHandler({ username: 'second', email: 'second@example.com' })
+    await completeSignupHandler({
+      token: lastSignupToken(),
       username: 'second',
-      email: 'second@example.com',
       password: 'secure123',
     })
 

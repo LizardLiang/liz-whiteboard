@@ -28,8 +28,10 @@ import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
 import { Route as OauthRegisterRouteImport } from './routes/oauth/register'
 import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectId'
+import { Route as RegisterCheckEmailRouteImport } from './routes/register_.check-email'
 import { Route as SettingsConnectionsRouteImport } from './routes/settings/connections'
 import { Route as ShareTokenRouteImport } from './routes/share.$token'
+import { Route as SignupTokenRouteImport } from './routes/signup.$token'
 import { Route as WhiteboardWhiteboardIdRouteImport } from './routes/whiteboard/$whiteboardId'
 import { Route as ProjectProjectIdIndexRouteImport } from './routes/project.$projectId.index'
 import { Route as RenderCanvasTokenRouteImport } from './routes/render.canvas.$token'
@@ -131,6 +133,11 @@ const ProjectProjectIdRoute = ProjectProjectIdRouteImport.update({
   path: '/project/$projectId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RegisterCheckEmailRoute = RegisterCheckEmailRouteImport.update({
+  id: '/register_/check-email',
+  path: '/register/check-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsConnectionsRoute = SettingsConnectionsRouteImport.update({
   id: '/settings/connections',
   path: '/settings/connections',
@@ -139,6 +146,11 @@ const SettingsConnectionsRoute = SettingsConnectionsRouteImport.update({
 const ShareTokenRoute = ShareTokenRouteImport.update({
   id: '/share/$token',
   path: '/share/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignupTokenRoute = SignupTokenRouteImport.update({
+  id: '/signup/$token',
+  path: '/signup/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WhiteboardWhiteboardIdRoute = WhiteboardWhiteboardIdRouteImport.update({
@@ -188,8 +200,10 @@ export interface FileRoutesByFullPath {
   '/oauth/consent': typeof OauthConsentRoute
   '/oauth/register': typeof OauthRegisterRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
+  '/register/check-email': typeof RegisterCheckEmailRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/share/$token': typeof ShareTokenRoute
+  '/signup/$token': typeof SignupTokenRoute
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
   '/render/canvas/$token': typeof RenderCanvasTokenRoute
   '/render/whiteboard/$token': typeof RenderWhiteboardTokenRoute
@@ -215,8 +229,10 @@ export interface FileRoutesByTo {
   '/invite/$token': typeof InviteTokenRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/oauth/register': typeof OauthRegisterRoute
+  '/register/check-email': typeof RegisterCheckEmailRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/share/$token': typeof ShareTokenRoute
+  '/signup/$token': typeof SignupTokenRoute
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
   '/render/canvas/$token': typeof RenderCanvasTokenRoute
   '/render/whiteboard/$token': typeof RenderWhiteboardTokenRoute
@@ -244,8 +260,10 @@ export interface FileRoutesById {
   '/oauth/consent': typeof OauthConsentRoute
   '/oauth/register': typeof OauthRegisterRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
+  '/register_/check-email': typeof RegisterCheckEmailRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/share/$token': typeof ShareTokenRoute
+  '/signup/$token': typeof SignupTokenRoute
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
   '/render/canvas/$token': typeof RenderCanvasTokenRoute
   '/render/whiteboard/$token': typeof RenderWhiteboardTokenRoute
@@ -274,8 +292,10 @@ export interface FileRouteTypes {
     | '/oauth/consent'
     | '/oauth/register'
     | '/project/$projectId'
+    | '/register/check-email'
     | '/settings/connections'
     | '/share/$token'
+    | '/signup/$token'
     | '/whiteboard/$whiteboardId'
     | '/render/canvas/$token'
     | '/render/whiteboard/$token'
@@ -301,8 +321,10 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/oauth/consent'
     | '/oauth/register'
+    | '/register/check-email'
     | '/settings/connections'
     | '/share/$token'
+    | '/signup/$token'
     | '/whiteboard/$whiteboardId'
     | '/render/canvas/$token'
     | '/render/whiteboard/$token'
@@ -329,8 +351,10 @@ export interface FileRouteTypes {
     | '/oauth/consent'
     | '/oauth/register'
     | '/project/$projectId'
+    | '/register_/check-email'
     | '/settings/connections'
     | '/share/$token'
+    | '/signup/$token'
     | '/whiteboard/$whiteboardId'
     | '/render/canvas/$token'
     | '/render/whiteboard/$token'
@@ -358,8 +382,10 @@ export interface RootRouteChildren {
   OauthConsentRoute: typeof OauthConsentRoute
   OauthRegisterRoute: typeof OauthRegisterRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRouteWithChildren
+  RegisterCheckEmailRoute: typeof RegisterCheckEmailRoute
   SettingsConnectionsRoute: typeof SettingsConnectionsRoute
   ShareTokenRoute: typeof ShareTokenRoute
+  SignupTokenRoute: typeof SignupTokenRoute
   WhiteboardWhiteboardIdRoute: typeof WhiteboardWhiteboardIdRoute
   RenderCanvasTokenRoute: typeof RenderCanvasTokenRoute
   RenderWhiteboardTokenRoute: typeof RenderWhiteboardTokenRoute
@@ -500,6 +526,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectProjectIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/register_/check-email': {
+      id: '/register_/check-email'
+      path: '/register/check-email'
+      fullPath: '/register/check-email'
+      preLoaderRoute: typeof RegisterCheckEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings/connections': {
       id: '/settings/connections'
       path: '/settings/connections'
@@ -512,6 +545,13 @@ declare module '@tanstack/react-router' {
       path: '/share/$token'
       fullPath: '/share/$token'
       preLoaderRoute: typeof ShareTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signup/$token': {
+      id: '/signup/$token'
+      path: '/signup/$token'
+      fullPath: '/signup/$token'
+      preLoaderRoute: typeof SignupTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/whiteboard/$whiteboardId': {
@@ -585,8 +625,10 @@ const rootRouteChildren: RootRouteChildren = {
   OauthConsentRoute: OauthConsentRoute,
   OauthRegisterRoute: OauthRegisterRoute,
   ProjectProjectIdRoute: ProjectProjectIdRouteWithChildren,
+  RegisterCheckEmailRoute: RegisterCheckEmailRoute,
   SettingsConnectionsRoute: SettingsConnectionsRoute,
   ShareTokenRoute: ShareTokenRoute,
+  SignupTokenRoute: SignupTokenRoute,
   WhiteboardWhiteboardIdRoute: WhiteboardWhiteboardIdRoute,
   RenderCanvasTokenRoute: RenderCanvasTokenRoute,
   RenderWhiteboardTokenRoute: RenderWhiteboardTokenRoute,

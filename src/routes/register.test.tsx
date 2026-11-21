@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 // src/routes/register.test.tsx
+// Mirrors the email-link register form: email + username only, no password.
 // TC-P3-13: RegisterPage render
 // TC-P3-14: RegisterPage loading state
 // TC-P3-25: Accessibility — labels and aria-live regions
@@ -20,11 +21,10 @@ interface RegisterPageProps {
   onRegister: (data: {
     username: string
     email: string
-    password: string
+    redirect?: string
   }) => Promise<{
     success?: boolean
-    newUser?: boolean
-    message?: string
+    error?: string
     redirect?: string
   }>
   onNavigate: (to: string) => void
@@ -42,17 +42,14 @@ function RegisterPage({
   const redirect = sanitizeRedirect(rawRedirect)
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrors({})
-    setSuccessMessage(null)
 
-    const result = registerInputSchema.safeParse({ username, email, password })
+    const result = registerInputSchema.safeParse({ username, email })
     if (!result.success) {
       const fieldErrors: Record<string, string> = {}
       result.error.issues.forEach((issue) => {
@@ -66,29 +63,25 @@ function RegisterPage({
 
     setIsSubmitting(true)
     try {
-      const response = await onRegister({ username, email, password })
-      if (response.newUser) {
-        // Genuine new user: prefer the caller-provided redirect (e.g. an
-        // invite link) over the server's default.
-        const target = redirect !== '/' ? redirect : response.redirect || '/'
-        onNavigate(target)
-      } else {
-        setSuccessMessage(
-          response.message || 'Registration successful. Please log in.',
+      const response = await onRegister({
+        username,
+        email,
+        ...(redirect !== '/' ? { redirect } : {}),
+      })
+      if (response.success) {
+        // Same reply for a new and an existing email: the check-email page
+        // always follows, carrying the safe return path.
+        onNavigate(
+          `/register/check-email?email=${encodeURIComponent(email)}&redirect=${encodeURIComponent(redirect)}`,
         )
-        // Duplicate-email anti-enumeration branch: forward redirect into the
-        // /login navigation so the chain survives the "please log in" detour.
-        onNavigate(`/login?redirect=${encodeURIComponent(redirect)}`)
+      } else {
+        setErrors({ form: 'Something went wrong. Please try again.' })
       }
     } catch {
       setErrors({ form: 'Something went wrong. Please try again.' })
     } finally {
       setIsSubmitting(false)
     }
-  }
-
-  if (successMessage) {
-    return <div data-testid="success-message">{successMessage}</div>
   }
 
   return (
@@ -139,26 +132,9 @@ function RegisterPage({
           </p>
         )}
       </div>
-      <div>
-        <label htmlFor="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          disabled={isSubmitting}
-          aria-describedby={errors.password ? 'password-error' : undefined}
-          aria-invalid={!!errors.password}
-        />
-        {errors.password && (
-          <p id="password-error" role="alert" aria-live="polite">
-            {errors.password}
-          </p>
-        )}
-      </div>
       <button
         type="submit"
-        disabled={isSubmitting || !username || !email || !password}
+        disabled={isSubmitting || !username || !email}
         data-testid="submit-btn"
       >
         {isSubmitting ? 'Creating account...' : 'Create account'}
@@ -175,7 +151,7 @@ function RegisterPage({
 function renderRegisterPage(
   onRegister: RegisterPageProps['onRegister'] = vi
     .fn()
-    .mockResolvedValue({ newUser: true, redirect: '/' }),
+    .mockResolvedValue({ success: true, redirect: '/register/check-email' }),
   onNavigate: RegisterPageProps['onNavigate'] = vi.fn(),
   redirect?: string,
 ) {
@@ -213,11 +189,9 @@ describe('TC-P3-13: RegisterPage render', () => {
     expect((input as HTMLInputElement).type).toBe('email')
   })
 
-  it('renders password input with associated label', () => {
+  it('has no password field: the emailed link sets the password', () => {
     renderRegisterPage()
-    const input = screen.getByLabelText('Password')
-    expect(input).toBeTruthy()
-    expect((input as HTMLInputElement).type).toBe('password')
+    expect(screen.queryByLabelText('Password')).toBeNull()
   })
 
   it('renders a link to /login with text matching "log in" (case-insensitive)', () => {
@@ -233,7 +207,6 @@ describe('TC-P3-13: RegisterPage render', () => {
 
     await user.type(screen.getByLabelText('Username'), 'alice')
     await user.type(screen.getByLabelText('Email'), 'alice@example.com')
-    await user.type(screen.getByLabelText('Password'), 'password123')
 
     const btn = screen.getByTestId('submit-btn')
     expect((btn as HTMLButtonElement).disabled).toBe(false)
@@ -264,7 +237,6 @@ describe('TC-P3-14: RegisterPage loading state', () => {
 
     await user.type(screen.getByLabelText('Username'), 'alice')
     await user.type(screen.getByLabelText('Email'), 'alice@example.com')
-    await user.type(screen.getByLabelText('Password'), 'password123')
 
     const btn = screen.getByTestId('submit-btn')
     fireEvent.click(btn)
@@ -276,7 +248,7 @@ describe('TC-P3-14: RegisterPage loading state', () => {
       ).toBe(true)
     })
 
-    resolveFn({ success: true, newUser: true, redirect: '/' })
+    resolveFn({ success: true, redirect: '/register/check-email' })
   })
 
   it('shows loading text on submit button while submitting', async () => {
@@ -292,7 +264,6 @@ describe('TC-P3-14: RegisterPage loading state', () => {
 
     await user.type(screen.getByLabelText('Username'), 'alice')
     await user.type(screen.getByLabelText('Email'), 'alice@example.com')
-    await user.type(screen.getByLabelText('Password'), 'password123')
 
     fireEvent.click(screen.getByTestId('submit-btn'))
 
@@ -300,7 +271,7 @@ describe('TC-P3-14: RegisterPage loading state', () => {
       expect(screen.getByText('Creating account...')).toBeTruthy()
     })
 
-    resolveFn({ success: true, newUser: true, redirect: '/' })
+    resolveFn({ success: true, redirect: '/register/check-email' })
   })
 
   it('form has aria-busy attribute while submitting', async () => {
@@ -316,7 +287,6 @@ describe('TC-P3-14: RegisterPage loading state', () => {
 
     await user.type(screen.getByLabelText('Username'), 'alice')
     await user.type(screen.getByLabelText('Email'), 'alice@example.com')
-    await user.type(screen.getByLabelText('Password'), 'password123')
 
     fireEvent.click(screen.getByTestId('submit-btn'))
 
@@ -327,7 +297,7 @@ describe('TC-P3-14: RegisterPage loading state', () => {
       expect(ariaBusy === 'true' || ariaBusy !== null).toBe(true)
     })
 
-    resolveFn({ success: true, newUser: true, redirect: '/' })
+    resolveFn({ success: true, redirect: '/register/check-email' })
   })
 })
 
@@ -341,19 +311,15 @@ describe('TC-P3-25: RegisterPage accessibility', () => {
 
     const usernameInput = document.getElementById('username')
     const emailInput = document.getElementById('email')
-    const passwordInput = document.getElementById('password')
 
     expect(usernameInput).toBeTruthy()
     expect(emailInput).toBeTruthy()
-    expect(passwordInput).toBeTruthy()
 
     const usernameLabel = document.querySelector('label[for="username"]')
     const emailLabel = document.querySelector('label[for="email"]')
-    const passwordLabel = document.querySelector('label[for="password"]')
 
     expect(usernameLabel).toBeTruthy()
     expect(emailLabel).toBeTruthy()
-    expect(passwordLabel).toBeTruthy()
   })
 
   it('shows validation errors in aria-live regions after invalid submission', async () => {
@@ -362,11 +328,9 @@ describe('TC-P3-25: RegisterPage accessibility', () => {
     // Fill with invalid data (username too short — 2 chars)
     const usernameInput = screen.getByLabelText('Username')
     const emailInput = screen.getByLabelText('Email')
-    const passwordInput = screen.getByLabelText('Password')
 
     fireEvent.change(usernameInput, { target: { value: 'ab' } })
     fireEvent.change(emailInput, { target: { value: 'alice@example.com' } })
-    fireEvent.change(passwordInput, { target: { value: 'password123' } })
 
     // Submit the form
     fireEvent.submit(screen.getByTestId('register-form'))
@@ -388,9 +352,7 @@ describe('TC-P3-25: RegisterPage accessibility', () => {
 
     // Submit form to trigger validation
     const emailInput = screen.getByLabelText('Email')
-    const passwordInput = screen.getByLabelText('Password')
     fireEvent.change(emailInput, { target: { value: 'alice@example.com' } })
-    fireEvent.change(passwordInput, { target: { value: 'password123' } })
     fireEvent.submit(screen.getByTestId('register-form'))
 
     await waitFor(() => {
@@ -408,105 +370,72 @@ describe('TC-P3-25: RegisterPage accessibility', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('RegisterPage redirect search param', () => {
-  it('successful registration navigates to the provided redirect instead of /', async () => {
+  const checkEmail = (redirect: string) =>
+    `/register/check-email?email=${encodeURIComponent('alice@example.com')}&redirect=${encodeURIComponent(redirect)}`
+
+  async function submitWith(redirect?: string, response?: object) {
     const onNavigate = vi.fn()
     const onRegister = vi
       .fn()
-      .mockResolvedValue({ newUser: true, redirect: '/' })
-    const user = userEvent.setup()
-
-    renderRegisterPage(onRegister, onNavigate, '/invite/abc123')
-
-    await user.type(screen.getByLabelText('Username'), 'alice')
-    await user.type(screen.getByLabelText('Email'), 'alice@example.com')
-    await user.type(screen.getByLabelText('Password'), 'password123')
-    fireEvent.click(screen.getByTestId('submit-btn'))
-
-    await waitFor(() => {
-      expect(onNavigate).toHaveBeenCalledWith('/invite/abc123')
-    })
-  })
-
-  it('falls back to the server redirect when no redirect search param is present', async () => {
-    const onNavigate = vi.fn()
-    const onRegister = vi
-      .fn()
-      .mockResolvedValue({ newUser: true, redirect: '/' })
-    const user = userEvent.setup()
-
-    renderRegisterPage(onRegister, onNavigate)
-
-    await user.type(screen.getByLabelText('Username'), 'alice')
-    await user.type(screen.getByLabelText('Email'), 'alice@example.com')
-    await user.type(screen.getByLabelText('Password'), 'password123')
-    fireEvent.click(screen.getByTestId('submit-btn'))
-
-    await waitFor(() => {
-      expect(onNavigate).toHaveBeenCalledWith('/')
-    })
-  })
-
-  it('duplicate-email branch forwards redirect into the /login navigation', async () => {
-    const onNavigate = vi.fn()
-    const onRegister = vi.fn().mockResolvedValue({
-      success: true,
-      message: 'Registration successful. Please log in.',
-    })
-    const user = userEvent.setup()
-
-    renderRegisterPage(onRegister, onNavigate, '/invite/abc123')
-
-    await user.type(screen.getByLabelText('Username'), 'alice')
-    await user.type(screen.getByLabelText('Email'), 'alice@example.com')
-    await user.type(screen.getByLabelText('Password'), 'password123')
-    fireEvent.click(screen.getByTestId('submit-btn'))
-
-    await waitFor(() => {
-      expect(onNavigate).toHaveBeenCalledWith(
-        `/login?redirect=${encodeURIComponent('/invite/abc123')}`,
+      .mockResolvedValue(
+        response ?? { success: true, redirect: '/register/check-email' },
       )
+    const user = userEvent.setup()
+    renderRegisterPage(onRegister, onNavigate, redirect)
+    await user.type(screen.getByLabelText('Username'), 'alice')
+    await user.type(screen.getByLabelText('Email'), 'alice@example.com')
+    fireEvent.click(screen.getByTestId('submit-btn'))
+    return { onNavigate, onRegister }
+  }
+
+  it('always lands on check-email and carries an invite return path through the signup', async () => {
+    const { onNavigate, onRegister } = await submitWith('/invite/abc123')
+    await waitFor(() => {
+      expect(onNavigate).toHaveBeenCalledWith(checkEmail('/invite/abc123'))
+    })
+    expect(onRegister).toHaveBeenCalledWith({
+      username: 'alice',
+      email: 'alice@example.com',
+      redirect: '/invite/abc123',
+    })
+  })
+
+  it('sends no redirect and carries "/" when no redirect search param is present', async () => {
+    const { onNavigate, onRegister } = await submitWith()
+    await waitFor(() => {
+      expect(onNavigate).toHaveBeenCalledWith(checkEmail('/'))
+    })
+    expect(onRegister).toHaveBeenCalledWith({
+      username: 'alice',
+      email: 'alice@example.com',
     })
   })
 
   // S1: open-redirect guard
-  it('rejects a protocol-relative "//evil.com" redirect and falls back to "/"', async () => {
-    const onNavigate = vi.fn()
-    const onRegister = vi
-      .fn()
-      .mockResolvedValue({ newUser: true, redirect: '/' })
-    const user = userEvent.setup()
-
-    renderRegisterPage(onRegister, onNavigate, '//evil.com')
-
-    await user.type(screen.getByLabelText('Username'), 'alice')
-    await user.type(screen.getByLabelText('Email'), 'alice@example.com')
-    await user.type(screen.getByLabelText('Password'), 'password123')
-    fireEvent.click(screen.getByTestId('submit-btn'))
-
+  it('rejects a protocol-relative "//evil.com" redirect and never sends it', async () => {
+    const { onNavigate, onRegister } = await submitWith('//evil.com')
     await waitFor(() => {
-      expect(onNavigate).toHaveBeenCalledWith('/')
+      expect(onNavigate).toHaveBeenCalledWith(checkEmail('/'))
     })
+    expect(onRegister.mock.calls[0][0]).not.toHaveProperty('redirect')
   })
 
-  it('rejects an absolute-URL redirect on the duplicate-email branch and falls back to "/"', async () => {
-    const onNavigate = vi.fn()
-    const onRegister = vi.fn().mockResolvedValue({
-      success: true,
-      message: 'Registration successful. Please log in.',
-    })
-    const user = userEvent.setup()
-
-    renderRegisterPage(onRegister, onNavigate, 'https://evil.com')
-
-    await user.type(screen.getByLabelText('Username'), 'alice')
-    await user.type(screen.getByLabelText('Email'), 'alice@example.com')
-    await user.type(screen.getByLabelText('Password'), 'password123')
-    fireEvent.click(screen.getByTestId('submit-btn'))
-
+  it('rejects an absolute-URL redirect and never sends it', async () => {
+    const { onNavigate, onRegister } = await submitWith('https://evil.com')
     await waitFor(() => {
-      expect(onNavigate).toHaveBeenCalledWith(
-        `/login?redirect=${encodeURIComponent('/')}`,
-      )
+      expect(onNavigate).toHaveBeenCalledWith(checkEmail('/'))
     })
+    expect(onRegister.mock.calls[0][0]).not.toHaveProperty('redirect')
+  })
+
+  it('shows a form error and does not navigate when the server refuses', async () => {
+    const { onNavigate } = await submitWith(undefined, {
+      success: false,
+      error: 'RATE_LIMITED',
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('form-error')).toBeTruthy()
+    })
+    expect(onNavigate).not.toHaveBeenCalled()
   })
 })

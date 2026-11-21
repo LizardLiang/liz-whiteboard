@@ -1,5 +1,5 @@
 // src/routes/api/auth.ts
-// Authentication server functions: register, login, logout, getCurrentUser
+// Authentication server functions: register (email-link signup), login, logout, getCurrentUser
 //
 // IMPORTANT: All server-only imports (prisma, session, crypto, etc.) MUST be
 // dynamic imports inside .handler() callbacks. Top-level imports of server
@@ -8,9 +8,11 @@
 
 import { createServerFn } from '@tanstack/react-start'
 import {
+  completeSignupInputSchema,
   forgotPasswordInputSchema,
   loginInputSchema,
   registerInputSchema,
+  resendSignupInputSchema,
   resetPasswordInputSchema,
 } from '@/data/schema'
 import { AUTH_ERROR_CODES } from '@/lib/auth/errors'
@@ -18,78 +20,155 @@ import { AUTH_ERROR_CODES } from '@/lib/auth/errors'
 const GENERIC_AUTH_ERROR = 'Invalid email or password'
 
 /**
- * Register a new user.
- * Anti-enumeration: duplicate email returns same success-shaped response.
- * Never assigns ownerless projects (see src/lib/auth/register-user.ts).
+ * Start an email-link signup: the form takes email + username only. Every
+ * well-formed request gets the same reply, with no cookie, so the reply does
+ * not show whether the email has an account. A new email gets a signup link;
+ * an existing email gets "you already have an account" with login and reset
+ * links. No User row exists until /signup/$token sets the password. Only a
+ * malformed username differs, and that is a zod check with no lookup.
  *
  * @requires unauthenticated
  */
 export const registerUser = createServerFn({ method: 'POST' })
   .validator((data: unknown) => registerInputSchema.parse(data))
   .handler(async ({ data }) => {
-    const { setResponseHeader } = await import('@tanstack/react-start/server')
-    const { hashPassword } = await import('@/lib/auth/password')
-    const { createUserSession } = await import('@/lib/auth/session')
-    const { buildSetCookieHeader } = await import('@/lib/auth/cookies')
-    const { findUserByEmail, findUserByUsername } = await import('@/data/user')
     const { getRequest } = await import('@tanstack/react-start/server')
     const { checkRegisterIpRateLimit } = await import('@/lib/auth/auth-limits')
     const { extractClientIp } = await import('@/lib/rate-limit')
+    const { issueSignupEmail } = await import('@/lib/auth/signup-flow')
+    const { getRequestLocale } = await import('@/lib/i18n/server-locale')
+    const { isSafeRedirect } = await import('@/lib/safe-redirect')
 
-    if (!checkRegisterIpRateLimit(extractClientIp(getRequest()))) {
+    const request = getRequest()
+    if (!checkRegisterIpRateLimit(extractClientIp(request))) {
       return {
-        success: false,
+        success: false as const,
         error: AUTH_ERROR_CODES.RATE_LIMITED,
         message: 'Too many attempts. Please try again later.',
       }
     }
 
-    // Check for duplicate email (anti-enumeration)
-    const existingUser = await findUserByEmail(data.email)
-    if (existingUser) {
-      // Spend the same bcrypt time as a real registration so response
-      // timing does not reveal that the email exists.
-      await hashPassword(data.password)
-      // Return same success-shaped response to prevent email enumeration
-      return {
-        success: true,
-        message: 'Registration successful. Please log in.',
-        redirect: '/login',
-        newUser: false,
-      }
-    }
+    const redirectTo =
+      data.redirect && isSafeRedirect(data.redirect) && data.redirect !== '/'
+        ? data.redirect
+        : null
 
-    // Check for duplicate username (no anti-enumeration needed — usernames are public)
-    const existingUsername = await findUserByUsername(data.username)
-    if (existingUsername) {
-      return {
-        success: false,
-        error: AUTH_ERROR_CODES.VALIDATION_ERROR,
-        fields: { username: 'Username is already taken' },
-      }
-    }
-
-    // Hash password (SHA-256 pre-hash + bcrypt)
-    const passwordHash = await hashPassword(data.password)
-
-    const { insertRegisteredUser } = await import('@/lib/auth/register-user')
-    const user = insertRegisteredUser({
-      username: data.username,
+    await issueSignupEmail({
       email: data.email,
-      passwordHash,
+      username: data.username,
+      redirectTo,
+      locale: await getRequestLocale(),
+      requestOrigin: new URL(request.url).origin,
     })
 
-    // Create session and set cookie
-    const { token } = await createUserSession(user.id, false)
+    return { success: true as const, redirect: '/register/check-email' }
+  })
 
+/**
+ * Resend the signup email from the check-email page. Same reply for every
+ * email. Uses the forgot-password per-IP limit; the per-email cooldown and
+ * daily cap are applied inside issueSignupEmail and refuse silently.
+ *
+ * @requires unauthenticated
+ */
+export const resendSignupEmail = createServerFn({ method: 'POST' })
+  .validator((data: unknown) => resendSignupInputSchema.parse(data))
+  .handler(async ({ data }) => {
+    const { getRequest } = await import('@tanstack/react-start/server')
+    const { extractClientIp } = await import('@/lib/rate-limit')
+    const { checkResetIpRateLimit } = await import('@/lib/auth/reset-limits')
+    const { issueSignupEmail } = await import('@/lib/auth/signup-flow')
+    const { getRequestLocale } = await import('@/lib/i18n/server-locale')
+
+    const request = getRequest()
+    if (!checkResetIpRateLimit(extractClientIp(request))) {
+      return { success: false as const, error: AUTH_ERROR_CODES.RATE_LIMITED }
+    }
+
+    await issueSignupEmail({
+      email: data.email,
+      username: null,
+      redirectTo: null,
+      locale: await getRequestLocale(),
+      requestOrigin: new URL(request.url).origin,
+    })
+
+    return { success: true as const }
+  })
+
+/**
+ * Preview a signup link for the /signup/$token page: valid, expired, used or
+ * invalid. Returns the pending username only for a valid link.
+ *
+ * @requires unauthenticated
+ */
+export const validateSignupToken = createServerFn({ method: 'GET' })
+  .validator((token: unknown) => {
+    if (typeof token !== 'string' || token.length === 0) {
+      throw new Error('Invalid token')
+    }
+    return token
+  })
+  .handler(async ({ data: token }) => {
+    const { hashSignupToken } = await import('@/lib/auth/signup-token')
+    const { getSignupTokenState } = await import('@/data/signup-token')
+
+    const { state, token: row } = getSignupTokenState(hashSignupToken(token))
+    return {
+      state,
+      username: state === 'valid' && row ? row.username : null,
+    }
+  })
+
+/**
+ * Finish a signup: set the password, create the user and sign them in. The
+ * token and the username are re-checked in one transaction. The new user
+ * lands on the return path stored with the token (an invite link) or '/'.
+ *
+ * @requires unauthenticated
+ */
+export const completeSignup = createServerFn({ method: 'POST' })
+  .validator((data: unknown) => completeSignupInputSchema.parse(data))
+  .handler(async ({ data }) => {
+    const { setResponseHeader } = await import('@tanstack/react-start/server')
+    const { hashPassword } = await import('@/lib/auth/password')
+    const { createUserSession } = await import('@/lib/auth/session')
+    const { buildSetCookieHeader } = await import('@/lib/auth/cookies')
+    const { hashSignupToken } = await import('@/lib/auth/signup-token')
+    const { completeSignup: completeSignupRow, getSignupTokenState } =
+      await import('@/data/signup-token')
+    const { sanitizeRedirect } = await import('@/lib/safe-redirect')
+
+    const tokenHash = hashSignupToken(data.token)
+    if (getSignupTokenState(tokenHash).state !== 'valid') {
+      return { success: false as const, error: AUTH_ERROR_CODES.INVALID_TOKEN }
+    }
+
+    const passwordHash = await hashPassword(data.password)
+    const result = completeSignupRow({
+      tokenHash,
+      username: data.username,
+      passwordHash,
+    })
+    if (!result.ok) {
+      if (result.reason === 'username_taken') {
+        return {
+          success: false as const,
+          error: AUTH_ERROR_CODES.VALIDATION_ERROR,
+          fields: { username: 'Username is already taken' },
+        }
+      }
+      return { success: false as const, error: AUTH_ERROR_CODES.INVALID_TOKEN }
+    }
+
+    const { token } = await createUserSession(result.user.id, false)
     setResponseHeader('Set-Cookie', buildSetCookieHeader(token, false))
 
-    console.log(`[auth] User registered: ${user.id}`)
+    console.log(`[auth] User registered: ${result.user.id}`)
 
     return {
-      success: true,
-      redirect: '/',
-      newUser: true,
+      success: true as const,
+      redirect: sanitizeRedirect(result.redirectTo ?? '/'),
     }
   })
 

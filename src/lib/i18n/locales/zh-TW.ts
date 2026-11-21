@@ -82,6 +82,31 @@ export const zhTW: DeepStringRecord<Dictionary> = {
       submitting: '更新中...',
       noscript: '重設密碼需要啟用 JavaScript。',
     },
+    checkEmail: {
+      title: '請檢查您的電子郵件',
+      body: '如果此電子郵件可以用來註冊，完成建立帳號的連結已在寄送途中。連結將在 24 小時後失效。',
+      bodyWithEmail: '我們已寄送郵件至 {email}。請開啟其中的連結完成註冊。連結將在 24 小時後失效。',
+      resend: '重新寄送郵件',
+      resending: '寄送中...',
+      resent: '如果該電子郵件可以使用，新的郵件已在寄送途中。',
+      rateLimited: '請求次數過多，請稍後再試。',
+      backToSignIn: '返回登入',
+    },
+    signup: {
+      title: '完成註冊',
+      subtitle: '請設定密碼以建立您的帳號。',
+      checking: '正在檢查連結...',
+      linkInvalid: '連結無效',
+      linkExpired: '此連結已過期。',
+      linkUsed: '此連結已被使用。',
+      linkInvalidBody: '此連結無效。',
+      startOver: '重新開始',
+      confirmPassword: '確認密碼',
+      submit: '建立帳號',
+      submitting: '建立帳號中...',
+      usernameTaken: '此使用者名稱已被使用，請選擇其他名稱。',
+      noscript: '完成註冊需要啟用 JavaScript。',
+    },
     sessionExpired: {
       title: '您的登入已過期',
       description: '因閒置過久，您已被登出。請重新登入以繼續。',
@@ -154,6 +179,18 @@ export const zhTW: DeepStringRecord<Dictionary> = {
     resetHtmlIntro: '請使用此連結重設您的密碼：',
     resetHtmlOutro:
       '此連結將在 30 分鐘後失效，且只能使用一次。如果您沒有提出此要求，請忽略這封郵件。',
+    signupSubject: '完成註冊',
+    signupText:
+      '請使用此連結完成建立帳號並設定密碼：{link}\n\n此連結將在 24 小時後失效，且只能使用一次。如果您沒有提出此要求，請忽略這封郵件。',
+    signupHtmlIntro: '請使用此連結完成建立帳號並設定密碼：',
+    signupHtmlOutro:
+      '此連結將在 24 小時後失效，且只能使用一次。如果您沒有提出此要求，請忽略這封郵件。',
+    existsSubject: '您已經有帳號了',
+    existsText:
+      '有人使用這個電子郵件地址要求建立帳號，但您已經有帳號了。\n\n登入：{loginLink}\n忘記密碼？請重設：{resetLink}\n\n如果這不是您本人，請忽略這封郵件。',
+    existsHtmlIntro:
+      '有人使用這個電子郵件地址要求建立帳號，但您已經有帳號了。請從這裡登入，或重設密碼：',
+    existsHtmlOutro: '如果這不是您本人，請忽略這封郵件。',
   },
   header: {
     connections: '連線',
@@ -412,6 +449,7 @@ export const zhTW: DeepStringRecord<Dictionary> = {
     passwordRequired: '請輸入密碼',
     verificationRequired: '需要驗證',
     missingResetToken: '缺少重設權杖',
+    missingSignupToken: '缺少註冊權杖',
     confirmPasswordRequired: '請確認您的密碼',
     passwordsMismatch: '兩次輸入的密碼不一致',
     consentExpired: '此授權請求已過期或無效，請從您的用戶端重新嘗試連線。',
