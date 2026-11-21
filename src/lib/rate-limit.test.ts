@@ -6,7 +6,7 @@
 
 import { createServer } from 'node:http'
 import { NodeRequest } from 'srvx/node'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   PEER_IP_HEADER,
   createFixedWindowRateLimiter,
@@ -44,6 +44,53 @@ describe('createFixedWindowRateLimiter', () => {
     expect(limiter.check('2.2.2.2')).toBe(false)
     limiter.reset()
     expect(limiter.check('2.2.2.2')).toBe(true)
+  })
+
+  describe('bounded memory (audit F4)', () => {
+    afterEach(() => vi.useRealTimers())
+
+    it('never holds more than maxKeys keys', () => {
+      const limiter = createFixedWindowRateLimiter({
+        max: 5,
+        windowMs: 60_000,
+        maxKeys: 100,
+      })
+      for (let i = 0; i < 1000; i++) limiter.check(`ip-${i}`)
+      expect(limiter.size()).toBeLessThanOrEqual(100)
+    })
+
+    it('evicts the oldest window at the cap and keeps recent keys', () => {
+      const limiter = createFixedWindowRateLimiter({
+        max: 1,
+        windowMs: 60_000,
+        maxKeys: 3,
+      })
+      limiter.check('a')
+      limiter.check('b')
+      limiter.check('c')
+      limiter.check('d')
+      expect(limiter.size()).toBe(3)
+      // 'd' is still tracked, so its second hit is refused.
+      expect(limiter.check('d')).toBe(false)
+      // 'a' was evicted, so it starts a fresh window.
+      expect(limiter.check('a')).toBe(true)
+    })
+
+    it('deletes expired windows before evicting live ones', () => {
+      vi.useFakeTimers()
+      const limiter = createFixedWindowRateLimiter({
+        max: 1,
+        windowMs: 1000,
+        maxKeys: 3,
+      })
+      limiter.check('old1')
+      limiter.check('old2')
+      vi.advanceTimersByTime(1500)
+      limiter.check('live')
+      limiter.check('new')
+      expect(limiter.size()).toBe(2)
+      expect(limiter.check('live')).toBe(false)
+    })
   })
 })
 

@@ -160,25 +160,51 @@ export interface RateLimiter {
   check: (ip: string) => boolean
   /** Clears all tracked windows. For tests only. */
   reset: () => void
+  /** Number of tracked keys. For tests only. */
+  size: () => number
 }
+
+/** Default cap on tracked keys per limiter, sized well above normal traffic. */
+export const RATE_LIMIT_MAX_KEYS = 10_000
 
 /**
  * Create an in-process fixed-window rate limiter (resets on restart).
  * Each call to check() with the same `ip` within `windowMs` of the first
  * call increments a counter; once the counter exceeds `max`, check()
  * returns false until the window rolls over.
+ *
+ * Memory is bounded: the map never holds more than `maxKeys` keys. When a
+ * new key arrives at the cap, expired windows are deleted first, then the
+ * oldest window. Entries are re-inserted when their window rolls over, so
+ * Map insertion order is `windowStart` order and the first key is the oldest.
  */
 export function createFixedWindowRateLimiter(opts: {
   max: number
   windowMs: number
+  maxKeys?: number
 }): RateLimiter {
   const map = new Map<string, RateLimitEntry>()
+  const maxKeys = opts.maxKeys ?? RATE_LIMIT_MAX_KEYS
+
+  function makeRoom(now: number): void {
+    for (const [key, entry] of map) {
+      if (now - entry.windowStart < opts.windowMs) break
+      map.delete(key)
+    }
+    while (map.size >= maxKeys) {
+      const oldest = map.keys().next()
+      if (oldest.done) break
+      map.delete(oldest.value)
+    }
+  }
 
   return {
     check(ip: string): boolean {
       const now = Date.now()
       const entry = map.get(ip)
       if (!entry || now - entry.windowStart >= opts.windowMs) {
+        map.delete(ip)
+        if (map.size >= maxKeys) makeRoom(now)
         map.set(ip, { count: 1, windowStart: now })
         return true
       }
@@ -187,6 +213,9 @@ export function createFixedWindowRateLimiter(opts: {
     },
     reset(): void {
       map.clear()
+    },
+    size(): number {
+      return map.size
     },
   }
 }
