@@ -62,7 +62,7 @@ if (op === 'reset') {
     randomUUID(),
     args.email,
     args.username,
-    args.redirectTo ?? null,
+    args.redirectTo || null,
     args.hash,
     now + Number(args.ttlMs),
     null,

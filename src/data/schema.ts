@@ -532,9 +532,7 @@ export const passwordRuleSchema = z
   .min(8, 'Password must be at least 8 characters')
   .max(128, 'Password must be at most 128 characters')
 
-/**
- * Schema for user registration input
- */
+/** Schema for a username: 3-50 characters, letters, digits and underscores. */
 export const usernameSchema = z
   .string()
   .min(3, 'Username must be at least 3 characters')
