@@ -178,18 +178,36 @@ export function normalizeRateLimitKey(key: string): string {
   return `v6/64:${(parsed.value >> 64n).toString(16)}`
 }
 
+/** Overflow shards used when every tracked key is blocked. */
+export const RATE_LIMIT_OVERFLOW_SHARDS = 64
+
+/** Entries examined from the least-recently-used end per new key at the cap. */
+const EVICTION_SCAN_LIMIT = 256
+
+/** Stable shard index (FNV-1a) for a normalized key. */
+export function overflowShardIndex(key: string): number {
+  let h = 0x811c9dc5
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return (h >>> 0) % RATE_LIMIT_OVERFLOW_SHARDS
+}
+
 /**
  * Create an in-process fixed-window rate limiter (resets on restart).
  * Each call to check() with the same key within `windowMs` of the first
  * call increments a counter; once the counter exceeds `max`, check()
  * returns false until the window rolls over. IPv6 keys share a window per /64.
  *
- * Memory is bounded: the map never holds more than `maxKeys` keys. At the cap
- * only expired windows are deleted - a live window is never evicted, because
- * that would let a blocked caller flush its own block by flooding new keys.
- * If the map is still full, new keys share one overflow bucket with the same
- * `max` and window, so the limiter fails closed. Entries are re-inserted when
- * their window rolls over, so Map insertion order is `windowStart` order.
+ * Memory is bounded: the map never holds more than `maxKeys` keys. Entries are
+ * re-inserted on every touch, so Map order is least-recently-used first. For a
+ * new key at the cap, a bounded scan from the LRU end deletes expired windows
+ * and picks the first live entry that is not blocked (count <= max) as the
+ * eviction candidate. A blocked entry is never evicted before its window ends,
+ * so flooding new keys cannot flush a block. If no candidate exists (every
+ * scanned entry is blocked), the key falls into one of 64 overflow shards that
+ * each apply the normal max/window; one shard's flood leaves the others usable.
  */
 export function createFixedWindowRateLimiter(opts: {
   max: number
@@ -198,46 +216,61 @@ export function createFixedWindowRateLimiter(opts: {
 }): RateLimiter {
   const map = new Map<string, RateLimitEntry>()
   const maxKeys = opts.maxKeys ?? RATE_LIMIT_MAX_KEYS
-  let overflow: RateLimitEntry | null = null
+  const shards: Array<RateLimitEntry | null> = new Array<RateLimitEntry | null>(
+    RATE_LIMIT_OVERFLOW_SHARDS,
+  ).fill(null)
 
-  function deleteExpired(now: number): void {
+  /** Free one slot. Returns false when no entry may be evicted. */
+  function makeRoom(now: number): boolean {
+    let candidate: string | null = null
+    let scanned = 0
     for (const [key, entry] of map) {
-      if (now - entry.windowStart < opts.windowMs) break
-      map.delete(key)
+      if (scanned++ >= EVICTION_SCAN_LIMIT) break
+      if (now - entry.windowStart >= opts.windowMs) {
+        map.delete(key)
+      } else if (candidate === null && entry.count <= opts.max) {
+        candidate = key
+      }
     }
+    if (map.size < maxKeys) return true
+    if (candidate === null) return false
+    map.delete(candidate)
+    return true
   }
 
-  function checkOverflow(now: number): boolean {
-    if (!overflow || now - overflow.windowStart >= opts.windowMs) {
-      overflow = { count: 1, windowStart: now }
+  function checkShard(key: string, now: number): boolean {
+    const i = overflowShardIndex(key)
+    const shard = shards[i]
+    if (!shard || now - shard.windowStart >= opts.windowMs) {
+      shards[i] = { count: 1, windowStart: now }
       return true
     }
-    overflow.count += 1
-    return overflow.count <= opts.max
+    shard.count += 1
+    return shard.count <= opts.max
   }
 
   return {
     check(rawKey: string): boolean {
-      const ip = normalizeRateLimitKey(rawKey)
+      const key = normalizeRateLimitKey(rawKey)
       const now = Date.now()
-      const entry = map.get(ip)
+      const entry = map.get(key)
       if (!entry) {
-        if (map.size >= maxKeys) deleteExpired(now)
-        if (map.size >= maxKeys) return checkOverflow(now)
-        map.set(ip, { count: 1, windowStart: now })
+        if (map.size >= maxKeys && !makeRoom(now)) return checkShard(key, now)
+        map.set(key, { count: 1, windowStart: now })
         return true
       }
+      map.delete(key)
       if (now - entry.windowStart >= opts.windowMs) {
-        map.delete(ip)
-        map.set(ip, { count: 1, windowStart: now })
+        map.set(key, { count: 1, windowStart: now })
         return true
       }
       entry.count += 1
+      map.set(key, entry)
       return entry.count <= opts.max
     },
     reset(): void {
       map.clear()
-      overflow = null
+      shards.fill(null)
     },
     size(): number {
       return map.size

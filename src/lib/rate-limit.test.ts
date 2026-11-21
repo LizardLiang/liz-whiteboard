@@ -11,6 +11,7 @@ import {
   PEER_IP_HEADER,
   createFixedWindowRateLimiter,
   extractClientIp,
+  overflowShardIndex,
   stampPeerIp,
 } from './rate-limit'
 import type { IncomingMessage } from 'node:http'
@@ -71,7 +72,21 @@ describe('createFixedWindowRateLimiter', () => {
       expect(limiter.check('victim')).toBe(false)
     })
 
-    it('new keys beyond the cap share one overflow bucket', () => {
+    it('a new legitimate key still gets its own window after under-limit keys fill the map', () => {
+      const limiter = createFixedWindowRateLimiter({
+        max: 1,
+        windowMs: 60_000,
+      })
+      for (let i = 0; i < 10_000; i++) limiter.check(`attacker-${i}`)
+      expect(limiter.size()).toBe(10_000)
+      expect(limiter.check('legit')).toBe(true)
+      expect(limiter.size()).toBe(10_000)
+      // Its own window: the second hit counts against it, not a shared bucket.
+      expect(limiter.check('legit')).toBe(false)
+      expect(limiter.check('legit-2')).toBe(true)
+    })
+
+    it('evicts the least-recently-used unblocked entry, not a recently used one', () => {
       const limiter = createFixedWindowRateLimiter({
         max: 2,
         windowMs: 60_000,
@@ -80,31 +95,52 @@ describe('createFixedWindowRateLimiter', () => {
       limiter.check('a')
       limiter.check('b')
       limiter.check('c')
-      expect(limiter.check('d')).toBe(true)
-      expect(limiter.check('e')).toBe(true)
-      expect(limiter.check('f')).toBe(false)
-      expect(limiter.size()).toBe(3)
+      limiter.check('a') // touch: a is now most recently used
+      limiter.check('d') // evicts b
+      expect(limiter.check('a')).toBe(false) // a kept its count (3 > 2)
+      expect(limiter.check('b')).toBe(true) // b was evicted, fresh window
     })
 
-    it('deletes expired windows to make room before overflowing', () => {
+    it('with the map full of blocked keys, new keys land in overflow shards', () => {
+      const limiter = createFixedWindowRateLimiter({
+        max: 1,
+        windowMs: 60_000,
+        maxKeys: 4,
+      })
+      for (const k of ['b1', 'b2', 'b3', 'b4']) {
+        limiter.check(k)
+        expect(limiter.check(k)).toBe(false)
+      }
+      expect(limiter.size()).toBe(4)
+
+      const flood = 'flood-0'
+      const other = Array.from({ length: 200 }, (_, i) => `other-${i}`).find(
+        (k) => overflowShardIndex(k) !== overflowShardIndex(flood),
+      )!
+      expect(limiter.check(flood)).toBe(true)
+      expect(limiter.check(flood)).toBe(false)
+      // A key in a different shard is unaffected by the flooded shard.
+      expect(limiter.check(other)).toBe(true)
+      // Blocked entries were never evicted.
+      expect(limiter.check('b1')).toBe(false)
+      expect(limiter.size()).toBe(4)
+    })
+
+    it('deletes expired windows to make room before using shards', () => {
       vi.useFakeTimers()
       const limiter = createFixedWindowRateLimiter({
         max: 1,
         windowMs: 1000,
-        maxKeys: 3,
+        maxKeys: 2,
       })
-      limiter.check('old1')
-      limiter.check('old2')
+      limiter.check('x')
+      limiter.check('x')
+      limiter.check('y')
+      limiter.check('y')
       vi.advanceTimersByTime(1500)
-      limiter.check('live')
-      limiter.check('new')
-      expect(limiter.size()).toBe(2)
-      expect(limiter.check('live')).toBe(false)
-      expect(limiter.check('new2')).toBe(true)
-      expect(limiter.size()).toBe(3)
-      // Map full of live windows: the next new keys share the overflow bucket.
-      expect(limiter.check('new3')).toBe(true)
-      expect(limiter.check('new4')).toBe(false)
+      expect(limiter.check('fresh')).toBe(true)
+      expect(limiter.size()).toBe(1)
+      expect(limiter.check('fresh')).toBe(false)
     })
 
     it('two addresses in the same IPv6 /64 share one window', () => {
